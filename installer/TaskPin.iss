@@ -29,7 +29,6 @@ DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 ; 실행 중인 앱(os_win.create_app_mutex)이 있으면 종료하라고 안내한다
 AppMutex=TaskPin
-SetupIconFile=..\ico\taskpin.ico
 UninstallDisplayIcon={app}\{#AppExeName}
 UninstallDisplayName={#AppName}
 OutputDir=..\dist
