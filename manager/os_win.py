@@ -76,9 +76,9 @@ def is_own_window(hwnd) -> bool:
 DWMWA_USE_IMMERSIVE_DARK_MODE = 20  # Windows 10 20H1 이상
 
 
-def set_dark_title_bar(hwnd: int):
-    """제목줄을 어둡게 (Windows 를 라이트 모드로 써도 다크 테마 창과 어울리게). 실패는 무시한다."""
-    value = ctypes.c_int(1)
+def set_dark_title_bar(hwnd: int, dark: bool = True):
+    """제목줄을 앱 테마에 맞춰 어둡게 / 밝게 (Windows 앱 모드와 관계없이). 실패는 무시한다."""
+    value = ctypes.c_int(1 if dark else 0)
     try:
         ctypes.windll.dwmapi.DwmSetWindowAttribute(
             wintypes.HWND(hwnd),

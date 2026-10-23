@@ -226,6 +226,8 @@ class TaskPinApp(TrayApp):
     def _on_color_scheme_changed(self, *_):
         if widget_config.appearance(self.widget_cfg)["theme"] == "system":
             self.apply_appearance()
+            if self._settings is not None:
+                self._settings.apply_theme()
 
     def toggle_widget(self, show: bool):
         """트레이 메뉴의 '위젯 보이기' 토글"""

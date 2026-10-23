@@ -191,8 +191,7 @@ class ClockWidget(QWidget):
         self.setAttribute(Qt.WA_TranslucentBackground, True)
         # 표시(시작/위젯 보이기)만으로 활성화되어 앞으로 튀어나오지 않게 - 클릭했을 때만 앞으로
         self.setAttribute(Qt.WA_ShowWithoutActivating, True)
-        # 투명도는 오직 투명도 슬라이더로만 정한다 (배경색 자체는 불투명)
-        self.setWindowOpacity(self._cfg_opacity())
+        # 투명도는 오직 투명도 슬라이더로만 정한다 (배경색 자체는 불투명) - apply_appearance 의 _apply_opacity
 
         self._build_ui()
         self._grip = _ResizeGrip(self)
@@ -549,7 +548,7 @@ class ClockWidget(QWidget):
         if self._orientation is not None:  # 배율이 바뀌면 최소 높이도 바뀐다
             self._apply_size_limits()
             self._place_grip()
-        self.update()
+        self._apply_opacity()
 
     def _min_height(self) -> int:
         """글자 배율을 키우면 좌패널 내용이 기본 최소 높이보다 커질 수 있다."""
@@ -613,8 +612,19 @@ class ClockWidget(QWidget):
         self._separators.append(line)  # 색은 apply_appearance 에서
         return line
 
+    def _opacity(self) -> float:
+        """슬라이더의 불투명도 (슬라이더 값은 투명도 %)"""
+        return 1 - self.opacity_slider.value() / 100
+
+    def _apply_opacity(self):
+        """글자도 함께 투명(Appearance fade_text): 창 전체 불투명도
+        해제(기본): 창은 불투명하게 두고 paintEvent 가 배경만 반투명하게 칠한다"""
+        fade_text = theme.current().fade_text
+        self.setWindowOpacity(self._opacity() if fade_text else 1.0)
+        self.update()
+
     def _on_opacity_changed(self, transparency: int):
-        self.setWindowOpacity(1 - transparency / 100)
+        self._apply_opacity()
         self.opacity_value.setText(f"{transparency}%")
         # 드래그 중에는 저장하지 않고(sliderReleased 에서 저장), 키보드/클릭 조작만 즉시 저장
         if not self.opacity_slider.isSliderDown():
@@ -783,7 +793,11 @@ class ClockWidget(QWidget):
         painter.setRenderHint(QPainter.Antialiasing)
         path = QPainterPath()
         path.addRoundedRect(QRectF(self.rect()), CORNER_RADIUS, CORNER_RADIUS)
-        painter.fillPath(path, QColor(theme.current().bg))
+        t = theme.current()
+        bg = QColor(t.bg)
+        if not t.fade_text:  # 글자는 두고 배경만 투명하게
+            bg.setAlphaF(self._opacity())
+        painter.fillPath(path, bg)
 
     # ==================================================
     # 드래그 이동

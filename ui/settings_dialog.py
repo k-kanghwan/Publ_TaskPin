@@ -3,11 +3,11 @@
 좌측 사이드바에서 탭을 고르고 우측 카드에서 바로 바꾼다 (확인 버튼 없이 즉시 config.json 에 저장).
   - Keyboard Shortcuts : 위젯 단축키. 다른 동작과 겹치면 저장하지 않고 경고
   - Snippets           : `:트리거:` -> 문구 목록. 빈 칸 / 중복 트리거는 저장하지 않고 표시만
-  - Appearance         : 테마 / 강조색 / 배경색 / 폰트, 좌·우패널 글자 크기, TODO 글자색.
+  - Appearance         : 테마 / 강조색 / 배경색 / 글자도 함께 투명 / 폰트, 좌·우패널 글자 크기, TODO 글자색.
                          바꾸면 appearance_changed 로 위젯에 바로 반영한다.
   - Application        : 준비 중
 
-설정창 자체는 위젯 테마를 따르지 않고 다크로 고정한다.
+설정창 자체는 테마(다크 / 라이트)와 강조색만 따른다. 배경색 / 폰트 / 글자 크기는 위젯에만 적용한다.
 
 키보드
   - Esc : 닫기 (단축키 입력칸에서는 입력 취소)
@@ -34,20 +34,11 @@ from PySide6.QtWidgets import (
 from manager import os_win, snippets, widget_config
 from ui import theme
 
-_DARK = theme.DARK
-ACCENT = _DARK.accent
-FONT_FAMILY = _DARK.font_family
-LINE_COLOR = _DARK.line
-TEXT_MAIN = _DARK.text_main
-TEXT_SUB = _DARK.text_sub
-TEXT_WARN = _DARK.text_warn
-
 
 WINDOW_TITLE = "Task알림 설정"
 WINDOW_SIZE = (720, 560)  # Appearance 탭이 스크롤 없이 거의 다 보이도록
-WINDOW_BG = "#18181a"
-CARD_BG = "#232326"
-CARD_BORDER = "rgba(255,255,255,22)"
+# 테마별 (창 배경, 카드 배경) - 카드가 창보다 한 단계 떠 보이도록
+SURFACES = {True: ("#18181a", "#232326"), False: ("#ececef", "#ffffff")}
 SIDEBAR_WIDTH = 210
 NAV_ICON_WIDTH = 22  # 기호마다 폭이 달라 탭 이름이 어긋나지 않도록 고정
 KEY_EDIT_WIDTH = 120
@@ -74,6 +65,7 @@ SHORTCUT_ROWS = [
 
 # Appearance 선택지 (값, 표시) - 값은 widget_config.THEMES / LEFT_SCALES / TODO_SCALES 와 같다
 THEME_OPTIONS = [("dark", "다크"), ("light", "라이트"), ("system", "시스템")]
+ON_OFF_OPTIONS = [(False, "끔"), (True, "켬")]
 SCALE_NAMES = {90: "작게", 100: "보통", 115: "크게", 130: "아주 크게"}
 ACCENT_SWATCHES = [
     ("#4a7bd0", "파랑"),
@@ -86,33 +78,45 @@ ACCENT_SWATCHES = [
 ]
 DEFAULT_FONT_LABEL = "기본 (맑은 고딕)"
 
-SETTINGS_STYLE = (
-    theme.button_style(_DARK)
-    + theme.popup_form_style(_DARK)
-    + f"""
-    QWidget#settings {{ background: {WINDOW_BG}; }}
+
+def _settings_theme(cfg: dict) -> theme.Theme:
+    """설정창의 테마: 다크 / 라이트와 강조색만 위젯 설정을 따른다."""
+    a = widget_config.appearance(cfg)
+    return theme.build(
+        {**a, "background": "", "font_family": "", "todo_text_color": ""},
+        theme.system_dark(),
+    )
+
+
+def _settings_style(t: theme.Theme) -> str:
+    window_bg, card_bg = SURFACES[t.dark]
+    return (
+        theme.button_style(t)
+        + theme.popup_form_style(t)
+        + f"""
+    QWidget#settings {{ background: {window_bg}; }}
     QLabel {{
         background: transparent;
-        color: {TEXT_MAIN};
-        font-family: {FONT_FAMILY};
+        color: {t.text_main};
+        font-family: {t.font_family};
         font-size: 13px;
     }}
-    QLabel#sub {{ color: {TEXT_SUB}; font-size: 11px; }}
+    QLabel#sub {{ color: {t.text_sub}; font-size: 11px; }}
     QLabel#section {{ font-size: 14px; font-weight: bold; }}
-    QLabel#navIcon {{ font-size: 15px; color: {TEXT_SUB}; }}
+    QLabel#navIcon {{ font-size: 15px; color: {t.text_sub}; }}
     QLabel#version {{
-        color: {TEXT_SUB};
+        color: {t.text_sub};
         font-weight: bold;
-        border: 1px solid rgba(255,255,255,40);
+        border: 1px solid {t.overlay(40)};
         border-radius: 14px;
         padding: 6px;
     }}
     QFrame#card, QFrame#sidebar {{
-        background: {CARD_BG};
-        border: 1px solid {CARD_BORDER};
+        background: {card_bg};
+        border: 1px solid {t.overlay(22)};
         border-radius: 14px;
     }}
-    QFrame#line {{ background: {LINE_COLOR}; border: none; }}
+    QFrame#line {{ background: {t.line}; border: none; }}
     QPushButton#nav {{
         text-align: left;
         padding: 9px 12px;
@@ -121,38 +125,38 @@ SETTINGS_STYLE = (
         background: transparent;
         font-size: 13px;
     }}
-    QPushButton#nav:hover {{ background: rgba(255,255,255,14); }}
+    QPushButton#nav:hover {{ background: {t.overlay(14)}; }}
     QPushButton#nav:checked {{
-        background: rgba(255,255,255,22);
-        border-right: 3px solid {ACCENT};
+        background: {t.overlay(22)};
+        border-right: 3px solid {t.accent};
     }}
     QPushButton#small {{ padding: 4px 10px; }}
     QPushButton#segment {{ padding: 4px 12px; }}
     QPushButton#segment:checked {{
-        background: {ACCENT};
-        color: white;
-        border: 1px solid {ACCENT};
+        background: {t.accent};
+        color: {t.on_accent};
+        border: 1px solid {t.accent};
     }}
-    QLabel#group {{ color: {TEXT_SUB}; font-size: 12px; font-weight: bold; }}
+    QLabel#group {{ color: {t.text_sub}; font-size: 12px; font-weight: bold; }}
     QPushButton#remove {{
         background: transparent;
-        color: {TEXT_SUB};
+        color: {t.text_sub};
         border: none;
         padding: 0px;
     }}
-    QPushButton#remove:hover {{ color: {TEXT_WARN}; }}
-    QLineEdit[invalid="true"] {{ border: 1px solid {TEXT_WARN}; }}
+    QPushButton#remove:hover {{ color: {t.text_warn}; }}
+    QLineEdit[invalid="true"] {{ border: 1px solid {t.text_warn}; }}
     QScrollArea, QScrollArea > QWidget > QWidget {{ background: transparent; border: none; }}
     QScrollBar:vertical {{ background: transparent; width: 6px; margin: 0px; }}
     QScrollBar::handle:vertical {{
-        background: rgba(255,255,255,50);
+        background: {t.overlay(50)};
         border-radius: 3px;
         min-height: 20px;
     }}
     QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0px; }}
     QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: none; }}
     """
-)
+    )
 
 
 def _line() -> QFrame:
@@ -283,6 +287,7 @@ class SettingsDialog(QWidget):
         # 항상 위에 둔 위젯(디버그 / 설정) 위에도 보이도록 최상위 힌트를 준다
         super().__init__(parent, Qt.Window | Qt.WindowStaysOnTopHint)
         self._cfg = cfg
+        self._look = _settings_theme(cfg)  # 설정창 자신의 테마 (apply_theme)
         self._shortcut_edits = {}
         self._shortcut_notes = {}
         self._snippet_rows = []
@@ -293,7 +298,7 @@ class SettingsDialog(QWidget):
         self.setWindowTitle(WINDOW_TITLE)
         self.resize(*WINDOW_SIZE)
         self.setMinimumSize(560, 360)
-        self.setStyleSheet(SETTINGS_STYLE)
+        self.setStyleSheet(_settings_style(self._look))
 
         root = QHBoxLayout(self)
         root.setContentsMargins(12, 12, 16, 12)
@@ -470,7 +475,7 @@ class SettingsDialog(QWidget):
     def _show_shortcut_note(self, action: str, message: str = "", warn: bool = False):
         label, default_text = self._shortcut_notes[action]
         label.setText(message or default_text)
-        label.setStyleSheet(f"color: {TEXT_WARN};" if warn else "")
+        label.setStyleSheet(f"color: {self._look.text_warn};" if warn else "")
 
     # ==================================================
     # Snippets
@@ -557,7 +562,9 @@ class SettingsDialog(QWidget):
         layout.setSpacing(8)
         section = QLabel("Appearance")
         section.setObjectName("section")
-        hint = QLabel("바꾸는 즉시 위젯에 반영됩니다. 설정창은 다크 테마로 고정됩니다.")
+        hint = QLabel(
+            "바꾸는 즉시 위젯에 반영됩니다. 설정창은 테마(다크 / 라이트)와 강조색만 따릅니다."
+        )
         hint.setObjectName("sub")
         hint.setWordWrap(True)
         layout.addWidget(section)
@@ -594,6 +601,15 @@ class SettingsDialog(QWidget):
             "고르면 글자색은 배경 밝기에 맞춰집니다",
             self._bg_button,
             self._reset_button(lambda: self._set_appearance("background", "")),
+        )
+        box, self._fade_text_group = self._segmented(
+            ON_OFF_OPTIONS, lambda v: self._set_appearance("fade_text", v)
+        )
+        self._add_row(
+            card_layout,
+            "글자도 함께 투명",
+            "켜면 투명도 슬라이더가 글자까지 투명하게 합니다 (끄면 배경만)",
+            box,
         )
         self._font_combo = self._build_font_combo()
         self._add_row(card_layout, "폰트", "위젯과 팝업의 글꼴", self._font_combo)
@@ -704,11 +720,10 @@ class SettingsDialog(QWidget):
         btn.setToolTip(tooltip)
         return btn
 
-    @staticmethod
-    def _paint_swatch(btn: QPushButton, fill: str, ring: str, text: str = ""):
+    def _paint_swatch(self, btn: QPushButton, fill: str, ring: str, text: str = ""):
         btn.setText(text)
         btn.setStyleSheet(
-            f"QPushButton {{ background: {fill}; color: {TEXT_SUB};"
+            f"QPushButton {{ background: {fill}; color: {self._look.text_sub};"
             f" border: 2px solid {ring}; border-radius: {SWATCH_SIZE // 2}px;"
             " padding: 0px; font-size: 12px; }"
         )
@@ -747,25 +762,34 @@ class SettingsDialog(QWidget):
         self._cfg["appearance"] = values
         widget_config.save_config(self._cfg)
         self.appearance_changed.emit()
+        self.apply_theme()
+
+    def apply_theme(self):
+        """설정창에도 테마(다크 / 라이트, 강조색)를 다시 입히고 Appearance 표시를 맞춘다.
+        "시스템" 테마에서 Windows 앱 모드가 바뀔 때 TaskPinApp 도 부른다."""
+        self._look = _settings_theme(self._cfg)
+        self.setStyleSheet(_settings_style(self._look))
+        if self.isVisible():
+            os_win.set_dark_title_bar(int(self.winId()), self._look.dark)
         self._refresh_appearance()
 
     def _refresh_appearance(self):
         """저장된 값으로 Appearance 컨트롤 표시를 맞춘다."""
         a = widget_config.appearance(self._cfg)
-        base = theme.build(
-            {**a, "background": "", "todo_text_color": ""}, theme.system_dark()
-        )  # 테마 따름일 때 칩에 보일 색
+        look = self._look  # 배경색 / 글자색을 고르지 않았을 때(테마 따름) 칩에 보일 색
         ids = [value for value, _ in THEME_OPTIONS]
         self._theme_group.button(ids.index(a["theme"])).setChecked(True)
         for color, btn in self._swatches:
-            self._paint_swatch(btn, color, TEXT_MAIN if color == a["accent"] else color)
+            ring = look.text_main if color == a["accent"] else color
+            self._paint_swatch(btn, color, ring)
         custom = all(color != a["accent"] for color, _ in ACCENT_SWATCHES)
         if custom:
-            self._paint_swatch(self._custom_accent, a["accent"], TEXT_MAIN)
+            self._paint_swatch(self._custom_accent, a["accent"], look.text_main)
         else:
-            self._paint_swatch(self._custom_accent, "transparent", TEXT_SUB, "+")
-        self._bg_button.set_color(a["background"], base.bg)
-        self._todo_color_button.set_color(a["todo_text_color"], base.text_main)
+            self._paint_swatch(self._custom_accent, "transparent", look.text_sub, "+")
+        self._bg_button.set_color(a["background"], look.bg)
+        self._fade_text_group.button(int(a["fade_text"])).setChecked(True)
+        self._todo_color_button.set_color(a["todo_text_color"], look.text_main)
         self._left_scale_group.button(
             widget_config.LEFT_SCALES.index(a["left_scale"])
         ).setChecked(True)
@@ -795,7 +819,7 @@ class SettingsDialog(QWidget):
     def show_front(self):
         """띄우고(이미 떠 있으면 그대로) 앞으로 올린다."""
         self.showNormal()
-        os_win.set_dark_title_bar(int(self.winId()))
+        os_win.set_dark_title_bar(int(self.winId()), self._look.dark)
         self.raise_()
         self.activateWindow()
 

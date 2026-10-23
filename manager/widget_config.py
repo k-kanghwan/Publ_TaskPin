@@ -33,6 +33,7 @@ DEFAULT_APPEARANCE = {
     "left_scale": 100,  # 좌패널 글자 배율(%)
     "todo_scale": 100,  # 우패널(TODO) 글자 배율(%)
     "todo_text_color": "",  # TODO 글자색
+    "fade_text": False,  # 투명도 슬라이더가 글자까지 투명하게 할지 (False: 배경만)
 }
 _COLOR_RE = re.compile(r"#[0-9a-fA-F]{6}")
 
@@ -105,6 +106,7 @@ def appearance(cfg: dict) -> dict:
         "left_scale": _scale(saved.get("left_scale"), LEFT_SCALES),
         "todo_scale": _scale(saved.get("todo_scale"), TODO_SCALES),
         "todo_text_color": _color(saved.get("todo_text_color"), ""),
+        "fade_text": saved.get("fade_text") is True,
     }
 
 
