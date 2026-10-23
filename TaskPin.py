@@ -25,6 +25,7 @@ VERSION = "0.1.0"
 # fmt: on
 
 import getpass
+import os
 import sys
 from datetime import datetime
 
@@ -37,13 +38,18 @@ from ui.confirm_dialog import ConfirmDialog
 from ui.task_picker import TaskPicker
 from ui.tray_app import TrayApp
 
+# VS Code 디버그 실행(.vscode/launch.json): 위젯 항상 위, 실제 앱과 분리
+# (데이터는 launch.json 이 APPDATA 를 .debug_appdata 로 바꿔 분리한다)
+DEBUG = os.environ.get("TASKPIN_DEBUG") == "1"
+
 
 class TaskPinApp(TrayApp):
-    APP_ID = f"{getpass.getuser()}_TaskPin"  # 단일 인스턴스 ID
+    # 단일 인스턴스 ID - 디버그는 설치본이 실행 중이어도 같이 뜨도록 분리
+    APP_ID = f"{getpass.getuser()}_TaskPin" + ("_debug" if DEBUG else "")
 
     def __init__(self):
         super().__init__()
-        self.tray.setToolTip(f"{APP_NAME} {VERSION}")
+        self.tray.setToolTip(f"{APP_NAME} {VERSION}" + (" (debug)" if DEBUG else ""))
 
         # ==========================
         # Task 시간 (가장 최근 등록 1건)
@@ -57,8 +63,10 @@ class TaskPinApp(TrayApp):
         # ==========================
         # 바탕화면 위젯
         self.widget_cfg = widget_config.load_config()
-        os_win.sync_autostart_command()  # 등록된 명령이 낡았으면 갱신
-        self.widget = ClockWidget(self.widget_cfg)
+        # 등록된 명령이 낡았으면 갱신 (디버그에서는 설치본 exe 등록값을 python 명령으로 덮어쓰지 않도록 건너뜀)
+        if not DEBUG:
+            os_win.sync_autostart_command()
+        self.widget = ClockWidget(self.widget_cfg, force_on_top=DEBUG)
 
         self.widget.task_register_requested.connect(self.open_task_picker)
         self.widget.task_clear_requested.connect(self.clear_task)
@@ -206,7 +214,8 @@ if __name__ == "__main__":
     app.setApplicationName(APP_NAME)
     app.setApplicationVersion(VERSION)
 
-    os_win.create_app_mutex()
+    if not DEBUG:  # 디버그 앱이 설치/제거를 막지 않도록
+        os_win.create_app_mutex()
 
     window = TaskPinApp()
     sys.exit(app.exec())

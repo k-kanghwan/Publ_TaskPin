@@ -182,10 +182,12 @@ class ClockWidget(QWidget):
     visibility_changed = Signal(bool)
     reminder_due = Signal(str, str)  # item id, 본문
 
-    def __init__(self, cfg: dict):
+    def __init__(self, cfg: dict, force_on_top: bool = False):
         super().__init__()
 
         self._cfg = cfg
+        # 디버그 실행: 설정과 관계없이 항상 위 (cfg 는 바꾸지 않으므로 저장되지 않는다)
+        self._force_on_top = force_on_top
         self._locked = bool(cfg.get("locked", False))
         self._drag_offset = None
         self._popups = []
@@ -249,11 +251,12 @@ class ClockWidget(QWidget):
             return value
         return ORIENTATION_VERTICAL
 
+    def _on_top(self) -> bool:
+        return self._force_on_top or bool(self._cfg.get("always_on_top", False))
+
     def _apply_window_flags(self):
         stay_hint = (
-            Qt.WindowStaysOnTopHint
-            if self._cfg.get("always_on_top", False)
-            else Qt.WindowStaysOnBottomHint
+            Qt.WindowStaysOnTopHint if self._on_top() else Qt.WindowStaysOnBottomHint
         )
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.Tool | stay_hint)
 
@@ -262,7 +265,7 @@ class ClockWidget(QWidget):
         if not self.isVisible() or self._front:
             return
         hwnd = int(self.winId())
-        if self._cfg.get("always_on_top", False):
+        if self._on_top():
             os_win.set_z_order(hwnd, os_win.HWND_TOPMOST)
         else:
             os_win.set_z_order(hwnd, os_win.HWND_NOTOPMOST)
@@ -295,7 +298,7 @@ class ClockWidget(QWidget):
         다른 앱(바탕화면 포함)이 활성화되면 _check_front 가 다시 바탕화면 층으로 돌려보낸다."""
         if not self.isVisible():
             return
-        if not self._cfg.get("always_on_top", False):
+        if not self._on_top():
             self._front = True
             self._set_bottom_hint(False)
             # 비활성 앱이라 활성화가 거부돼도 z-order 는 맨 위(최상위 창 아래)로 올라가도록

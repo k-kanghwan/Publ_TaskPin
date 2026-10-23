@@ -1,0 +1,35 @@
+{
+    // F5 디버그 실행
+    //   - TASKPIN_DEBUG=1 : 위젯 항상 위, 설치본과 단일 인스턴스 분리, 자동 실행 레지스트리/mutex 건드리지 않음
+    //   - APPDATA         : 데이터를 .debug_appdata\TaskPin 에 저장 (실제 %APPDATA%\TaskPin 은 그대로)
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Task알림: 디버그 (저장 시 재시작)",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/tools/dev_run.py",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "subProcess": true,
+            "justMyCode": true,
+            "env": {
+                "TASKPIN_DEBUG": "1",
+                "APPDATA": "${workspaceFolder}\\.debug_appdata"
+            }
+        },
+        {
+            "name": "Task알림: 디버그 (1회 실행)",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/TaskPin.py",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "TASKPIN_DEBUG": "1",
+                "APPDATA": "${workspaceFolder}\\.debug_appdata"
+            }
+        }
+    ]
+}
