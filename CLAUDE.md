@@ -28,7 +28,7 @@ iscc installer\TaskPin.iss                   # 설치본 -> dist/TaskPin-<버전
 ## 구조
 
 - `TaskPin.py` — `TaskPinApp(TrayApp)`: 위젯 연결, 1초 tick(현재시간·남은시간·Task 종료 트레이 알림 1회), Task 등록
-- `manager/` — Qt 없는 로직: `task_clock`(15분 단위·남은시간 계산), `task_store`/`todo_store`(SQLite), `todo_tree`(TODO 상위/하위), `db`(연결 1개, `PRAGMA user_version` 마이그레이션), `widget_config`(config.json·단축키 기본값), `snippets`(`:트리거:` 치환), `paths`, `os_win`
+- `manager/` — Qt 없는 로직: `task_clock`(15분 단위·남은시간 계산), `task_store`/`todo_store`(SQLite), `todo_tree`(TODO 상위/하위), `todo_export`(TODO → Markdown 체크리스트), `db`(연결 1개, `PRAGMA user_version` 마이그레이션), `widget_config`(config.json·단축키 기본값), `snippets`(`:트리거:` 치환), `paths`, `os_win`
 - `ui/` — `clock_widget`(좌측 Task 패널 + TODO 배치, "멍청한 뷰"), `task_picker`(등록 팝업), `todo_panel`/`reminder_*`(참고 소스 이식), `settings_dialog`(설정창), `text_input`(이모지 패널 입력 보정·스니펫), `tray_app`, `theme`(런타임 테마: `current()`/`build()`)
 
 ## 참고 소스: `C:\Users\kh.Cha\Documents\MyProject\Priv_WimsClockManager\`
@@ -71,9 +71,10 @@ iscc installer\TaskPin.iss                   # 설치본 -> dist/TaskPin-<버전
 ## 데이터 저장 / 경로
 
 - 사용자 데이터 위치: `%APPDATA%\TaskPin\`
-  - `config.json` — 위젯 설정(위치·크기·투명도·모드 등), 사용자 이름, `shortcuts`(동작별 QKeySequence PortableText), `snippets`(`[[":idea:", "💡"], ...]`), `appearance`(`widget_config.appearance()`가 깨진 값을 기본값으로 채움)
+  - `config.json` — 위젯 설정(위치·크기·투명도·모드 등), 사용자 이름, `shortcuts`(동작별 QKeySequence PortableText), `snippets`(`[[":idea:", "💡"], ...]`), `appearance`(`widget_config.appearance()`가 깨진 값을 기본값으로 채움), `export_dir`(TODO 내보내기 마지막 저장 폴더)
   - `taskpin.db` — SQLite: TODO, 정리된 완료 항목, Task 시간 등록 정보
 - "완료 항목 정리"(`TodoPanel.clear_done`)는 행을 지우지 않고 보관 상태로 바꾼다.
+- "TODO 내보내기"(위젯 우클릭 서브메뉴: 화면 목록 / 보관 항목 전체)는 Markdown 체크리스트(.md, UTF-8)로 저장한다. 하위는 2칸 들여쓰기, 보관 항목은 보관 날짜별 섹션. 텍스트를 그대로 써서 `(@...)` 리마인더 토큰이 Obsidian에서도 읽힌다.
 - 참고 소스처럼 `os.chdir(BASE_DIR)` 후 CWD 기준 `src/*`에 쓰면 안 된다. 자동 실행 시 CWD는 system32이고, 설치 폴더(`%LOCALAPPDATA%\Programs\TaskPin`)는 재설치·제거 때 바뀐다.
 - 번들 리소스(아이콘 등)는 `paths.resource_path()`(`__file__` 기준)로 찾는다. 컴파일 여부는 `"__compiled__" in globals()`, exe 경로는 `sys.argv[0]` 기준. PyInstaller의 `sys._MEIPASS`는 쓰지 않는다.
 
