@@ -18,7 +18,7 @@
 
 참고 소스의 `manager/`·`ui/` 구조를 그대로 따른다.
 
-```
+```bash
 TaskPin.py               # 진입점: APP_NAME="Task알림", VERSION="0.1.0", Nuitka 빌드 옵션 주석, TaskPinApp(TrayApp)
 requirements.txt         # PySide6
 requirements-dev.txt     # pytest, nuitka
@@ -76,7 +76,8 @@ tests/                   # pytest: task_clock / todo_store / task_store
   - 시그널 정리: `clock_in/out_requested`, `refresh_requested`, `login_info_requested`, `open_url_requested`를 뺀다. `quit_requested`, `visibility_changed`, `reminder_due`는 남기고 `task_register_requested`를 새로 둔다.
   - 우클릭 메뉴(`contextMenuEvent`)에 남길 것: 완료 항목 정리, 가로/세로 모드, 위치/크기 잠금, 윈도우 시작 시 실행, 위젯 숨기기, 종료.
   - 좌측 패널 변경
-    - 헤더: `status_dot`과 `status_label`(출근중)을 뺀다. `name_label`만 둔다.
+    - 헤더: `status_label`(출근중)을 뺀다. `name_label`만 둔다.
+    - 헤더: `status_dot`은 업무 시간을 설정한 상태이면 초록dot를 하고 설정하지 않은 상태이면 비어있는 dot으로 설정
     - `server_label` → `현재시간  HH:MM:SS`
     - `remaining_caption`은 항상 "남은시간". 라벨은 고정이므로 시간이 넘어가도 문구는 그대로 두고, 글자색(TEXT_WARN)과 `+`로만 초과를 표시한다.
     - `in_label`/`out_label` → `시작 --:--` / `종료 --:--`
@@ -144,31 +145,37 @@ tests/                   # pytest: task_clock / todo_store / task_store
 - 저장은 config의 `user_name`. 값이 비어 있으면 흐린 색(TEXT_DIM)으로 "이름"을 보여준다.
 - 더블클릭 편집은 이 라벨에만 둔다.
 
-### 6단계. 빌드 (Nuitka)
+### 6단계. 빌드 (Nuitka standalone + Inno Setup 설치본)
+
+배포 방식은 **설치본만** 쓰기로 결정했다(onefile 제외). 이유는 시작 속도, 백신 오탐, 고정된 설치 경로라서 자동 실행이 안정적이라는 점이다.
 
 `TaskPin.py` 맨 위에 빌드 옵션 주석을 둔다.
 
-```
-# nuitka-project-if: os.getenv("TASKPIN_STANDALONE", "no") == "yes":
-#    nuitka-project: --mode=standalone
-# nuitka-project-else:
-#    nuitka-project: --mode=onefile
-#    nuitka-project: --onefile-tempdir-spec={CACHE_DIR}/TaskPin/0.1.0
+```bash
+# nuitka-project: --mode=standalone
+# nuitka-project: --output-dir={MAIN_DIRECTORY}/build
 # nuitka-project: --enable-plugin=pyside6
-# nuitka-project: --windows-console-mode=disabled
+# nuitka-project: --windows-console-mode=disable
 # nuitka-project: --windows-icon-from-ico={MAIN_DIRECTORY}/ico/taskpin.ico
 # nuitka-project: --include-data-files={MAIN_DIRECTORY}/ico/taskpin_icon_A_memo.svg=ico/taskpin_icon_A_memo.svg
 # nuitka-project: --product-name=Task알림
 # nuitka-project: --product-version=0.1.0
+# nuitka-project: --file-description=Task알림
 # nuitka-project: --output-filename=Task알림.exe
+# nuitka-project: --assume-yes-for-downloads
 ```
 
-- 먼저 `TASKPIN_STANDALONE=yes`로 standalone을 빌드해 SVG 트레이 아이콘이 보이는지 확인한다(Qt iconengines/imageformats 플러그인 포함 여부). 아이콘이 안 보이면 `--include-qt-plugins=iconengines`를 추가한다.
-- 그다음 onefile을 빌드한다.
+- `python -m nuitka TaskPin.py` → `build/TaskPin.dist/`. pyside6 플러그인이 iconengines/imageformats(qsvgicon, qsvg)를 자동으로 포함한다.
+- `installer/TaskPin.iss`(UTF-8 BOM)
+  - 사용자 단위로 설치한다(`{localappdata}\Programs\TaskPin`, `PrivilegesRequired=lowest`).
+  - 버전은 exe에서 읽는다(`GetVersionNumbersString`).
+  - `AppMutex=TaskPin`(앱의 `os_win.create_app_mutex()`와 짝)
+  - 제거할 때 `HKCU\...\Run\TaskPin` 값만 지우고, `%APPDATA%\TaskPin`은 남긴다.
+- `iscc installer\TaskPin.iss` → `dist/TaskPin-0.1.0-setup.exe`
 
 ### 7단계. 마무리
 
-- `CLAUDE.md`에 실제 명령을 추가한다: 실행, 전체 테스트, 단일 테스트, standalone/onefile 빌드. "기획 단계" 문구도 고친다.
+- `CLAUDE.md`에 실제 명령을 추가한다: 실행, 전체 테스트, 단일 테스트, standalone 빌드와 설치본 빌드. "기획 단계" 문구도 고친다.
 
 ## 테스트 (pytest, Qt 없이 실행)
 
@@ -196,4 +203,4 @@ tests/                   # pytest: task_clock / todo_store / task_store
    - 정리된 항목이 `taskpin.db`의 `todos`에 `archived_at`과 함께 남아 있는지(sqlite3로 조회)
 4. `%APPDATA%\TaskPin\`에 `config.json`과 `taskpin.db`만 생기고, 저장소나 실행 위치에는 파일이 생기지 않는지 확인
 5. "윈도우 시작 시 실행"을 켠 뒤 `HKCU\...\Run\TaskPin` 값이 올바른지 확인
-6. standalone 빌드로 확인한 뒤 onefile 빌드로 `Task알림.exe`를 실행해 3~5번을 다시 확인한다. 다른 폴더로 옮겨 실행해도 데이터가 그대로인지도 본다.
+6. standalone `Task알림.exe`로 3~5번을 다시 확인한다. 그다음 설치본으로 설치·재설치(실행 중이면 차단)·제거(Run 값 삭제, 데이터 유지)를 확인한다.
