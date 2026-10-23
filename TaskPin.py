@@ -152,7 +152,7 @@ class TaskPinApp(TrayApp):
         self.tick_widget()
 
     def clear_task(self):
-        """위젯의 'Task 해제' 버튼: 확인 후 기록은 남기고 위젯에서 내린다 (종료 알림도 보내지 않음)"""
+        """위젯의 'Task 완료' 버튼: 확인 후 기록은 남기고 위젯에서 내린다 (종료 알림도 보내지 않음)"""
         task = self._shown_task
         if task is None or not self._confirm_clear(task):
             return

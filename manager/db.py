@@ -32,7 +32,7 @@ CREATE TABLE tasks (
 PRAGMA user_version = 1;
 """
 
-# user_version 1 -> 2: "Task 해제" 시각 (기록은 남기고 위젯에서만 내린다)
+# user_version 1 -> 2: "Task 완료" 시각 (기록은 남기고 위젯에서만 내린다)
 _SCHEMA_V2 = """
 ALTER TABLE tasks ADD COLUMN cleared_at TEXT;
 PRAGMA user_version = 2;

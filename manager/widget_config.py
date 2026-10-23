@@ -14,7 +14,7 @@ CONFIG_NAME = "config.json"
 # 위젯 단축키 (위젯 창이 활성일 때만 동작). 값은 QKeySequence PortableText, "" 이면 해제
 DEFAULT_SHORTCUTS = {
     "task_register": "E",  # Task 등록
-    "task_clear": "C",  # Task 해제
+    "task_clear": "C",  # Task 완료
     "todo_focus": "A",  # 할 일 입력칸으로 커서 이동
     "settings": "Ctrl+,",  # 설정 열기
 }

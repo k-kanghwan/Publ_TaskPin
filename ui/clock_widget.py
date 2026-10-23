@@ -483,11 +483,11 @@ class ClockWidget(QWidget):
         self.task_title_label.hide()
         controls.addWidget(self.task_title_label)
 
-        # ---- Task 등록 / 해제 버튼 ----
+        # ---- Task 등록 / 완료 버튼 ----
         buttons = QHBoxLayout()
         buttons.setSpacing(8)
         self.btn_task = QPushButton("Task 등록")
-        self.btn_task_clear = QPushButton("Task 해제")
+        self.btn_task_clear = QPushButton("Task 완료")
         for btn in (self.btn_task, self.btn_task_clear):
             btn.setCursor(Qt.PointingHandCursor)
             buttons.addWidget(btn)

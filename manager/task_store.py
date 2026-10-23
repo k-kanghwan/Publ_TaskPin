@@ -1,7 +1,7 @@
 """Task 등록 기록 (SQLite tasks 테이블)
 
 등록할 때마다 새 행을 추가해 기록을 남기고, 위젯에는 가장 최근 행 하나만 표시한다.
-"Task 해제"는 행을 지우지 않고 cleared_at 을 기록한다. 가장 최근 행이 해제됐으면 표시할 Task 가 없다.
+"Task 완료"는 행을 지우지 않고 cleared_at 을 기록한다. 가장 최근 행이 해제됐으면 표시할 Task 가 없다.
 """
 
 import sqlite3
@@ -42,7 +42,7 @@ def register(title: str, start_at: datetime, end_at: datetime):
 
 
 def clear(task_id: int) -> bool:
-    """ "Task 해제": 해제 시각을 기록한다. 성공 여부를 반환한다."""
+    """ "Task 완료": 해제 시각을 기록한다. 성공 여부를 반환한다."""
     c = db.conn()
     try:
         with c:
