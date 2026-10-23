@@ -8,7 +8,6 @@ import sqlite3
 
 from manager import paths
 
-
 DB_NAME = "taskpin.db"
 
 # user_version 0 -> 1

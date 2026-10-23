@@ -10,7 +10,6 @@ from datetime import datetime
 
 from manager import db
 
-
 DATETIME_FMT = "%Y-%m-%d %H:%M"
 
 
@@ -43,7 +42,7 @@ def register(title: str, start_at: datetime, end_at: datetime):
 
 
 def clear(task_id: int) -> bool:
-    """"Task 해제": 해제 시각을 기록한다. 성공 여부를 반환한다."""
+    """ "Task 해제": 해제 시각을 기록한다. 성공 여부를 반환한다."""
     c = db.conn()
     try:
         with c:
@@ -60,10 +59,14 @@ def clear(task_id: int) -> bool:
 def latest():
     """가장 최근에 등록한 Task. 없거나, 해제됐거나, 읽지 못하면 None"""
     try:
-        row = db.conn().execute(
-            "SELECT id, title, start_at, end_at, cleared_at FROM tasks"
-            " ORDER BY id DESC LIMIT 1"
-        ).fetchone()
+        row = (
+            db.conn()
+            .execute(
+                "SELECT id, title, start_at, end_at, cleared_at FROM tasks"
+                " ORDER BY id DESC LIMIT 1"
+            )
+            .fetchone()
+        )
     except sqlite3.Error as e:
         print(f"Task 불러오기 실패: {e}")
         return None

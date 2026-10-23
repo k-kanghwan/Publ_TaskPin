@@ -7,16 +7,17 @@ TodoPanel 은 메모리 목록을 통째로 save_todos() 에 넘긴다. 저장�
 맞추고, "완료 항목 정리"로 보관한(archived_at) 행은 건드리지 않는다.
 """
 
-import re
-import uuid
 import html
+import re
 import sqlite3
+import uuid
 from datetime import datetime
 
 from manager import db
 
-
-DEFAULT_REMIND_TIME = "09:00"  # 날짜만 입력했을 때의 알림 시각 (obsidian-reminder 기본값)
+DEFAULT_REMIND_TIME = (
+    "09:00"  # 날짜만 입력했을 때의 알림 시각 (obsidian-reminder 기본값)
+)
 DATETIME_FMT = "%Y-%m-%d %H:%M"
 
 REMINDER_RE = re.compile(r"\(@(\d{4}-\d{2}-\d{2})(?:\s+(\d{1,2}:\d{2}))?\)")
@@ -30,10 +31,14 @@ _COLUMNS = ("id", "text", "done", "created", "snooze_until", "fired")
 def load_todos() -> list:
     """보관하지 않은 TODO 목록을 순서대로 읽어온다. 읽지 못하면 빈 목록을 반환한다."""
     try:
-        rows = db.conn().execute(
-            f"SELECT {', '.join(_COLUMNS)} FROM todos"
-            " WHERE archived_at IS NULL ORDER BY position"
-        ).fetchall()
+        rows = (
+            db.conn()
+            .execute(
+                f"SELECT {', '.join(_COLUMNS)} FROM todos"
+                " WHERE archived_at IS NULL ORDER BY position"
+            )
+            .fetchall()
+        )
     except sqlite3.Error as e:
         print(f"TODO 불러오기 실패: {e}")
         return []
@@ -46,9 +51,10 @@ def save_todos(items: list) -> None:
     try:
         with c:
             keep = {item["id"] for item in items}
-            active = [row[0] for row in c.execute(
-                "SELECT id FROM todos WHERE archived_at IS NULL"
-            )]
+            active = [
+                row[0]
+                for row in c.execute("SELECT id FROM todos WHERE archived_at IS NULL")
+            ]
             c.executemany(
                 "DELETE FROM todos WHERE id = ?",
                 [(item_id,) for item_id in active if item_id not in keep],
@@ -61,8 +67,15 @@ def save_todos(items: list) -> None:
                 " snooze_until = excluded.snooze_until, fired = excluded.fired,"
                 " position = excluded.position",
                 [
-                    (item["id"], item["text"], int(bool(item["done"])), item.get("created"),
-                     item.get("snooze_until"), item.get("fired"), pos)
+                    (
+                        item["id"],
+                        item["text"],
+                        int(bool(item["done"])),
+                        item.get("created"),
+                        item.get("snooze_until"),
+                        item.get("fired"),
+                        pos,
+                    )
                     for pos, item in enumerate(items)
                 ],
             )
@@ -71,7 +84,7 @@ def save_todos(items: list) -> None:
 
 
 def archive_items(ids: list) -> None:
-    """"완료 항목 정리": 행을 지우지 않고 보관 시각을 기록한다."""
+    """ "완료 항목 정리": 행을 지우지 않고 보관 시각을 기록한다."""
     stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     c = db.conn()
     try:

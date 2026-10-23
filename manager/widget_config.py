@@ -8,7 +8,6 @@ import json
 
 from manager import paths
 
-
 CONFIG_NAME = "config.json"
 
 DEFAULT_CONFIG = {

@@ -7,7 +7,14 @@ from datetime import datetime, timedelta
 
 from PySide6.QtCore import QRectF, Qt, Signal
 from PySide6.QtGui import QPainter, QPainterPath
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QMenu, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QHBoxLayout,
+    QLabel,
+    QMenu,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
 
 from ui.theme import (
     BUTTON_STYLE,
@@ -25,7 +32,7 @@ POPUP_WIDTH = 260
 
 
 def snooze_targets(now: datetime) -> list:
-    """"나중에 알림" 선택지 [(표시, 시각)]"""
+    """ "나중에 알림" 선택지 [(표시, 시각)]"""
     tomorrow_9 = (now + timedelta(days=1)).replace(
         hour=9, minute=0, second=0, microsecond=0
     )
@@ -45,9 +52,7 @@ class ReminderPopup(QWidget):
         super().__init__()
         self.item_id = item_id
 
-        self.setWindowFlags(
-            Qt.FramelessWindowHint | Qt.Tool | Qt.WindowStaysOnTopHint
-        )
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Tool | Qt.WindowStaysOnTopHint)
         self.setAttribute(Qt.WA_TranslucentBackground, True)
         self.setAttribute(Qt.WA_ShowWithoutActivating, True)
         self.setAttribute(Qt.WA_DeleteOnClose, True)

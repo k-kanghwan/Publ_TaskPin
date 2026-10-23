@@ -191,7 +191,9 @@ class ClockWidget(QWidget):
         self._popups = []
         # 트레이 클릭으로 다른 앱보다 위에 꺼내 둔 상태
         self._front = False
-        self._front_baseline = None  # 꺼낼 때의 전경 창 (트레이 클릭 직후라 보통 작업표시줄)
+        self._front_baseline = (
+            None  # 꺼낼 때의 전경 창 (트레이 클릭 직후라 보통 작업표시줄)
+        )
         self._front_timer = QTimer(self)
         self._front_timer.setInterval(FRONT_CHECK_MS)
         self._front_timer.timeout.connect(self._check_front)
@@ -276,7 +278,11 @@ class ClockWidget(QWidget):
     def changeEvent(self, event):
         super().changeEvent(event)
         # 위젯을 클릭해 활성화되면 트레이 클릭과 같이 앞으로 (클릭 처리가 끝난 뒤에 플래그를 바꾼다)
-        if event.type() == QEvent.ActivationChange and self.isActiveWindow() and not self._front:
+        if (
+            event.type() == QEvent.ActivationChange
+            and self.isActiveWindow()
+            and not self._front
+        ):
             QTimer.singleShot(0, self._on_activated)
 
     def _on_activated(self):
@@ -432,7 +438,9 @@ class ClockWidget(QWidget):
         self._set_remaining_style(warn=False)
         info.addWidget(self.remaining_label)
 
-        self.remaining_caption = QLabel("남은시간")  # 고정 라벨 - 초과는 색과 + 로만 표시
+        self.remaining_caption = QLabel(
+            "남은시간"
+        )  # 고정 라벨 - 초과는 색과 + 로만 표시
         self.remaining_caption.setAlignment(Qt.AlignCenter)
         self.remaining_caption.setStyleSheet(f"font-size: 11px; color: {TEXT_SUB};")
         info.addWidget(self.remaining_caption)
@@ -599,13 +607,17 @@ class ClockWidget(QWidget):
     def _place_grip(self):
         if self._orientation == ORIENTATION_HORIZONTAL:
             self._grip.setGeometry(
-                self.width() - RESIZE_MARGIN, CORNER_RADIUS,
-                RESIZE_MARGIN, self.height() - CORNER_RADIUS * 2,
+                self.width() - RESIZE_MARGIN,
+                CORNER_RADIUS,
+                RESIZE_MARGIN,
+                self.height() - CORNER_RADIUS * 2,
             )
         else:
             self._grip.setGeometry(
-                CORNER_RADIUS, self.height() - RESIZE_MARGIN,
-                self.width() - CORNER_RADIUS * 2, RESIZE_MARGIN,
+                CORNER_RADIUS,
+                self.height() - RESIZE_MARGIN,
+                self.width() - CORNER_RADIUS * 2,
+                RESIZE_MARGIN,
             )
         self._grip.raise_()
 
@@ -769,9 +781,13 @@ class ClockWidget(QWidget):
         menu.addSeparator()
 
         if self._orientation == ORIENTATION_HORIZONTAL:
-            menu.addAction("세로 모드", lambda: self.set_orientation(ORIENTATION_VERTICAL))
+            menu.addAction(
+                "세로 모드", lambda: self.set_orientation(ORIENTATION_VERTICAL)
+            )
         else:
-            menu.addAction("가로 모드", lambda: self.set_orientation(ORIENTATION_HORIZONTAL))
+            menu.addAction(
+                "가로 모드", lambda: self.set_orientation(ORIENTATION_HORIZONTAL)
+            )
 
         act_lock = menu.addAction("위치/크기 잠금")
         act_lock.setCheckable(True)

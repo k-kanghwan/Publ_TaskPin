@@ -31,7 +31,9 @@ from ui.theme import (
 
 
 DIALOG_WIDTH = 260
-DIALOG_BG_COLOR = QColor(36, 36, 38)  # 위젯 배경(20)보다 살짝 밝게 - 위젯 위에 떠 보이도록
+DIALOG_BG_COLOR = QColor(
+    36, 36, 38
+)  # 위젯 배경(20)보다 살짝 밝게 - 위젯 위에 떠 보이도록
 DIALOG_BORDER_COLOR = QColor(74, 123, 208, 210)  # ACCENT
 
 
@@ -132,8 +134,11 @@ class ConfirmDialog(QDialog):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         path = QPainterPath()
-        path.addRoundedRect(QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5),
-                            CORNER_RADIUS, CORNER_RADIUS)
+        path.addRoundedRect(
+            QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5),
+            CORNER_RADIUS,
+            CORNER_RADIUS,
+        )
         painter.fillPath(path, DIALOG_BG_COLOR)
         painter.setPen(DIALOG_BORDER_COLOR)
         painter.drawPath(path)

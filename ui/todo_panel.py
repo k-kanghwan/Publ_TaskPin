@@ -1,10 +1,10 @@
 """위젯 안의 TODO 리스트
 
-  - 목록 아래 입력창에서 Enter 로 바로 추가 (별도 창 없음)
-  - 입력 중 `(@` 를 치면 리마인더 피커가 떠서 `(@YYYY-MM-DD HH:mm)` 토큰을 넣는다
-  - 체크하면 취소선 + 목록 아래로, 우클릭 메뉴 "완료 항목 정리" 로 일괄 보관(DB 에는 남음)
-  - 더블클릭으로 그 자리에서 수정 (Enter/포커스 이동: 저장, Esc: 취소)
-  - 리마인더 항목은 항상 위에 시각순 고정, 나머지는 드래그 앤 드롭으로 순서 변경
+- 목록 아래 입력창에서 Enter 로 바로 추가 (별도 창 없음)
+- 입력 중 `(@` 를 치면 리마인더 피커가 떠서 `(@YYYY-MM-DD HH:mm)` 토큰을 넣는다
+- 체크하면 취소선 + 목록 아래로, 우클릭 메뉴 "완료 항목 정리" 로 일괄 보관(DB 에는 남음)
+- 더블클릭으로 그 자리에서 수정 (Enter/포커스 이동: 저장, Esc: 취소)
+- 리마인더 항목은 항상 위에 시각순 고정, 나머지는 드래그 앤 드롭으로 순서 변경
 """
 
 from datetime import datetime
@@ -181,7 +181,9 @@ class TodoRow(QWidget):
         self.label.setWordWrap(True)
         self.label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.label.setToolTip(
-            "더블클릭하여 수정 · 드래그하여 순서 변경" if draggable else "더블클릭하여 수정"
+            "더블클릭하여 수정 · 드래그하여 순서 변경"
+            if draggable
+            else "더블클릭하여 수정"
         )
         self.label.installEventFilter(self)
 
@@ -313,7 +315,9 @@ class TodoPanel(QWidget):
         super().__init__(parent)
         self._items = todo_store.load_todos()
         self._rows = []
-        self._pending_move = None  # 드롭된 (옮길 id, 이 id 앞으로 / None 이면 그룹 맨 뒤로)
+        self._pending_move = (
+            None  # 드롭된 (옮길 id, 이 id 앞으로 / None 이면 그룹 맨 뒤로)
+        )
         self.setStyleSheet(PANEL_STYLE)
 
         root = QVBoxLayout(self)
@@ -499,7 +503,8 @@ class TodoPanel(QWidget):
         (이 행 앞에 놓음 / None 이면 그룹 맨 뒤, 표시선 y)
         """
         group = [
-            row for row in self._rows
+            row
+            for row in self._rows
             if self._is_draggable(row.item) and row.item["done"] == item["done"]
         ]
         for row in group:
@@ -516,7 +521,9 @@ class TodoPanel(QWidget):
 
     def eventFilter(self, obj, event):
         if obj is self.container and event.type() in (
-            QEvent.DragEnter, QEvent.DragMove, QEvent.Drop,
+            QEvent.DragEnter,
+            QEvent.DragMove,
+            QEvent.Drop,
         ):
             item = self._dragged_item(event)
             if item is None:
@@ -543,7 +550,10 @@ class TodoPanel(QWidget):
     def _auto_scroll(self, container_y: int):
         """목록 위/아래 끝으로 끌고 가면 스크롤"""
         viewport = self.scroll.viewport()
-        y = self.container.mapTo(viewport, self.container.rect().topLeft()).y() + container_y
+        y = (
+            self.container.mapTo(viewport, self.container.rect().topLeft()).y()
+            + container_y
+        )
         bar = self.scroll.verticalScrollBar()
         if y < AUTO_SCROLL_MARGIN:
             bar.setValue(bar.value() - AUTO_SCROLL_STEP)
@@ -556,7 +566,8 @@ class TodoPanel(QWidget):
         if item is None or item_id == before_id:
             return
         others = [
-            other for other in self._items
+            other
+            for other in self._items
             if other is not item
             and self._is_draggable(other)
             and other["done"] == item["done"]

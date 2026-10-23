@@ -34,17 +34,25 @@ def test_end_from_crosses_midnight():
 
 
 def test_minutes_between():
-    assert task_clock.minutes_between(dt("2026-10-23 09:30:00"), dt("2026-10-23 11:00:00")) == 90
+    assert (
+        task_clock.minutes_between(dt("2026-10-23 09:30:00"), dt("2026-10-23 11:00:00"))
+        == 90
+    )
 
 
 def test_minutes_between_end_before_start_is_next_day():
     # 같은 날짜로 만든 23:30 -> 00:30 은 다음 날 00:30 으로 본다
-    assert task_clock.minutes_between(dt("2026-10-23 23:30:00"), dt("2026-10-23 00:30:00")) == 60
+    assert (
+        task_clock.minutes_between(dt("2026-10-23 23:30:00"), dt("2026-10-23 00:30:00"))
+        == 60
+    )
 
 
 def test_duration_and_end_round_trip():
     start = dt("2026-10-23 22:15:00")
-    for minutes in range(task_clock.STEP_MIN, task_clock.MAX_DURATION_MIN + 1, task_clock.STEP_MIN):
+    for minutes in range(
+        task_clock.STEP_MIN, task_clock.MAX_DURATION_MIN + 1, task_clock.STEP_MIN
+    ):
         end = task_clock.end_from(start, minutes)
         assert task_clock.minutes_between(start, end) == minutes
 

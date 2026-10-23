@@ -10,7 +10,6 @@ import os
 
 from manager import os_win
 
-
 # manager/ 의 상위 = 저장소 루트 (Nuitka standalone 에서는 TaskPin.dist 폴더)
 _BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 

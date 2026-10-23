@@ -98,7 +98,9 @@ class TaskPicker(QFrame):
         self.start_combo.setCurrentIndex(
             (start.hour * 60 + start.minute) // task_clock.STEP_MIN
         )
-        duration_idx = min(max(minutes // task_clock.STEP_MIN - 1, 0), len(DURATIONS) - 1)
+        duration_idx = min(
+            max(minutes // task_clock.STEP_MIN - 1, 0), len(DURATIONS) - 1
+        )
         self.duration_combo.setCurrentIndex(duration_idx)
         self._rebuild_end_items()
 

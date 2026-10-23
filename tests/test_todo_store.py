@@ -64,5 +64,10 @@ def test_archived_items_leave_list_but_stay_in_db(temp_db):
 
 
 def test_reminder_token_helpers_unchanged():
-    assert todo_store.strip_reminder("회의자료 (@2026-10-21 09:00) 준비") == "회의자료 준비"
-    assert todo_store.parse_reminder("날짜만 (@2026-10-21)").strftime("%H:%M") == "09:00"
+    assert (
+        todo_store.strip_reminder("회의자료 (@2026-10-21 09:00) 준비")
+        == "회의자료 준비"
+    )
+    assert (
+        todo_store.parse_reminder("날짜만 (@2026-10-21)").strftime("%H:%M") == "09:00"
+    )

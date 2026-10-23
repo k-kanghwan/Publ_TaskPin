@@ -46,7 +46,9 @@ def test_clear_hides_task_but_keeps_record(temp_db):
     assert task_store.latest() is None
     assert task_store.current_task(dt("2026-10-23 09:30")) is None
     with sqlite3.connect(temp_db) as c:
-        row = c.execute("SELECT title, cleared_at FROM tasks WHERE id = ?", (task.id,)).fetchone()
+        row = c.execute(
+            "SELECT title, cleared_at FROM tasks WHERE id = ?", (task.id,)
+        ).fetchone()
     assert row[0] == "t" and row[1]
 
 

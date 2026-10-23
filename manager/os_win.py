@@ -10,7 +10,6 @@ import sys
 import winreg
 from ctypes import wintypes
 
-
 APP_ID = "TaskPin"  # 폴더명 / 레지스트리 값 이름 / mutex 이름 (ASCII 내부 식별자)
 
 
@@ -43,7 +42,10 @@ _user32.SetWindowPos.argtypes = [
 ]
 _user32.SetWindowPos.restype = wintypes.BOOL
 _user32.GetForegroundWindow.restype = wintypes.HWND
-_user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+_user32.GetWindowThreadProcessId.argtypes = [
+    wintypes.HWND,
+    ctypes.POINTER(wintypes.DWORD),
+]
 _user32.GetWindowThreadProcessId.restype = wintypes.DWORD
 
 HWND_TOPMOST = -1

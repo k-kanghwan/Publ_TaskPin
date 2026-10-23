@@ -243,7 +243,9 @@ class ReminderPicker(QFrame):
                 f" QPushButton:hover {{ background: {hover}; }}"
             )
 
-        listed = [(dt, text) for dt, text in self._reminders if dt.date() == self._selected]
+        listed = [
+            (dt, text) for dt, text in self._reminders if dt.date() == self._selected
+        ]
         if listed:
             lines = [f"{dt:%H:%M}  {text}" for dt, text in listed[:MAX_LISTED]]
             if len(listed) > MAX_LISTED:
