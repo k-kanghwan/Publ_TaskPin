@@ -6,7 +6,7 @@ from manager import task_clock
 
 
 def dt(text: str) -> datetime:
-    return datetime.strptime(text, "%Y-%m-%d %H:%M:%S")
+    return datetime.strptime(text, "%Y-%m-%d %H:%M:%S").astimezone()
 
 
 @pytest.mark.parametrize(

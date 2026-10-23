@@ -5,7 +5,7 @@ from manager import db, task_store
 
 
 def dt(text: str) -> datetime:
-    return datetime.strptime(text, "%Y-%m-%d %H:%M")
+    return datetime.strptime(text, "%Y-%m-%d %H:%M").astimezone()
 
 
 def test_no_task(temp_db):

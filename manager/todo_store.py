@@ -85,7 +85,7 @@ def save_todos(items: list) -> None:
 
 def archive_items(ids: list) -> None:
     """ "완료 항목 정리": 행을 지우지 않고 보관 시각을 기록한다."""
-    stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    stamp = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S")
     c = db.conn()
     try:
         with c:
@@ -102,7 +102,7 @@ def new_item(text: str) -> dict:
         "id": uuid.uuid4().hex,
         "text": text,
         "done": False,
-        "created": datetime.now().strftime(DATETIME_FMT),
+        "created": datetime.now().astimezone().strftime(DATETIME_FMT),
         "snooze_until": None,  # "나중에 알림" 으로 미룬 시각
         "fired": None,  # 마지막으로 알림을 보낸 due 문자열
     }
@@ -128,7 +128,7 @@ def parse_reminder(text: str):
     try:
         return datetime.strptime(
             f"{date_str} {time_str or DEFAULT_REMIND_TIME}", DATETIME_FMT
-        )
+        ).astimezone()
     except ValueError:
         return None
 
@@ -147,7 +147,7 @@ def due_at(item: dict):
     snooze = item.get("snooze_until")
     if snooze:
         try:
-            return datetime.strptime(snooze, DATETIME_FMT)
+            return datetime.strptime(snooze, DATETIME_FMT).astimezone()
         except ValueError:
             pass
     return parse_reminder(item.get("text", ""))

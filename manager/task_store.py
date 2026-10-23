@@ -32,7 +32,7 @@ def register(title: str, start_at: datetime, end_at: datetime):
                     title,
                     start_at.strftime(DATETIME_FMT),
                     end_at.strftime(DATETIME_FMT),
-                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S"),
                 ),
             )
     except sqlite3.Error as e:
@@ -48,7 +48,7 @@ def clear(task_id: int) -> bool:
         with c:
             c.execute(
                 "UPDATE tasks SET cleared_at = ? WHERE id = ?",
-                (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), task_id),
+                (datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S"), task_id),
             )
     except sqlite3.Error as e:
         print(f"Task 해제 실패: {e}")
@@ -76,8 +76,8 @@ def latest():
         return Task(
             row["id"],
             row["title"],
-            datetime.strptime(row["start_at"], DATETIME_FMT),
-            datetime.strptime(row["end_at"], DATETIME_FMT),
+            datetime.strptime(row["start_at"], DATETIME_FMT).astimezone(),
+            datetime.strptime(row["end_at"], DATETIME_FMT).astimezone(),
         )
     except ValueError:
         return None

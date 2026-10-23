@@ -51,7 +51,7 @@ class TaskPinApp(TrayApp):
         self._shown_task = None  # 위젯에 마지막으로 반영한 Task
         # 종료 알림을 보낸 Task id - 켤 때 이미 끝난 Task 는 알린 것으로 친다
         self._notified_task_ids = set()
-        if self._task is not None and self._task.end_at <= datetime.now():
+        if self._task is not None and self._task.end_at <= datetime.now().astimezone():
             self._notified_task_ids.add(self._task.id)
 
         # ==========================
@@ -90,7 +90,7 @@ class TaskPinApp(TrayApp):
     # ==========================
     def tick_widget(self):
         """1초마다 Task 종료 알림 확인 + 위젯의 현재시간과 남은시간을 갱신"""
-        now = datetime.now()
+        now = datetime.now().astimezone()
         task = self._task if task_store.is_current(self._task, now) else None
 
         # 종료 알림은 위젯이 숨겨져 있어도 보낸다
@@ -128,7 +128,7 @@ class TaskPinApp(TrayApp):
                 "Task 등록", "저장하지 못했습니다.", QSystemTrayIcon.Warning
             )
             return
-        if task.end_at <= datetime.now():
+        if task.end_at <= datetime.now().astimezone():
             self._notified_task_ids.add(
                 task.id
             )  # 이미 끝난 시간으로 등록하면 알리지 않는다
@@ -150,7 +150,7 @@ class TaskPinApp(TrayApp):
 
     def _confirm_clear(self, task) -> bool:
         """종료까지 시간이 남았으면 남은시간을 보여주고, 아니면 해제 여부만 묻는다."""
-        now = datetime.now()
+        now = datetime.now().astimezone()
         if task_clock.remaining_seconds(task.end_at, now) > 0:
             remaining = task_clock.remaining_display(task.end_at, now)
             dialog = ConfirmDialog(

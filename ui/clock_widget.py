@@ -855,7 +855,7 @@ class ClockWidget(QWidget):
     # ==================================================
     def check_reminders(self):
         """시각이 된 리마인더를 팝업 + reminder_due 시그널로 알린다."""
-        now = datetime.now()
+        now = datetime.now().astimezone()
         for item in self.todo_panel.pop_due(now):
             text = todo_store.strip_reminder(item["text"])
             self._show_reminder_popup(item["id"], text, todo_store.due_at(item))

@@ -43,7 +43,7 @@ _MIGRATIONS = ((1, _SCHEMA_V1), (2, _SCHEMA_V2))
 _conn = None
 
 
-def connect(path: str = None) -> sqlite3.Connection:
+def connect(path: str | None) -> sqlite3.Connection:
     """DB 를 열고(없으면 스키마 생성) 전역 연결로 둔다. path 는 테스트용"""
     global _conn
     close()

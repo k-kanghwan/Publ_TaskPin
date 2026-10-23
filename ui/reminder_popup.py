@@ -112,7 +112,7 @@ class ReminderPopup(QWidget):
     def _show_snooze_menu(self, anchor: QPushButton):
         menu = QMenu(self)
         menu.setStyleSheet(MENU_STYLE)
-        for label, until in snooze_targets(datetime.now()):
+        for label, until in snooze_targets(datetime.now().astimezone()):
             menu.addAction(label, lambda u=until: self._on_snooze(u))
         menu.exec(anchor.mapToGlobal(anchor.rect().bottomLeft()))
 

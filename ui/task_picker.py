@@ -84,7 +84,7 @@ class TaskPicker(QFrame):
         self.setFixedWidth(PICKER_WIDTH)
         self._accepted = False
 
-        now = datetime.now()
+        now = datetime.now().astimezone()
         self._day = now.date()
         if task is not None and task.start_at.date() == self._day:
             title, start = task.title, task.start_at
@@ -213,7 +213,9 @@ class TaskPicker(QFrame):
     # ==================================================
     def selected_start(self) -> datetime:
         minutes = self.start_combo.currentIndex() * task_clock.STEP_MIN
-        return datetime.combine(self._day, time(minutes // 60, minutes % 60))
+        return datetime.combine(
+            self._day, time(minutes // 60, minutes % 60)
+        ).astimezone()
 
     def selected_minutes(self) -> int:
         return DURATIONS[self.duration_combo.currentIndex()]

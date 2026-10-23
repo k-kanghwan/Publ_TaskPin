@@ -7,7 +7,7 @@
 - 리마인더 항목은 항상 위에 시각순 고정, 나머지는 드래그 앤 드롭으로 순서 변경
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 from PySide6.QtCore import QEvent, QMimeData, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QCursor, QDrag, QPainter, QPainterPath
@@ -213,7 +213,7 @@ class TodoRow(QWidget):
         self.render()
 
     def render(self, now: datetime = None):
-        now = now or datetime.now()
+        now = now or datetime.now().astimezone()
         done = self.item["done"]
         body = todo_store.to_html(self.item["text"]) or "&nbsp;"
         color = TEXT_SUB if done else TEXT_MAIN
@@ -437,7 +437,7 @@ class TodoPanel(QWidget):
     # ==================================================
     def refresh_rows(self):
         """지난 리마인더 색 등 시간에 따라 바뀌는 표시만 갱신"""
-        now = datetime.now()
+        now = datetime.now().astimezone()
         for row in self._rows:
             row.render(now)
 
@@ -448,7 +448,7 @@ class TodoPanel(QWidget):
     @staticmethod
     def _sort_key(item: dict):
         due = todo_store.due_at(item)  # 행에 표시되는 시각(미룬 시각 우선)과 같은 기준
-        return (item["done"], due is None, due or datetime.min)
+        return (item["done"], due is None, due or datetime.min.replace(tzinfo=UTC))
 
     @staticmethod
     def _is_draggable(item: dict) -> bool:

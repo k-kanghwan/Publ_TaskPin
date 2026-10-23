@@ -10,7 +10,7 @@ obsidian-reminder 의 피커 레이아웃(달력 + 선택일 리마인더 목록
 """
 
 import calendar
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 
 from PySide6.QtCore import QPoint, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPainterPath
@@ -73,7 +73,7 @@ class ReminderPicker(QFrame):
         self._time_touched = initial is not None
 
         if initial is None:
-            initial = next_slot(datetime.now())
+            initial = next_slot(datetime.now().astimezone())
         self._selected = initial.date()
         self._month = self._selected.replace(day=1)
 
@@ -219,7 +219,7 @@ class ReminderPicker(QFrame):
     def _refresh(self):
         self.month_label.setText(f"{self._month.year}년 {self._month.month}월")
 
-        today = date.today()
+        today = datetime.now().astimezone().date()
         reminder_days = {dt.date() for dt, _ in self._reminders}
         start = self._grid_start()
         for i, btn in enumerate(self._day_buttons):
@@ -261,8 +261,8 @@ class ReminderPicker(QFrame):
         self._month = day.replace(day=1)
         if not self._time_touched:
             # 시간을 직접 고르지 않았다면 오늘은 다음 슬롯, 다른 날은 기본 시각
-            if day == date.today():
-                self._set_time(next_slot(datetime.now()).strftime("%H:%M"))
+            if day == datetime.now().astimezone().date():
+                self._set_time(next_slot(datetime.now().astimezone()).strftime("%H:%M"))
             else:
                 self._set_time(DEFAULT_TIME)
         self._refresh()
@@ -291,9 +291,7 @@ class ReminderPicker(QFrame):
     # ==================================================
     def selected_datetime(self) -> datetime:
         hh, mm = map(int, self.time_combo.currentText().split(":"))
-        return datetime.combine(self._selected, datetime.min.time()).replace(
-            hour=hh, minute=mm
-        )
+        return datetime.combine(self._selected, time(hh, mm)).astimezone()
 
     def _accept(self):
         self.picked.emit(self.selected_datetime())
