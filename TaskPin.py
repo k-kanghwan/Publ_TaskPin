@@ -193,6 +193,12 @@ class TaskPinApp(TrayApp):
         if reason == QSystemTrayIcon.Trigger:
             self.widget.bring_to_front()
 
+    def on_second_instance(self):
+        """이미 실행 중일 때 다시 실행하면(바로가기 등) 위젯을 띄워 다른 앱보다 위로 꺼낸다."""
+        if not self.widget.isVisible():
+            self.widget.show_widget()  # visibility_changed 로 트레이 체크도 맞춰진다
+        self.widget.bring_to_front()
+
     def sync_widget_toggle_action(self, visible: bool):
         """위젯 쪽에서 숨김/표시가 일어났을 때 트레이 체크박스를 맞춤"""
         self.action_toggle_widget.blockSignals(True)

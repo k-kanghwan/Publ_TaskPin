@@ -47,6 +47,8 @@ _user32.GetWindowThreadProcessId.argtypes = [
     ctypes.POINTER(wintypes.DWORD),
 ]
 _user32.GetWindowThreadProcessId.restype = wintypes.DWORD
+_user32.AllowSetForegroundWindow.argtypes = [wintypes.DWORD]
+_user32.AllowSetForegroundWindow.restype = wintypes.BOOL
 
 HWND_TOPMOST = -1
 HWND_NOTOPMOST = -2
@@ -69,6 +71,16 @@ def is_own_window(hwnd) -> bool:
     pid = wintypes.DWORD(0)
     _user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
     return pid.value == os.getpid()
+
+
+ASFW_ANY = 0xFFFFFFFF
+
+
+def allow_set_foreground():
+    """이 프로세스가 가진 전경 창 권한을 다른 프로세스에 넘긴다.
+    백그라운드에서 돌던 기존 앱은 Windows 전경 잠금 때문에 스스로 창을 활성화하지 못하므로,
+    사용자가 방금 실행한(전경 권한이 있는) 두 번째 실행이 대신 허락해 준다."""
+    _user32.AllowSetForegroundWindow(ASFW_ANY)
 
 
 # ==================================================
