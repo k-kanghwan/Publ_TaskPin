@@ -29,7 +29,7 @@ iscc installer\TaskPin.iss                   # 설치본 -> dist/TaskPin-<버전
 
 - `TaskPin.py` — `TaskPinApp(TrayApp)`: 위젯 연결, 1초 tick(현재시간·남은시간·Task 종료 트레이 알림 1회), Task 등록
 - `manager/` — Qt 없는 로직: `task_clock`(15분 단위·남은시간 계산), `task_store`/`todo_store`(SQLite), `todo_tree`(TODO 상위/하위), `db`(연결 1개, `PRAGMA user_version` 마이그레이션), `widget_config`(config.json·단축키 기본값), `snippets`(`:트리거:` 치환), `paths`, `os_win`
-- `ui/` — `clock_widget`(좌측 Task 패널 + TODO 배치, "멍청한 뷰"), `task_picker`(등록 팝업), `todo_panel`/`reminder_*`(참고 소스 이식), `settings_dialog`(설정창), `text_input`(이모지 패널 입력 보정·스니펫), `tray_app`, `theme`
+- `ui/` — `clock_widget`(좌측 Task 패널 + TODO 배치, "멍청한 뷰"), `task_picker`(등록 팝업), `todo_panel`/`reminder_*`(참고 소스 이식), `settings_dialog`(설정창), `text_input`(이모지 패널 입력 보정·스니펫), `tray_app`, `theme`(런타임 테마: `current()`/`build()`)
 
 ## 참고 소스: `C:\Users\kh.Cha\Documents\MyProject\Priv_WimsClockManager\`
 
@@ -56,8 +56,10 @@ iscc installer\TaskPin.iss                   # 설치본 -> dist/TaskPin-<버전
   - 등록 창(`TaskPicker`)은 `Qt.Popup`이 아니라 활성화되는 Tool 창이다. Windows에서 Popup은 전경 창이 되지 않아 IME가 붙지 않는다(한글 입력 불가).
   - 등록 전에는 시작이 `--:--`. 종료 = 시작 + 소요 시간. 남은시간이 0을 지나면 초과 시간을 `+`로 표시한다.
 - 더블클릭으로 편집할 수 있는 곳은 사용자 이름 하나뿐이다.
-- 설정창(`ui/settings_dialog.py`)은 위젯 우클릭 "설정"과 Ctrl+,로 연다(트레이 메뉴에는 넣지 않음). 탭은 Keyboard Shortcuts / Snippets / Appearance / Application이고, 뒤의 두 탭은 아직 "준비 중"이다. 확인 버튼 없이 바꾸는 즉시 저장한다.
+- 설정창(`ui/settings_dialog.py`)은 위젯 우클릭 "설정"과 Ctrl+,로 연다(트레이 메뉴에는 넣지 않음). 탭은 Keyboard Shortcuts / Snippets / Appearance / Application이고, Application은 아직 "준비 중"이다. 확인 버튼 없이 바꾸는 즉시 저장한다.
   - 단축키(기본 E: Task 등록, C: Task 해제, A: 할 일 입력칸 포커스, Ctrl+,: 설정)는 `QShortcut(Qt.WindowShortcut)`이라 위젯 창이 활성일 때만 동작한다. 글자 키는 입력칸이 ShortcutOverride로 먼저 가져가므로 입력 중에는 글자로 들어간다.
+  - Appearance: 테마(다크/라이트/시스템), 강조색, 배경색, 폰트, 좌·우패널 글자 배율(`widget_config.LEFT_SCALES`/`TODO_SCALES`), TODO 글자색. 배경색을 고르면 글자색은 테마 대신 배경 밝기를 따른다. 설정창 자체는 다크로 고정한다.
+  - 테마 반영: `theme.build(appearance)` → `theme.set_current()` 후 `ClockWidget.apply_appearance()`(→ `TodoPanel.apply_appearance()`)로 다시 입힌다. 팝업은 만들 때 `theme.current()`를 읽는다. 스타일에 색을 쓸 때는 `ui.theme` 상수를 import하지 말고 `theme.current()`에서 읽고, 흰색 반투명은 `t.overlay(alpha)`로 쓴다(라이트에서는 검정).
   - 스니펫은 TODO 입력/수정칸과 Task 업무명에서 `:트리거:`를 치면 문구로 바꾼다. textEdited 안에서 바로 고치면 Ctrl+Z가 듣지 않으므로 `QTimer.singleShot(0)`으로 미뤄서 바꾼다.
 - 이모지
   - Qt 6.8은 `WM_IME_CHAR`/`WM_CHAR`의 서로게이트 쌍을 버린다. 그래서 Win+. 이모지 패널로 고른 🚀 같은 이모지가 들어가지 않는다. `ui/text_input.ImeCharFilter`(앱 전체 네이티브 이벤트 필터)가 이 메시지를 대신 받아 IME 확정 문자열로 넣는다.
@@ -69,12 +71,11 @@ iscc installer\TaskPin.iss                   # 설치본 -> dist/TaskPin-<버전
 ## 데이터 저장 / 경로
 
 - 사용자 데이터 위치: `%APPDATA%\TaskPin\`
-  - `config.json` — 위젯 설정(위치·크기·투명도·모드 등), 사용자 이름, `shortcuts`(동작별 QKeySequence PortableText), `snippets`(`[[":idea:", "💡"], ...]`)
+  - `config.json` — 위젯 설정(위치·크기·투명도·모드 등), 사용자 이름, `shortcuts`(동작별 QKeySequence PortableText), `snippets`(`[[":idea:", "💡"], ...]`), `appearance`(`widget_config.appearance()`가 깨진 값을 기본값으로 채움)
   - `taskpin.db` — SQLite: TODO, 정리된 완료 항목, Task 시간 등록 정보
 - "완료 항목 정리"(`TodoPanel.clear_done`)는 행을 지우지 않고 보관 상태로 바꾼다.
 - 참고 소스처럼 `os.chdir(BASE_DIR)` 후 CWD 기준 `src/*`에 쓰면 안 된다. 자동 실행 시 CWD는 system32이고, 설치 폴더(`%LOCALAPPDATA%\Programs\TaskPin`)는 재설치·제거 때 바뀐다.
 - 번들 리소스(아이콘 등)는 `paths.resource_path()`(`__file__` 기준)로 찾는다. 컴파일 여부는 `"__compiled__" in globals()`, exe 경로는 `sys.argv[0]` 기준. PyInstaller의 `sys._MEIPASS`는 쓰지 않는다.
-- 폰트/색상/테마 설정은 PRD에서 "예정" 항목이다. 지금은 나중에 붙일 수 있는 구조만 만든다.
 
 ## 빌드 / 배포 (Nuitka standalone + Inno Setup)
 
