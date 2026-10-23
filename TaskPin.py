@@ -1,0 +1,212 @@
+"""Task알림 (TaskPin) - 업무(Task) 시간 관리 + TODO 리마인더 바탕화면 위젯"""
+
+# ---- Nuitka 빌드 옵션 (python -m nuitka TaskPin.py -> build/TaskPin.dist) ----
+# 배포는 이 standalone 폴더를 Inno Setup(installer/TaskPin.iss)으로 묶은 설치본만 쓴다.
+# 버전을 올릴 때는 아래 --product-version 과 VERSION 을 같이 고친다. (설치본은 exe 에서 읽음)
+# nuitka-project: --mode=standalone
+# nuitka-project: --output-dir={MAIN_DIRECTORY}/build
+# nuitka-project: --enable-plugin=pyside6
+# nuitka-project: --windows-console-mode=disable
+# nuitka-project: --windows-icon-from-ico={MAIN_DIRECTORY}/ico/taskpin.ico
+# nuitka-project: --include-data-files={MAIN_DIRECTORY}/ico/taskpin_icon_A_memo.svg=ico/taskpin_icon_A_memo.svg
+# nuitka-project: --product-name=Task알림
+# nuitka-project: --product-version=0.1.0
+# nuitka-project: --file-description=Task알림
+# nuitka-project: --output-filename=Task알림.exe
+# nuitka-project: --assume-yes-for-downloads
+
+# fmt: off
+# ========= ========= ========= ========= =========
+
+APP_NAME = "Task알림"
+VERSION = "0.1.0"
+
+# ========= ========= ========= ========= =========
+# fmt: on
+
+import getpass
+import sys
+from datetime import datetime
+
+from PySide6.QtCore import QTimer
+from PySide6.QtWidgets import QApplication, QSystemTrayIcon
+
+from manager import db, os_win, task_clock, task_store, widget_config
+from ui.clock_widget import ClockWidget
+from ui.confirm_dialog import ConfirmDialog
+from ui.task_picker import TaskPicker
+from ui.tray_app import TrayApp
+
+
+class TaskPinApp(TrayApp):
+    APP_ID = f"{getpass.getuser()}_TaskPin"  # 단일 인스턴스 ID
+
+    def __init__(self):
+        super().__init__()
+        self.tray.setToolTip(f"{APP_NAME} {VERSION}")
+
+        # ==========================
+        # Task 시간 (가장 최근 등록 1건)
+        self._task = task_store.latest()
+        self._shown_task = None  # 위젯에 마지막으로 반영한 Task
+        # 종료 알림을 보낸 Task id - 켤 때 이미 끝난 Task 는 알린 것으로 친다
+        self._notified_task_ids = set()
+        if self._task is not None and self._task.end_at <= datetime.now():
+            self._notified_task_ids.add(self._task.id)
+
+        # ==========================
+        # 바탕화면 위젯
+        self.widget_cfg = widget_config.load_config()
+        os_win.sync_autostart_command()  # 등록된 명령이 낡았으면 갱신
+        self.widget = ClockWidget(self.widget_cfg)
+
+        self.widget.task_register_requested.connect(self.open_task_picker)
+        self.widget.task_clear_requested.connect(self.clear_task)
+        self.widget.quit_requested.connect(self.app_close)
+        self.widget.visibility_changed.connect(self.sync_widget_toggle_action)
+        self.widget.reminder_due.connect(
+            lambda _id, text: self.send_message_info("⏰ 리마인더", text)
+        )
+
+        widget_visible = bool(self.widget_cfg.get("visible", True))
+        if widget_visible:
+            self.widget.show()
+
+        # setChecked 가 toggled 를 발생시키므로 연결 전에 상태를 맞춘다
+        self.action_toggle_widget.setChecked(widget_visible)
+        self.action_toggle_widget.toggled.connect(self.toggle_widget)
+
+        # 트레이 아이콘 좌클릭: 위젯을 다른 앱보다 위로 (다른 앱을 쓰면 다시 바탕화면으로)
+        self.tray.activated.connect(self.on_tray_activated)
+
+        # 위젯 시계/카운트다운
+        self.widget_tick = QTimer()
+        self.widget_tick.timeout.connect(self.tick_widget)
+        self.widget_tick.start(1000)
+        self.tick_widget()
+
+    # ==========================
+    # 바탕화면 위젯 연동
+    # ==========================
+    def tick_widget(self):
+        """1초마다 Task 종료 알림 확인 + 위젯의 현재시간과 남은시간을 갱신"""
+        now = datetime.now()
+        task = self._task if task_store.is_current(self._task, now) else None
+
+        # 종료 알림은 위젯이 숨겨져 있어도 보낸다
+        if (
+            task is not None
+            and task.end_at <= now
+            and task.id not in self._notified_task_ids
+        ):
+            self._notified_task_ids.add(task.id)
+            self.send_message_info(
+                "Task 종료", task.title or "등록한 Task 시간이 끝났습니다"
+            )
+
+        # 날짜가 바뀌어 지난 Task 가 빠지는 경우도 여기서 반영된다
+        if task != self._shown_task:
+            self._shown_task = task
+            self.widget.apply_task(task)
+
+        if self.widget.isVisible():
+            end = task.end_at if task is not None else None
+            self.widget.set_clock(
+                now.strftime("%H:%M:%S"), task_clock.remaining_display(end, now)
+            )
+
+    def open_task_picker(self):
+        """위젯의 'Task 등록' 버튼: 등록 창을 버튼 위에 띄운다."""
+        picker = TaskPicker(self._shown_task, self.widget)
+        picker.picked.connect(self.register_task)
+        picker.popup_for(self.widget.btn_task)
+
+    def register_task(self, title: str, start_at: datetime, end_at: datetime):
+        task = task_store.register(title, start_at, end_at)
+        if task is None:
+            self.tray.showMessage(
+                "Task 등록", "저장하지 못했습니다.", QSystemTrayIcon.Warning
+            )
+            return
+        if task.end_at <= datetime.now():
+            self._notified_task_ids.add(
+                task.id
+            )  # 이미 끝난 시간으로 등록하면 알리지 않는다
+        self._task = task
+        self.tick_widget()
+
+    def clear_task(self):
+        """위젯의 'Task 해제' 버튼: 확인 후 기록은 남기고 위젯에서 내린다 (종료 알림도 보내지 않음)"""
+        task = self._shown_task
+        if task is None or not self._confirm_clear(task):
+            return
+        if not task_store.clear(task.id):
+            self.tray.showMessage(
+                "Task 해제", "저장하지 못했습니다.", QSystemTrayIcon.Warning
+            )
+            return
+        self._task = None
+        self.tick_widget()
+
+    def _confirm_clear(self, task) -> bool:
+        """종료까지 시간이 남았으면 남은시간을 보여주고, 아니면 해제 여부만 묻는다."""
+        now = datetime.now()
+        if task_clock.remaining_seconds(task.end_at, now) > 0:
+            remaining = task_clock.remaining_display(task.end_at, now)
+            dialog = ConfirmDialog(
+                "Task 해제",
+                "아직 종료까지 시간이 남았습니다.\nTask를 해제할까요?",
+                confirm_text="해제",
+                value_caption="남은시간",
+                value="1분 미만" if remaining == "00:00" else remaining,
+                note="해제하면 종료 알림을 받지 않습니다.",
+                danger=True,
+                parent=self.widget,
+            )
+        else:
+            dialog = ConfirmDialog(
+                "Task 해제",
+                "Task를 해제할까요?",
+                confirm_text="해제",
+                danger=True,
+                parent=self.widget,
+            )
+        return dialog.exec_over(self.widget)
+
+    def toggle_widget(self, show: bool):
+        """트레이 메뉴의 '위젯 보이기' 토글"""
+        if show:
+            self.widget.show_widget()
+        else:
+            self.widget.hide_widget()
+
+    def on_tray_activated(self, reason):
+        """트레이 아이콘 좌클릭 시 위젯이 보이는 중이면 다른 앱보다 위로 꺼낸다."""
+        if reason == QSystemTrayIcon.Trigger:
+            self.widget.bring_to_front()
+
+    def sync_widget_toggle_action(self, visible: bool):
+        """위젯 쪽에서 숨김/표시가 일어났을 때 트레이 체크박스를 맞춤"""
+        self.action_toggle_widget.blockSignals(True)
+        self.action_toggle_widget.setChecked(visible)
+        self.action_toggle_widget.blockSignals(False)
+
+    def app_close(self):
+        """트레이 / 위젯 메뉴의 '종료': 위젯 정지 / 설정 저장 후 종료"""
+        self.widget_tick.stop()
+        self.widget.close()
+        widget_config.save_config(self.widget_cfg)
+        db.close()
+        super().app_close()
+
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    app.setQuitOnLastWindowClosed(False)
+    app.setApplicationName(APP_NAME)
+    app.setApplicationVersion(VERSION)
+
+    os_win.create_app_mutex()
+
+    window = TaskPinApp()
+    sys.exit(app.exec())

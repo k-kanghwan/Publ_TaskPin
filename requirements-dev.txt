@@ -1,0 +1,3 @@
+-r requirements.txt
+pytest>=8
+nuitka>=2.5
