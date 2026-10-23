@@ -6,7 +6,7 @@
 from datetime import datetime, timedelta
 
 from PySide6.QtCore import QRectF, Qt, Signal
-from PySide6.QtGui import QPainter, QPainterPath
+from PySide6.QtGui import QColor, QPainter, QPainterPath
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -16,16 +16,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ui.theme import (
-    BUTTON_STYLE,
-    CORNER_RADIUS,
-    FONT_FAMILY,
-    MENU_STYLE,
-    POPUP_BG_COLOR,
-    TEXT_MAIN,
-    TEXT_SUB,
-    TEXT_WARN,
-)
+from ui import theme
+from ui.theme import CORNER_RADIUS
 
 
 POPUP_WIDTH = 260
@@ -58,13 +50,14 @@ class ReminderPopup(QWidget):
         self.setAttribute(Qt.WA_DeleteOnClose, True)
         self.setFixedWidth(POPUP_WIDTH)
 
+        t = self._theme = theme.current()
         self.setStyleSheet(
-            BUTTON_STYLE
+            theme.button_style(t)
             + f"""
             QLabel {{
                 background: transparent;
-                color: {TEXT_MAIN};
-                font-family: {FONT_FAMILY};
+                color: {t.text_main};
+                font-family: {t.font_family};
             }}
             QPushButton {{ padding: 5px 0px; }}
             """
@@ -76,9 +69,11 @@ class ReminderPopup(QWidget):
 
         header = QHBoxLayout()
         title = QLabel("⏰ 리마인더")
-        title.setStyleSheet(f"font-size: 12px; font-weight: bold; color: {TEXT_WARN};")
+        title.setStyleSheet(
+            f"font-size: 12px; font-weight: bold; color: {t.text_warn};"
+        )
         when = QLabel(due.strftime("%m/%d %H:%M"))
-        when.setStyleSheet(f"font-size: 11px; color: {TEXT_SUB};")
+        when.setStyleSheet(f"font-size: 11px; color: {t.text_sub};")
         header.addWidget(title)
         header.addStretch(1)
         header.addWidget(when)
@@ -111,7 +106,7 @@ class ReminderPopup(QWidget):
 
     def _show_snooze_menu(self, anchor: QPushButton):
         menu = QMenu(self)
-        menu.setStyleSheet(MENU_STYLE)
+        menu.setStyleSheet(theme.menu_style(self._theme))
         for label, until in snooze_targets(datetime.now().astimezone()):
             menu.addAction(label, lambda u=until: self._on_snooze(u))
         menu.exec(anchor.mapToGlobal(anchor.rect().bottomLeft()))
@@ -125,4 +120,4 @@ class ReminderPopup(QWidget):
         painter.setRenderHint(QPainter.Antialiasing)
         path = QPainterPath()
         path.addRoundedRect(QRectF(self.rect()), CORNER_RADIUS, CORNER_RADIUS)
-        painter.fillPath(path, POPUP_BG_COLOR)
+        painter.fillPath(path, QColor(self._theme.popup_bg))

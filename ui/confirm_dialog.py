@@ -1,6 +1,6 @@
 """위젯 테마의 확인 창 (QMessageBox 대신)
 
-어두운 배경은 위젯과 같게 두고, 밝은 테두리 / 큰 글씨로 바탕화면 위에서도 잘 보이게 한다.
+배경은 위젯 테마를 따르고, 강조색 테두리 / 큰 글씨로 바탕화면 위에서도 잘 보이게 한다.
 필요하면 강조 값(예: 남은시간)을 크게 한 줄 보여준다.
 
 키보드
@@ -19,22 +19,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ui.theme import (
-    ACCENT,
-    BUTTON_STYLE,
-    CORNER_RADIUS,
-    FONT_FAMILY,
-    TEXT_MAIN,
-    TEXT_SUB,
-    TEXT_WARN,
-)
+from ui import theme
+from ui.theme import CORNER_RADIUS
 
 
 DIALOG_WIDTH = 260
-DIALOG_BG_COLOR = QColor(
-    36, 36, 38
-)  # 위젯 배경(20)보다 살짝 밝게 - 위젯 위에 떠 보이도록
-DIALOG_BORDER_COLOR = QColor(74, 123, 208, 210)  # ACCENT
+BORDER_ALPHA = 210  # 강조색 테두리
 
 
 class ConfirmDialog(QDialog):
@@ -61,14 +51,16 @@ class ConfirmDialog(QDialog):
         self.setModal(True)
         self.setFixedWidth(DIALOG_WIDTH)
 
-        confirm_color = TEXT_WARN if danger else ACCENT
+        t = self._theme = theme.current()
+        confirm_color = t.text_warn if danger else t.accent
+        confirm_hover = QColor(confirm_color).lighter(125).name()
         self.setStyleSheet(
-            BUTTON_STYLE
+            theme.button_style(t)
             + f"""
             QLabel {{
                 background: transparent;
-                color: {TEXT_MAIN};
-                font-family: {FONT_FAMILY};
+                color: {t.text_main};
+                font-family: {t.font_family};
             }}
             QPushButton {{ padding: 6px 0px; }}
             QPushButton#confirm {{
@@ -77,7 +69,10 @@ class ConfirmDialog(QDialog):
                 font-weight: bold;
                 border: 1px solid {confirm_color};
             }}
-            QPushButton#confirm:hover {{ background: white; border: 1px solid white; }}
+            QPushButton#confirm:hover {{
+                background: {confirm_hover};
+                border: 1px solid {confirm_hover};
+            }}
             """
         )
 
@@ -97,7 +92,7 @@ class ConfirmDialog(QDialog):
             value_label.setStyleSheet("font-size: 26px; font-weight: bold;")
             caption = QLabel(value_caption)
             caption.setAlignment(Qt.AlignCenter)
-            caption.setStyleSheet(f"font-size: 11px; color: {TEXT_SUB};")
+            caption.setStyleSheet(f"font-size: 11px; color: {t.text_sub};")
             value_box.addWidget(value_label)
             value_box.addWidget(caption)
             root.addLayout(value_box)
@@ -112,7 +107,7 @@ class ConfirmDialog(QDialog):
             note_label = QLabel(note)
             note_label.setTextFormat(Qt.PlainText)
             note_label.setWordWrap(True)
-            note_label.setStyleSheet(f"font-size: 11px; color: {TEXT_SUB};")
+            note_label.setStyleSheet(f"font-size: 11px; color: {t.text_sub};")
             root.addWidget(note_label)
 
         buttons = QHBoxLayout()
@@ -139,8 +134,10 @@ class ConfirmDialog(QDialog):
             CORNER_RADIUS,
             CORNER_RADIUS,
         )
-        painter.fillPath(path, DIALOG_BG_COLOR)
-        painter.setPen(DIALOG_BORDER_COLOR)
+        painter.fillPath(path, QColor(self._theme.dialog_bg))
+        border = QColor(self._theme.accent)
+        border.setAlpha(BORDER_ALPHA)
+        painter.setPen(border)
         painter.drawPath(path)
 
     def exec_over(self, anchor: QWidget) -> bool:

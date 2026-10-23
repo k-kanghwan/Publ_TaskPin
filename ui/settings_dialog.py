@@ -3,16 +3,22 @@
 좌측 사이드바에서 탭을 고르고 우측 카드에서 바로 바꾼다 (확인 버튼 없이 즉시 config.json 에 저장).
   - Keyboard Shortcuts : 위젯 단축키. 다른 동작과 겹치면 저장하지 않고 경고
   - Snippets           : `:트리거:` -> 문구 목록. 빈 칸 / 중복 트리거는 저장하지 않고 표시만
-  - Appearance / Application : 준비 중 (PRD 예정 항목 - 폰트 / 색상 / 테마)
+  - Appearance         : 테마 / 강조색 / 배경색 / 폰트, 좌·우패널 글자 크기, TODO 글자색.
+                         바꾸면 appearance_changed 로 위젯에 바로 반영한다.
+  - Application        : 준비 중
+
+설정창 자체는 위젯 테마를 따르지 않고 다크로 고정한다.
 
 키보드
   - Esc : 닫기 (단축키 입력칸에서는 입력 취소)
 """
 
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QKeySequence
+from PySide6.QtCore import QSize, Qt, Signal
+from PySide6.QtGui import QColor, QFont, QFontDatabase, QIcon, QKeySequence, QPixmap
 from PySide6.QtWidgets import (
     QButtonGroup,
+    QColorDialog,
+    QComboBox,
     QFrame,
     QHBoxLayout,
     QKeySequenceEdit,
@@ -26,20 +32,19 @@ from PySide6.QtWidgets import (
 )
 
 from manager import os_win, snippets, widget_config
-from ui.theme import (
-    ACCENT,
-    BUTTON_STYLE,
-    FONT_FAMILY,
-    LINE_COLOR,
-    POPUP_FORM_STYLE,
-    TEXT_MAIN,
-    TEXT_SUB,
-    TEXT_WARN,
-)
+from ui import theme
+
+_DARK = theme.DARK
+ACCENT = _DARK.accent
+FONT_FAMILY = _DARK.font_family
+LINE_COLOR = _DARK.line
+TEXT_MAIN = _DARK.text_main
+TEXT_SUB = _DARK.text_sub
+TEXT_WARN = _DARK.text_warn
 
 
 WINDOW_TITLE = "Task알림 설정"
-WINDOW_SIZE = (720, 480)
+WINDOW_SIZE = (720, 560)  # Appearance 탭이 스크롤 없이 거의 다 보이도록
 WINDOW_BG = "#18181a"
 CARD_BG = "#232326"
 CARD_BORDER = "rgba(255,255,255,22)"
@@ -47,6 +52,9 @@ SIDEBAR_WIDTH = 210
 NAV_ICON_WIDTH = 22  # 기호마다 폭이 달라 탭 이름이 어긋나지 않도록 고정
 KEY_EDIT_WIDTH = 120
 TRIGGER_EDIT_WIDTH = 110
+FONT_COMBO_WIDTH = 190
+SWATCH_SIZE = 20
+COLOR_CHIP_SIZE = 12
 
 # (아이콘, 탭 이름) - 아이콘은 글자색을 따르는 흑백 기호
 TABS = [
@@ -64,9 +72,23 @@ SHORTCUT_ROWS = [
     ("settings", "설정 열기", "이 설정창을 엽니다"),
 ]
 
+# Appearance 선택지 (값, 표시) - 값은 widget_config.THEMES / LEFT_SCALES / TODO_SCALES 와 같다
+THEME_OPTIONS = [("dark", "다크"), ("light", "라이트"), ("system", "시스템")]
+SCALE_NAMES = {90: "작게", 100: "보통", 115: "크게", 130: "아주 크게"}
+ACCENT_SWATCHES = [
+    ("#4a7bd0", "파랑"),
+    ("#3fa7a0", "청록"),
+    ("#5aa45e", "초록"),
+    ("#e0a030", "주황"),
+    ("#e57373", "빨강"),
+    ("#a77bd8", "보라"),
+    ("#8e8e93", "회색"),
+]
+DEFAULT_FONT_LABEL = "기본 (맑은 고딕)"
+
 SETTINGS_STYLE = (
-    BUTTON_STYLE
-    + POPUP_FORM_STYLE
+    theme.button_style(_DARK)
+    + theme.popup_form_style(_DARK)
     + f"""
     QWidget#settings {{ background: {WINDOW_BG}; }}
     QLabel {{
@@ -105,6 +127,13 @@ SETTINGS_STYLE = (
         border-right: 3px solid {ACCENT};
     }}
     QPushButton#small {{ padding: 4px 10px; }}
+    QPushButton#segment {{ padding: 4px 12px; }}
+    QPushButton#segment:checked {{
+        background: {ACCENT};
+        color: white;
+        border: 1px solid {ACCENT};
+    }}
+    QLabel#group {{ color: {TEXT_SUB}; font-size: 12px; font-weight: bold; }}
     QPushButton#remove {{
         background: transparent;
         color: {TEXT_SUB};
@@ -205,8 +234,49 @@ class _SnippetRow(QWidget):
         layout.addWidget(btn_remove)
 
 
+def _pick_color(initial: str, title: str) -> str:
+    """색 선택 창. 취소하면 "".
+    설정창 스타일시트(밝은 글자)가 번지지 않도록 부모 없이 띄우고, 설정창(항상 위)보다 위에 둔다."""
+    dialog = QColorDialog(QColor(initial))
+    dialog.setWindowTitle(title)
+    dialog.setWindowFlag(Qt.WindowStaysOnTopHint, True)
+    if dialog.exec() != QColorDialog.Accepted:
+        return ""
+    return dialog.selectedColor().name()
+
+
+class _ColorButton(QPushButton):
+    """색 칩 + 값(#rrggbb / 테마 따름). 누르면 색 선택 창을 띄워 picked 로 알린다."""
+
+    picked = Signal(str)  # "#rrggbb"
+
+    def __init__(self, title: str, parent=None):
+        super().__init__(parent)
+        self._title = title
+        self._color = ""
+        self.setObjectName("small")
+        self.setCursor(Qt.PointingHandCursor)
+        self.setIconSize(QSize(COLOR_CHIP_SIZE, COLOR_CHIP_SIZE))
+        self.clicked.connect(self._pick)
+
+    def set_color(self, value: str, theme_color: str):
+        """value: 고른 색 ("" 이면 테마 따름) / theme_color: 테마 따름일 때 칩에 보일 색"""
+        self._color = value or theme_color
+        pixmap = QPixmap(COLOR_CHIP_SIZE, COLOR_CHIP_SIZE)
+        pixmap.fill(QColor(self._color))
+        self.setIcon(QIcon(pixmap))
+        self.setText(value or "테마 따름")
+
+    def _pick(self):
+        color = _pick_color(self._color, self._title)
+        if color:
+            self.picked.emit(color)
+
+
 class SettingsDialog(QWidget):
     shortcuts_changed = Signal(dict)  # {동작: PortableText} - 위젯이 단축키를 다시 건다
+    # config 의 "appearance" 가 바뀜 - 위젯이 테마를 다시 입힌다
+    appearance_changed = Signal()
 
     def __init__(self, cfg: dict, version_text: str, parent=None):
         """cfg: 위젯과 같은 설정 dict (여기서 고친 값을 바로 저장한다)"""
@@ -233,11 +303,7 @@ class SettingsDialog(QWidget):
         self.stack = QStackedWidget()
         self.stack.addWidget(self._build_shortcuts_page())
         self.stack.addWidget(self._build_snippets_page())
-        self.stack.addWidget(
-            self._build_placeholder_page(
-                "Appearance", "폰트 · 색상 · 테마 설정이 들어갈 자리입니다."
-            )
-        )
+        self.stack.addWidget(self._build_appearance_page())
         self.stack.addWidget(
             self._build_placeholder_page(
                 "Application", "앱 동작 설정이 들어갈 자리입니다."
@@ -306,13 +372,19 @@ class SettingsDialog(QWidget):
             hint_label.setWordWrap(True)
             layout.addWidget(hint_label)
 
+        card, card_layout = SettingsDialog._card()
+        layout.addWidget(card)
+        return page, card, card_layout
+
+    @staticmethod
+    def _card():
+        """둥근 카드. Returns (카드, 카드 레이아웃)"""
         card = QFrame()
         card.setObjectName("card")
         card_layout = QVBoxLayout(card)
         card_layout.setContentsMargins(16, 6, 16, 6)
         card_layout.setSpacing(0)
-        layout.addWidget(card)
-        return page, card, card_layout
+        return card, card_layout
 
     @staticmethod
     def _add_row(card_layout: QVBoxLayout, title: str, subtitle: str, *controls):
@@ -476,7 +548,240 @@ class SettingsDialog(QWidget):
             widget_config.save_config(self._cfg)
 
     # ==================================================
-    # Appearance / Application (준비 중)
+    # Appearance
+    # ==================================================
+    def _build_appearance_page(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(0, 4, 0, 0)
+        layout.setSpacing(8)
+        section = QLabel("Appearance")
+        section.setObjectName("section")
+        hint = QLabel("바꾸는 즉시 위젯에 반영됩니다. 설정창은 다크 테마로 고정됩니다.")
+        hint.setObjectName("sub")
+        hint.setWordWrap(True)
+        layout.addWidget(section)
+        layout.addWidget(hint)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        container = QWidget()
+        groups = QVBoxLayout(container)
+        groups.setContentsMargins(0, 0, 6, 0)
+        groups.setSpacing(8)
+        scroll.setWidget(container)
+        layout.addWidget(scroll, 1)
+
+        # ---- 위젯 전체 ----
+        card_layout = self._add_group(groups, "위젯 전체")
+        box, self._theme_group = self._segmented(
+            THEME_OPTIONS, lambda v: self._set_appearance("theme", v)
+        )
+        self._add_row(card_layout, "테마", "시스템은 Windows 앱 모드를 따릅니다", box)
+        self._add_row(
+            card_layout,
+            "강조색",
+            "버튼 · 체크박스 · Task 배지 · 선택 표시",
+            self._build_swatches(),
+        )
+        self._bg_button = _ColorButton("배경색")
+        self._bg_button.picked.connect(lambda c: self._set_appearance("background", c))
+        self._add_row(
+            card_layout,
+            "배경색",
+            "고르면 글자색은 배경 밝기에 맞춰집니다",
+            self._bg_button,
+            self._reset_button(lambda: self._set_appearance("background", "")),
+        )
+        self._font_combo = self._build_font_combo()
+        self._add_row(card_layout, "폰트", "위젯과 팝업의 글꼴", self._font_combo)
+
+        # ---- 좌패널 ----
+        card_layout = self._add_group(groups, "좌패널 (Task)")
+        box, self._left_scale_group = self._segmented(
+            [(s, SCALE_NAMES[s]) for s in widget_config.LEFT_SCALES],
+            lambda v: self._set_appearance("left_scale", v),
+        )
+        self._add_row(card_layout, "글자 크기", "이름 · 시간 · 버튼 · 투명도", box)
+
+        # ---- 우패널 ----
+        card_layout = self._add_group(groups, "우패널 (TODO)")
+        box, self._todo_scale_group = self._segmented(
+            [(s, SCALE_NAMES[s]) for s in widget_config.TODO_SCALES],
+            lambda v: self._set_appearance("todo_scale", v),
+        )
+        self._add_row(card_layout, "글자 크기", "할 일 목록과 입력칸", box)
+        self._todo_color_button = _ColorButton("TODO 글자색")
+        self._todo_color_button.picked.connect(
+            lambda c: self._set_appearance("todo_text_color", c)
+        )
+        self._add_row(
+            card_layout,
+            "글자색",
+            "완료한 항목은 흐린 색으로 표시됩니다",
+            self._todo_color_button,
+            self._reset_button(lambda: self._set_appearance("todo_text_color", "")),
+        )
+        groups.addStretch(1)
+
+        btn_reset_all = QPushButton("전체 기본값으로")
+        btn_reset_all.setObjectName("small")
+        btn_reset_all.setCursor(Qt.PointingHandCursor)
+        btn_reset_all.clicked.connect(
+            lambda: self._save_appearance(dict(widget_config.DEFAULT_APPEARANCE))
+        )
+        bottom = QHBoxLayout()
+        bottom.addWidget(btn_reset_all)
+        bottom.addStretch(1)
+        layout.addLayout(bottom)
+
+        self._refresh_appearance()
+        return page
+
+    def _add_group(self, groups: QVBoxLayout, title: str) -> QVBoxLayout:
+        """그룹 제목 + 카드. 카드 레이아웃을 돌려준다."""
+        label = QLabel(title)
+        label.setObjectName("group")
+        card, card_layout = self._card()
+        groups.addWidget(label)
+        groups.addWidget(card)
+        return card_layout
+
+    @staticmethod
+    def _segmented(options: list, on_pick):
+        """하나만 고르는 버튼 묶음. options: [(값, 표시)]
+        Returns (위젯, QButtonGroup) - 버튼 id 는 options 의 index"""
+        box = QWidget()
+        layout = QHBoxLayout(box)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+        group = QButtonGroup(box)
+        for idx, (_value, label) in enumerate(options):
+            btn = QPushButton(label)
+            btn.setObjectName("segment")
+            btn.setCheckable(True)
+            btn.setCursor(Qt.PointingHandCursor)
+            group.addButton(btn, idx)
+            layout.addWidget(btn)
+        # idClicked 는 사용자가 누를 때만 온다 (setChecked 로 맞출 때는 오지 않음)
+        group.idClicked.connect(lambda idx: on_pick(options[idx][0]))
+        return box, group
+
+    @staticmethod
+    def _reset_button(slot) -> QPushButton:
+        btn = QPushButton("↺")
+        btn.setObjectName("small")
+        btn.setCursor(Qt.PointingHandCursor)
+        btn.setToolTip("테마 색으로 되돌리기")
+        btn.clicked.connect(slot)
+        return btn
+
+    def _build_swatches(self) -> QWidget:
+        box = QWidget()
+        layout = QHBoxLayout(box)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+        self._swatches = []
+        for color, name in ACCENT_SWATCHES:
+            btn = self._swatch_button(name)
+            btn.clicked.connect(
+                lambda _=False, c=color: self._set_appearance("accent", c)
+            )
+            self._swatches.append((color, btn))
+            layout.addWidget(btn)
+        self._custom_accent = self._swatch_button("직접 선택")
+        self._custom_accent.clicked.connect(self._pick_accent)
+        layout.addWidget(self._custom_accent)
+        return box
+
+    @staticmethod
+    def _swatch_button(tooltip: str) -> QPushButton:
+        btn = QPushButton()
+        btn.setFixedSize(SWATCH_SIZE, SWATCH_SIZE)
+        btn.setCursor(Qt.PointingHandCursor)
+        btn.setToolTip(tooltip)
+        return btn
+
+    @staticmethod
+    def _paint_swatch(btn: QPushButton, fill: str, ring: str, text: str = ""):
+        btn.setText(text)
+        btn.setStyleSheet(
+            f"QPushButton {{ background: {fill}; color: {TEXT_SUB};"
+            f" border: 2px solid {ring}; border-radius: {SWATCH_SIZE // 2}px;"
+            " padding: 0px; font-size: 12px; }"
+        )
+
+    def _pick_accent(self):
+        color = _pick_color(widget_config.appearance(self._cfg)["accent"], "강조색")
+        if color:
+            self._set_appearance("accent", color)
+
+    def _build_font_combo(self) -> QComboBox:
+        combo = QComboBox()
+        combo.setFixedWidth(FONT_COMBO_WIDTH)
+        combo.setMaxVisibleItems(12)
+        combo.addItem(DEFAULT_FONT_LABEL, "")
+        # 한글을 쓸 수 있는 폰트만. '@' 로 시작하는 것은 세로쓰기용이라 뺀다
+        for family in QFontDatabase.families(QFontDatabase.Korean):
+            if family.startswith("@"):
+                continue
+            combo.addItem(family, family)
+            preview = QFont(family)
+            preview.setPixelSize(13)
+            combo.setItemData(combo.count() - 1, preview, Qt.FontRole)
+        # activated 는 사용자가 고를 때만 온다
+        combo.activated.connect(
+            lambda idx: self._set_appearance("font_family", combo.itemData(idx))
+        )
+        return combo
+
+    def _set_appearance(self, key: str, value):
+        current = widget_config.appearance(self._cfg)
+        if current[key] != value:
+            current[key] = value
+            self._save_appearance(current)
+
+    def _save_appearance(self, values: dict):
+        self._cfg["appearance"] = values
+        widget_config.save_config(self._cfg)
+        self.appearance_changed.emit()
+        self._refresh_appearance()
+
+    def _refresh_appearance(self):
+        """저장된 값으로 Appearance 컨트롤 표시를 맞춘다."""
+        a = widget_config.appearance(self._cfg)
+        base = theme.build(
+            {**a, "background": "", "todo_text_color": ""}, theme.system_dark()
+        )  # 테마 따름일 때 칩에 보일 색
+        ids = [value for value, _ in THEME_OPTIONS]
+        self._theme_group.button(ids.index(a["theme"])).setChecked(True)
+        for color, btn in self._swatches:
+            self._paint_swatch(btn, color, TEXT_MAIN if color == a["accent"] else color)
+        custom = all(color != a["accent"] for color, _ in ACCENT_SWATCHES)
+        if custom:
+            self._paint_swatch(self._custom_accent, a["accent"], TEXT_MAIN)
+        else:
+            self._paint_swatch(self._custom_accent, "transparent", TEXT_SUB, "+")
+        self._bg_button.set_color(a["background"], base.bg)
+        self._todo_color_button.set_color(a["todo_text_color"], base.text_main)
+        self._left_scale_group.button(
+            widget_config.LEFT_SCALES.index(a["left_scale"])
+        ).setChecked(True)
+        self._todo_scale_group.button(
+            widget_config.TODO_SCALES.index(a["todo_scale"])
+        ).setChecked(True)
+
+        idx = self._font_combo.findData(a["font_family"])
+        # 저장된 폰트가 지워졌으면 이름만 남겨 둔다 (Qt 가 대체 폰트로 그림)
+        if idx < 0:
+            self._font_combo.addItem(f"{a['font_family']} (없음)", a["font_family"])
+            idx = self._font_combo.count() - 1
+        self._font_combo.setCurrentIndex(idx)
+
+    # ==================================================
+    # Application (준비 중)
     # ==================================================
     def _build_placeholder_page(self, title: str, subtitle: str) -> QWidget:
         page, _card, card_layout = self._page(title)

@@ -1,7 +1,7 @@
 """`(@` 입력 시 뜨는 리마인더 날짜/시간 피커
 
 obsidian-reminder 의 피커 레이아웃(달력 + 선택일 리마인더 목록 + 시간 + OK)을
-위젯 다크 테마로 옮겼다. QCalendarWidget 은 다크 스타일링이 어려워 그리드를 직접 만든다.
+위젯 테마로 옮겼다. QCalendarWidget 은 스타일링이 어려워 그리드를 직접 만든다.
 
 키보드
   - ←/→ : 하루, ↑/↓ : 일주일, PageUp/PageDown : 한 달
@@ -26,16 +26,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ui.theme import (
-    ACCENT,
-    FONT_FAMILY,
-    LINE_COLOR,
-    POPUP_BG_COLOR,
-    POPUP_FORM_STYLE,
-    TEXT_DIM,
-    TEXT_MAIN,
-    TEXT_SUB,
-)
+from ui import theme
 
 
 TIME_STEP_MIN = 15
@@ -71,6 +62,7 @@ class ReminderPicker(QFrame):
 
         self._reminders = sorted(reminders or [], key=lambda r: r[0])
         self._time_touched = initial is not None
+        self._theme = theme.current()
 
         if initial is None:
             initial = next_slot(datetime.now().astimezone())
@@ -85,31 +77,32 @@ class ReminderPicker(QFrame):
     # UI 구성
     # ==================================================
     def _build_ui(self):
+        t = self._theme
         self.setStyleSheet(
             f"""
             QLabel {{
                 background: transparent;
-                color: {TEXT_MAIN};
-                font-family: {FONT_FAMILY};
+                color: {t.text_main};
+                font-family: {t.font_family};
                 font-size: 12px;
             }}
             QPushButton {{
                 background: transparent;
-                color: {TEXT_MAIN};
-                font-family: {FONT_FAMILY};
+                color: {t.text_main};
+                font-family: {t.font_family};
                 font-size: 12px;
                 border: 1px solid transparent;
                 border-radius: 6px;
             }}
-            QPushButton:hover {{ background: rgba(255,255,255,30); }}
+            QPushButton:hover {{ background: {t.overlay(30)}; }}
             QPushButton#ok {{
-                background: {ACCENT};
-                color: white;
+                background: {t.accent};
+                color: {t.on_accent};
                 padding: 4px 14px;
             }}
-            QPushButton#ok:hover {{ background: #5b8be0; }}
+            QPushButton#ok:hover {{ background: {t.accent_hover}; }}
             """
-            + POPUP_FORM_STYLE
+            + theme.popup_form_style(t)
         )
 
         root = QVBoxLayout(self)
@@ -162,7 +155,7 @@ class ReminderPicker(QFrame):
         bottom = QHBoxLayout()
         bottom.setSpacing(6)
         time_caption = QLabel("시간")
-        time_caption.setStyleSheet(f"color: {TEXT_SUB};")
+        time_caption.setStyleSheet(f"color: {t.text_sub};")
 
         self.time_combo = QComboBox()
         self.time_combo.setFocusPolicy(Qt.NoFocus)
@@ -195,17 +188,15 @@ class ReminderPicker(QFrame):
         btn.clicked.connect(slot)
         return btn
 
-    @staticmethod
-    def _separator() -> QFrame:
+    def _separator(self) -> QFrame:
         line = QFrame()
         line.setFrameShape(QFrame.HLine)
         line.setFixedHeight(1)
-        line.setStyleSheet(f"background: {LINE_COLOR}; border: none;")
+        line.setStyleSheet(f"background: {self._theme.line}; border: none;")
         return line
 
-    @staticmethod
-    def _weekday_color(col: int) -> str:
-        return {0: SUNDAY_COLOR, 6: SATURDAY_COLOR}.get(col, TEXT_SUB)
+    def _weekday_color(self, col: int) -> str:
+        return {0: SUNDAY_COLOR, 6: SATURDAY_COLOR}.get(col, self._theme.text_sub)
 
     # ==================================================
     # 상태 갱신
@@ -219,6 +210,7 @@ class ReminderPicker(QFrame):
     def _refresh(self):
         self.month_label.setText(f"{self._month.year}년 {self._month.month}월")
 
+        t = self._theme
         today = datetime.now().astimezone().date()
         reminder_days = {dt.date() for dt, _ in self._reminders}
         start = self._grid_start()
@@ -227,16 +219,16 @@ class ReminderPicker(QFrame):
             btn.setText(str(day.day))
 
             if day == self._selected:
-                color, bg, border = "white", ACCENT, ACCENT
+                color, bg, border = t.on_accent, t.accent, t.accent
             else:
                 in_month = day.month == self._month.month
-                color = self._weekday_color(i % 7) if in_month else TEXT_DIM
+                color = self._weekday_color(i % 7) if in_month else t.text_dim
                 if in_month and i % 7 not in (0, 6):
-                    color = TEXT_MAIN
+                    color = t.text_main
                 bg = "transparent"
-                border = TEXT_SUB if day == today else "transparent"
+                border = t.text_sub if day == today else "transparent"
             weight = "bold" if day in reminder_days else "normal"
-            hover = ACCENT if day == self._selected else "rgba(255,255,255,30)"
+            hover = t.accent if day == self._selected else t.overlay(30)
             btn.setStyleSheet(
                 f"QPushButton {{ color: {color}; background: {bg};"
                 f" border: 1px solid {border}; font-weight: {weight}; }}"
@@ -251,10 +243,10 @@ class ReminderPicker(QFrame):
             if len(listed) > MAX_LISTED:
                 lines.append(f"... 외 {len(listed) - MAX_LISTED}건")
             self.list_label.setText("\n".join(lines))
-            self.list_label.setStyleSheet(f"color: {TEXT_MAIN};")
+            self.list_label.setStyleSheet(f"color: {t.text_main};")
         else:
             self.list_label.setText("리마인더 없음")
-            self.list_label.setStyleSheet(f"color: {TEXT_SUB}; font-style: italic;")
+            self.list_label.setStyleSheet(f"color: {t.text_sub}; font-style: italic;")
 
     def _select(self, day: date):
         self._selected = day
@@ -329,8 +321,8 @@ class ReminderPicker(QFrame):
         painter.setRenderHint(QPainter.Antialiasing)
         path = QPainterPath()
         path.addRoundedRect(QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5), 8, 8)
-        painter.fillPath(path, POPUP_BG_COLOR)
-        painter.setPen(QColor(74, 74, 74))
+        painter.fillPath(path, QColor(self._theme.popup_bg))
+        painter.setPen(QColor(self._theme.menu_border))
         painter.drawPath(path)
 
     # ==================================================

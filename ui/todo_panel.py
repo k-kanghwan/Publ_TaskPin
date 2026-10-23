@@ -13,7 +13,7 @@
 from datetime import UTC, datetime
 
 from PySide6.QtCore import QEvent, QMimeData, QRectF, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QCursor, QDrag, QPainter, QPainterPath
+from PySide6.QtGui import QCursor, QDrag, QPainter, QPainterPath
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -29,13 +29,14 @@ from PySide6.QtWidgets import (
 )
 
 from manager import todo_store, todo_tree
+from ui import theme
 from ui.reminder_picker import ReminderPicker
 from ui.text_input import expand_snippet_later, py_cursor, utf16_pos
-from ui.theme import ACCENT, FONT_FAMILY, TEXT_MAIN, TEXT_SUB, TEXT_WARN
+from ui.theme import px
 
 
 TRIGGER = "(@"
-ROW_HOVER_COLOR = QColor(255, 255, 255, 24)  # 마우스를 올린 행 배경
+ROW_HOVER_ALPHA = 24  # 마우스를 올린 행 배경 (테마의 덧칠 색)
 ROW_RADIUS = 4
 TODO_MIME = "application/x-taskpin-todo-id"  # 드래그 앤 드롭으로 옮기는 항목 id
 AUTO_SCROLL_MARGIN = 16  # 드래그 중 목록 위/아래 끝에서 자동 스크롤되는 영역(px)
@@ -43,14 +44,16 @@ AUTO_SCROLL_STEP = 8
 INDENT_STEP = 16  # 레벨 하나당 들여쓰기(px) - 체크박스 + 간격
 MAX_INDENT_DEPTH = 3  # 위젯 폭이 좁으므로 이보다 깊은 레벨은 같은 들여쓰기로 표시
 # 본문(12px) 크기의 컬러 이모지는 테두리가 뭉개지므로 행에서는 조금 크게 그린다
-EMOJI_STYLE = "font-size:14px;"
+EMOJI_PX = 14
 
 
 def _indent(depth: int) -> int:
     return min(depth, MAX_INDENT_DEPTH) * INDENT_STEP
 
 
-PANEL_STYLE = f"""
+def _panel_style(t: theme.Theme) -> str:
+    s = t.todo_scale
+    return f"""
     QScrollArea, QScrollArea > QWidget > QWidget {{ background: transparent; border: none; }}
     QScrollBar:vertical {{
         background: transparent;
@@ -58,44 +61,45 @@ PANEL_STYLE = f"""
         margin: 0px;
     }}
     QScrollBar::handle:vertical {{
-        background: rgba(255,255,255,50);
+        background: {t.overlay(50)};
         border-radius: 3px;
         min-height: 20px;
     }}
     QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0px; }}
     QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: none; }}
     QLineEdit {{
-        background: rgba(255,255,255,18);
-        color: {TEXT_MAIN};
-        font-family: {FONT_FAMILY};
-        font-size: 12px;
-        border: 1px solid rgba(255,255,255,30);
+        background: {t.overlay(18)};
+        color: {t.todo_color};
+        font-family: {t.font_family};
+        font-size: {px(12, s)}px;
+        border: 1px solid {t.overlay(30)};
         border-radius: 6px;
         padding: 3px 6px;
-        selection-background-color: {ACCENT};
+        selection-background-color: {t.accent};
+        selection-color: {t.on_accent};
     }}
-    QLineEdit:focus {{ border: 1px solid rgba(255,255,255,90); }}
+    QLineEdit:focus {{ border: 1px solid {t.overlay(90)}; }}
     QCheckBox {{ background: transparent; spacing: 0px; }}
     QCheckBox::indicator {{
-        width: 12px;
-        height: 12px;
-        border: 1px solid rgba(255,255,255,130);
+        width: {px(12, s)}px;
+        height: {px(12, s)}px;
+        border: 1px solid {t.overlay(130)};
         border-radius: 3px;
         background: transparent;
     }}
-    QCheckBox::indicator:hover {{ border: 1px solid {TEXT_MAIN}; }}
+    QCheckBox::indicator:hover {{ border: 1px solid {t.text_main}; }}
     QCheckBox::indicator:checked {{
-        background: {ACCENT};
-        border: 1px solid {ACCENT};
+        background: {t.accent};
+        border: 1px solid {t.accent};
     }}
     QPushButton#delete {{
         background: transparent;
-        color: {TEXT_SUB};
+        color: {t.text_sub};
         border: none;
         padding: 0px;
-        font-size: 11px;
+        font-size: {px(11, s)}px;
     }}
-    QPushButton#delete:hover {{ color: {TEXT_WARN}; }}
+    QPushButton#delete:hover {{ color: {t.text_warn}; }}
 """
 
 
@@ -233,22 +237,26 @@ class TodoRow(QWidget):
 
     def render(self, now: datetime = None):
         now = now or datetime.now().astimezone()
+        t = theme.current()
+        s = t.todo_scale
         done = self.item["done"]
-        body = todo_store.to_html(self.item["text"], EMOJI_STYLE) or "&nbsp;"
-        color = TEXT_SUB if done else TEXT_MAIN
+        emoji_style = f"font-size:{px(EMOJI_PX, s)}px;"
+        body = todo_store.to_html(self.item["text"], emoji_style) or "&nbsp;"
+        color = t.text_sub if done else t.todo_color
         html = f'<span style="color:{color};">{body}</span>'
         if done:
             html = f"<s>{html}</s>"
 
         due = todo_store.due_at(self.item)
         if due is not None:
-            chip_color = TEXT_WARN if (not done and due <= now) else TEXT_SUB
+            chip_color = t.text_warn if (not done and due <= now) else t.text_sub
             html += (
-                f'&nbsp;<span style="color:{chip_color}; font-size:11px;">'
+                f'&nbsp;<span style="color:{chip_color}; font-size:{px(11, s)}px;">'
                 f"⏰&nbsp;{due:%m/%d %H:%M}</span>"
             )
         self.label.setText(
-            f'<div style="font-family:{FONT_FAMILY}; font-size:12px;">{html}</div>'
+            f'<div style="font-family:{t.font_family}; font-size:{px(12, s)}px;">'
+            f"{html}</div>"
         )
 
     # ---- 수정 ----
@@ -326,7 +334,7 @@ class TodoRow(QWidget):
         path.addRoundedRect(
             QRectF(self.rect().adjusted(self.indent(), 0, 0, 0)), ROW_RADIUS, ROW_RADIUS
         )
-        painter.fillPath(path, ROW_HOVER_COLOR)
+        painter.fillPath(path, theme.current().overlay_color(ROW_HOVER_ALPHA))
 
 
 class TodoPanel(QWidget):
@@ -341,7 +349,6 @@ class TodoPanel(QWidget):
         self._rows = []
         # 드롭된 (옮길 id, 새 상위 id / None 이면 최상위, 이 id 앞으로 / None 이면 형제 맨 뒤로)
         self._pending_move = None
-        self.setStyleSheet(PANEL_STYLE)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -359,7 +366,6 @@ class TodoPanel(QWidget):
         self.list_layout.setSpacing(2)
 
         self.empty_label = QLabel("할 일이 없습니다")
-        self.empty_label.setStyleSheet(f"font-size: 11px; color: {TEXT_SUB};")
         self.list_layout.addWidget(self.empty_label)
         self.list_layout.addStretch(1)
         self.scroll.setWidget(self.container)
@@ -368,13 +374,8 @@ class TodoPanel(QWidget):
         self.container.setAcceptDrops(True)
         self.container.installEventFilter(self)
         self.drop_line = QFrame(self.container)  # 행 사이에 놓일 자리 표시
-        self.drop_line.setStyleSheet(f"background: {ACCENT}; border: none;")
         self.drop_line.hide()
         self.drop_box = QFrame(self.container)  # 하위로 들어갈 행 표시
-        self.drop_box.setStyleSheet(
-            f"background: transparent; border: 1px solid {ACCENT};"
-            f" border-radius: {ROW_RADIUS}px;"
-        )
         self.drop_box.hide()
         root.addWidget(self.scroll, 1)
 
@@ -384,7 +385,22 @@ class TodoPanel(QWidget):
         self.input.escaped.connect(self._on_input_escaped)
         root.addWidget(self.input)
 
+        self.apply_appearance()
         self._rebuild()
+
+    def apply_appearance(self):
+        """현재 테마(theme.current())로 다시 입힌다. 글자 크기 / 색은 우패널 설정을 따른다."""
+        t = theme.current()
+        self.setStyleSheet(_panel_style(t))
+        self.empty_label.setStyleSheet(
+            f"font-size: {px(11, t.todo_scale)}px; color: {t.text_sub};"
+        )
+        self.drop_line.setStyleSheet(f"background: {t.accent}; border: none;")
+        self.drop_box.setStyleSheet(
+            f"background: transparent; border: 1px solid {t.accent};"
+            f" border-radius: {ROW_RADIUS}px;"
+        )
+        self.refresh_rows()
 
     # ==================================================
     # 조회

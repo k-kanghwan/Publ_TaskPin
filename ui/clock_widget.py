@@ -31,20 +31,9 @@ from PySide6.QtWidgets import (
 )
 
 from manager import os_win, snippets, todo_store, widget_config
+from ui import theme
 from ui.reminder_popup import ReminderPopup
-from ui.theme import (
-    ACCENT,
-    BG_COLOR,
-    BUTTON_STYLE,
-    CORNER_RADIUS,
-    FONT_FAMILY,
-    LINE_COLOR,
-    MENU_STYLE,
-    TEXT_MAIN,
-    TEXT_DIM,
-    TEXT_SUB,
-    TEXT_WARN,
-)
+from ui.theme import CORNER_RADIUS, px
 from ui.todo_panel import TodoPanel
 
 
@@ -62,6 +51,7 @@ WIDGET_MAX_WIDTH_HORIZONTAL = int(WIDGET_MIN_WIDTH_HORIZONTAL * 1.5)  # 810
 RESIZE_MARGIN = 6  # 하단/우측 크기 조절 영역(px) - root 마진(14/16px) 안쪽
 SCREEN_MARGIN = 24
 CONTENT_MARGIN_H = 16  # root 좌우 마진
+CONTENT_MARGIN_V = 14  # root 상하 마진
 COLUMN_SPACING = 12  # 가로 모드 좌/우 칼럼 사이 간격
 
 ORIENTATION_VERTICAL = "vertical"
@@ -74,18 +64,6 @@ POPUP_GAP = 8
 
 TASK_DOT_COLOR = "#4caf50"  # Task 시간이 등록되어 있을 때 헤더의 점
 USER_NAME_MAX_LEN = 20
-NAME_FONT = "font-size: 15px; font-weight: bold;"
-
-# 등록한 Task 의 업무명 배지 - ACCENT(#4a7bd0) 계열의 옅은 배경 + 테두리
-TASK_BADGE_STYLE = f"""
-    font-size: 12px;
-    font-weight: bold;
-    color: {TEXT_MAIN};
-    background: rgba(74,123,208,40);
-    border: 1px solid rgba(74,123,208,170);
-    border-radius: 6px;
-    padding: 5px 8px;
-"""
 TASK_BADGE_H_SPACE = 2 * 8 + 2 * 1  # 좌우 padding + border (말줄임 폭 계산용)
 # ========= ========= ========= ========= =========
 
@@ -156,7 +134,7 @@ class _ResizeGrip(QWidget):
             bar = QRectF(self.width() / 2 - 1.5, self.height() / 2 - 16, 3, 32)
         path = QPainterPath()
         path.addRoundedRect(bar, 1.5, 1.5)
-        painter.fillPath(path, QColor(255, 255, 255, 90))
+        painter.fillPath(path, theme.current().overlay_color(90))
 
 
 class _NameEdit(QLineEdit):
@@ -196,6 +174,8 @@ class ClockWidget(QWidget):
         self._drag_offset = None
         self._popups = []
         self._shortcuts = []
+        self._separators = []  # 테마가 바뀌면 다시 칠할 구분선
+        self._task_title = ""  # 업무명 배지 원문 (말줄임 전)
         # 트레이 클릭으로 다른 앱보다 위에 꺼내 둔 상태
         self._front = False
         self._front_baseline = (
@@ -220,6 +200,7 @@ class ClockWidget(QWidget):
         # 3) 크기 범위 / 조절 방향은 모드별로 (세로: 높이만, 가로: 폭만)
         self._orientation = None
         self._apply_orientation(self._cfg_orientation())
+        self.apply_appearance()
         self._restore_position()
         self.apply_shortcuts(widget_config.shortcuts(self._cfg))
 
@@ -237,11 +218,12 @@ class ClockWidget(QWidget):
         return min(1.0, max(OPACITY_MIN, value))
 
     def _cfg_height(self) -> int:
+        min_height = self._min_height()
         try:
-            value = int(self._cfg.get("height") or WIDGET_MIN_HEIGHT)
+            value = int(self._cfg.get("height") or min_height)
         except (TypeError, ValueError):
-            value = WIDGET_MIN_HEIGHT
-        return min(WIDGET_MAX_HEIGHT, max(WIDGET_MIN_HEIGHT, value))
+            value = min_height
+        return min(max(WIDGET_MAX_HEIGHT, min_height), max(min_height, value))
 
     def _cfg_width(self) -> int:
         """가로 모드 폭"""
@@ -350,36 +332,11 @@ class ClockWidget(QWidget):
     # UI 구성
     # ==================================================
     def _build_ui(self):
-        # WA_TranslucentBackground 사용 시 자식 위젯이 배경을 불투명하게 덮으므로
-        # QLabel 배경을 반드시 transparent 로 강제해야 한다.
-        self.setStyleSheet(
-            BUTTON_STYLE
-            + f"""
-            QLabel {{
-                background: transparent;
-                color: {TEXT_MAIN};
-                font-family: {FONT_FAMILY};
-            }}
-            QSlider::groove:horizontal {{
-                height: 4px;
-                background: rgba(255,255,255,50);
-                border-radius: 2px;
-            }}
-            QSlider::sub-page:horizontal {{
-                background: rgba(255,255,255,120);
-                border-radius: 2px;
-            }}
-            QSlider::handle:horizontal {{
-                width: 12px;
-                margin: -5px 0;
-                background: {TEXT_MAIN};
-                border-radius: 6px;
-            }}
-            """
-        )
-
+        """위젯 배치만 한다. 색 / 글자 크기는 apply_appearance 에서 입힌다."""
         root = QHBoxLayout(self)
-        root.setContentsMargins(CONTENT_MARGIN_H, 14, CONTENT_MARGIN_H, 14)
+        root.setContentsMargins(
+            CONTENT_MARGIN_H, CONTENT_MARGIN_V, CONTENT_MARGIN_H, CONTENT_MARGIN_V
+        )
         root.setSpacing(COLUMN_SPACING)
 
         # ---- 좌: Task 시간 정보 (세로 모드에서는 info 와 controls 사이에 TODO 가 들어감) ----
@@ -410,20 +367,6 @@ class ClockWidget(QWidget):
         self.name_edit = _NameEdit()
         self.name_edit.setMaxLength(USER_NAME_MAX_LEN)
         self.name_edit.setPlaceholderText("이름")
-        self.name_edit.setStyleSheet(
-            f"""
-            QLineEdit {{
-                {NAME_FONT}
-                background: rgba(255,255,255,18);
-                color: {TEXT_MAIN};
-                font-family: {FONT_FAMILY};
-                border: 1px solid rgba(255,255,255,90);
-                border-radius: 4px;
-                padding: 0px 4px;
-                selection-background-color: {ACCENT};
-            }}
-            """
-        )
         self.name_edit.hide()
         self.name_edit.returnPressed.connect(self._commit_name_edit)
         self.name_edit.focus_lost.connect(self._commit_name_edit)
@@ -436,7 +379,6 @@ class ClockWidget(QWidget):
 
         # ---- 현재시간 ----
         self.now_label = QLabel("현재시간  --:--:--")
-        self.now_label.setStyleSheet(f"font-size: 12px; color: {TEXT_SUB};")
         info.addWidget(self.now_label)
 
         info.addWidget(self._separator())
@@ -444,14 +386,12 @@ class ClockWidget(QWidget):
         # ---- 남은시간 (주력 정보) ----
         self.remaining_label = QLabel("--:--")
         self.remaining_label.setAlignment(Qt.AlignCenter)
-        self._set_remaining_style(warn=False)
         info.addWidget(self.remaining_label)
 
         self.remaining_caption = QLabel(
             "남은시간"
         )  # 고정 라벨 - 초과는 색과 + 로만 표시
         self.remaining_caption.setAlignment(Qt.AlignCenter)
-        self.remaining_caption.setStyleSheet(f"font-size: 11px; color: {TEXT_SUB};")
         info.addWidget(self.remaining_caption)
 
         info.addWidget(self._separator())
@@ -461,8 +401,6 @@ class ClockWidget(QWidget):
         times.setSpacing(8)
         self.in_label = QLabel("시작 --:--")
         self.out_label = QLabel("종료 --:--")
-        for lb in (self.in_label, self.out_label):
-            lb.setStyleSheet("font-size: 12px;")
         times.addWidget(self.in_label)
         times.addStretch(1)
         times.addWidget(self.out_label)
@@ -479,7 +417,6 @@ class ClockWidget(QWidget):
         self.task_title_label = QLabel()
         self.task_title_label.setTextFormat(Qt.PlainText)
         self.task_title_label.setAlignment(Qt.AlignCenter)
-        self.task_title_label.setStyleSheet(TASK_BADGE_STYLE)
         self.task_title_label.hide()
         controls.addWidget(self.task_title_label)
 
@@ -498,8 +435,7 @@ class ClockWidget(QWidget):
         # ---- 투명도 슬라이더 (슬라이더 값 = 투명도 % = 100 - 불투명도 %) ----
         opacity_row = QHBoxLayout()
         opacity_row.setSpacing(8)
-        opacity_caption = QLabel("투명도")
-        opacity_caption.setStyleSheet(f"font-size: 11px; color: {TEXT_SUB};")
+        self.opacity_caption = QLabel("투명도")
 
         self.opacity_slider = QSlider(Qt.Horizontal)
         self.opacity_slider.setRange(0, TRANSPARENCY_MAX)
@@ -507,14 +443,12 @@ class ClockWidget(QWidget):
         self.opacity_slider.setCursor(Qt.PointingHandCursor)
 
         self.opacity_value = QLabel(f"{self.opacity_slider.value()}%")
-        self.opacity_value.setFixedWidth(34)
         self.opacity_value.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        self.opacity_value.setStyleSheet(f"font-size: 11px; color: {TEXT_SUB};")
 
         self.opacity_slider.valueChanged.connect(self._on_opacity_changed)
         self.opacity_slider.sliderReleased.connect(self._save_opacity)
 
-        opacity_row.addWidget(opacity_caption)
+        opacity_row.addWidget(self.opacity_caption)
         opacity_row.addWidget(self.opacity_slider, 1)
         opacity_row.addWidget(self.opacity_value)
         controls.addLayout(opacity_row)
@@ -535,8 +469,94 @@ class ClockWidget(QWidget):
         # ---- TODO 리스트 (높이를 늘리면 이 영역만 커짐 / 위치는 _apply_orientation) ----
         self.todo_panel = TodoPanel(lambda: snippets.from_config(self._cfg))
 
-        self.set_user_name(self._cfg.get("user_name", ""))
         self.apply_task(None)
+
+    def apply_appearance(self):
+        """현재 테마(theme.current())로 색 / 글꼴을 다시 입힌다. 글자 크기는 좌패널 배율을 따른다."""
+        t = theme.current()
+        s = t.left_scale
+        sub_style = f"font-size: {px(11, s)}px; color: {t.text_sub};"
+        # WA_TranslucentBackground 사용 시 자식 위젯이 배경을 불투명하게 덮으므로
+        # QLabel 배경을 반드시 transparent 로 강제해야 한다.
+        self.setStyleSheet(
+            theme.button_style(t, px(12, s))
+            + f"""
+            QLabel {{
+                background: transparent;
+                color: {t.text_main};
+                font-family: {t.font_family};
+            }}
+            QSlider::groove:horizontal {{
+                height: 4px;
+                background: {t.overlay(50)};
+                border-radius: 2px;
+            }}
+            QSlider::sub-page:horizontal {{
+                background: {t.overlay(120)};
+                border-radius: 2px;
+            }}
+            QSlider::handle:horizontal {{
+                width: 12px;
+                margin: -5px 0;
+                background: {t.text_main};
+                border-radius: 6px;
+            }}
+            """
+        )
+        self.name_edit.setStyleSheet(
+            f"""
+            QLineEdit {{
+                {self._name_font()}
+                background: {t.overlay(18)};
+                color: {t.text_main};
+                font-family: {t.font_family};
+                border: 1px solid {t.overlay(90)};
+                border-radius: 4px;
+                padding: 0px 4px;
+                selection-background-color: {t.accent};
+                selection-color: {t.on_accent};
+            }}
+            """
+        )
+        self.now_label.setStyleSheet(f"font-size: {px(12, s)}px; color: {t.text_sub};")
+        self.remaining_caption.setStyleSheet(sub_style)
+        for lb in (self.in_label, self.out_label):
+            lb.setStyleSheet(f"font-size: {px(12, s)}px;")
+        # 등록한 Task 의 업무명 배지 - 강조색 계열의 옅은 배경 + 테두리
+        self.task_title_label.setStyleSheet(
+            f"""
+            font-size: {px(12, s)}px;
+            font-weight: bold;
+            color: {t.text_main};
+            background: {t.accent_rgba(40)};
+            border: 1px solid {t.accent_rgba(170)};
+            border-radius: 6px;
+            padding: 5px 8px;
+            """
+        )
+        self.opacity_caption.setStyleSheet(sub_style)
+        self.opacity_value.setStyleSheet(sub_style)
+        self.opacity_value.setFixedWidth(px(34, s))
+        for line in self._separators:
+            line.setStyleSheet(f"background: {t.line}; border: none;")
+        self.todo_panel.apply_appearance()
+
+        self.set_user_name(self._cfg.get("user_name", ""))
+        self._set_remaining_style(warn=self.remaining_label.text().startswith("+"))
+        self._apply_task_dot(self.btn_task_clear.isEnabled())
+        if self._task_title:
+            self._set_task_title(self._task_title)
+        if self._orientation is not None:  # 배율이 바뀌면 최소 높이도 바뀐다
+            self._apply_size_limits()
+            self._place_grip()
+        self.update()
+
+    def _min_height(self) -> int:
+        """글자 배율을 키우면 좌패널 내용이 기본 최소 높이보다 커질 수 있다."""
+        self.ensurePolished()  # 아직 띄우기 전이어도 스타일시트 글꼴로 크기를 재도록
+        self._left_layout.invalidate()
+        needed = self._left_col.minimumSizeHint().height() + CONTENT_MARGIN_V * 2
+        return max(WIDGET_MIN_HEIGHT, needed)
 
     def _apply_orientation(self, orientation: str):
         """세로: info / TODO / controls 를 한 줄로
@@ -563,22 +583,26 @@ class ClockWidget(QWidget):
         self._col_separator.setVisible(horizontal)
         self._right_col.setVisible(horizontal)
 
-        # 이전 모드의 min/max 와 엇갈리지 않도록 범위를 먼저 풀고 다시 건다
-        self.setMinimumSize(0, 0)
-        if horizontal:
-            self.setMaximumSize(WIDGET_MAX_WIDTH_HORIZONTAL, WIDGET_MIN_HEIGHT)
-            self.setMinimumSize(WIDGET_MIN_WIDTH_HORIZONTAL, WIDGET_MIN_HEIGHT)
-            self.resize(self._cfg_width(), WIDGET_MIN_HEIGHT)
-        else:
-            self.setMaximumSize(WIDGET_WIDTH, WIDGET_MAX_HEIGHT)
-            self.setMinimumSize(WIDGET_WIDTH, WIDGET_MIN_HEIGHT)
-            self.resize(WIDGET_WIDTH, self._cfg_height())
-        self._grip.set_vertical(not horizontal)
         self._orientation = orientation
+        self._apply_size_limits()
+        self._grip.set_vertical(not horizontal)
         self._place_grip()
 
-    @staticmethod
-    def _separator(vertical: bool = False) -> QFrame:
+    def _apply_size_limits(self):
+        """세로: 폭 고정 / 높이 조절, 가로: 높이 고정 / 폭 조절"""
+        min_height = self._min_height()
+        # 이전 모드의 min/max 와 엇갈리지 않도록 범위를 먼저 풀고 다시 건다
+        self.setMinimumSize(0, 0)
+        if self._orientation == ORIENTATION_HORIZONTAL:
+            self.setMaximumSize(WIDGET_MAX_WIDTH_HORIZONTAL, min_height)
+            self.setMinimumSize(WIDGET_MIN_WIDTH_HORIZONTAL, min_height)
+            self.resize(self._cfg_width(), min_height)
+        else:
+            self.setMaximumSize(WIDGET_WIDTH, max(WIDGET_MAX_HEIGHT, min_height))
+            self.setMinimumSize(WIDGET_WIDTH, min_height)
+            self.resize(WIDGET_WIDTH, self._cfg_height())
+
+    def _separator(self, vertical: bool = False) -> QFrame:
         line = QFrame()
         if vertical:
             line.setFrameShape(QFrame.VLine)
@@ -586,7 +610,7 @@ class ClockWidget(QWidget):
         else:
             line.setFrameShape(QFrame.HLine)
             line.setFixedHeight(1)
-        line.setStyleSheet(f"background: {LINE_COLOR}; border: none;")
+        self._separators.append(line)  # 색은 apply_appearance 에서
         return line
 
     def _on_opacity_changed(self, transparency: int):
@@ -631,10 +655,15 @@ class ClockWidget(QWidget):
         self._grip.raise_()
 
     def _set_remaining_style(self, warn: bool):
-        color = TEXT_WARN if warn else TEXT_MAIN
+        t = theme.current()
+        color = t.text_warn if warn else t.text_main
         self.remaining_label.setStyleSheet(
-            f"font-size: 28px; font-weight: bold; color: {color};"
+            f"font-size: {px(28, t.left_scale)}px; font-weight: bold; color: {color};"
         )
+
+    @staticmethod
+    def _name_font() -> str:
+        return f"font-size: {px(15, theme.current().left_scale)}px; font-weight: bold;"
 
     def _apply_task_dot(self, registered: bool):
         """Task 시간이 등록되어 있으면 초록 점, 없으면 빈 원"""
@@ -642,7 +671,7 @@ class ClockWidget(QWidget):
             style = f"background: {TASK_DOT_COLOR}; border-radius: 6px;"
         else:
             style = (
-                f"background: transparent; border: 1.5px solid {TEXT_SUB};"
+                f"background: transparent; border: 1.5px solid {theme.current().text_sub};"
                 " border-radius: 6px;"
             )
         self.status_dot.setStyleSheet(style)
@@ -655,6 +684,7 @@ class ClockWidget(QWidget):
         if task is None:
             self.in_label.setText("시작 --:--")
             self.out_label.setText("종료 --:--")
+            self._task_title = ""
             self.task_title_label.hide()
         else:
             self.in_label.setText(f"시작 {task.start_at:%H:%M}")
@@ -665,6 +695,7 @@ class ClockWidget(QWidget):
 
     def _set_task_title(self, title: str):
         """배지는 한 줄 - 길면 말줄임하고 전체는 툴팁으로"""
+        self._task_title = title
         label = self.task_title_label
         label.ensurePolished()  # 스타일시트 글꼴(굵게)로 폭을 재기 위해
         width = self._left_col.width() - TASK_BADGE_H_SPACE
@@ -676,10 +707,12 @@ class ClockWidget(QWidget):
     def set_user_name(self, name: str):
         if name:
             self.name_label.setText(name)
-            self.name_label.setStyleSheet(NAME_FONT)
+            self.name_label.setStyleSheet(self._name_font())
         else:
             self.name_label.setText("이름")
-            self.name_label.setStyleSheet(f"{NAME_FONT} color: {TEXT_DIM};")
+            self.name_label.setStyleSheet(
+                f"{self._name_font()} color: {theme.current().text_dim};"
+            )
 
     # ==================================================
     # 사용자 이름 편집 (더블클릭)
@@ -750,7 +783,7 @@ class ClockWidget(QWidget):
         painter.setRenderHint(QPainter.Antialiasing)
         path = QPainterPath()
         path.addRoundedRect(QRectF(self.rect()), CORNER_RADIUS, CORNER_RADIUS)
-        painter.fillPath(path, BG_COLOR)
+        painter.fillPath(path, QColor(theme.current().bg))
 
     # ==================================================
     # 드래그 이동
@@ -809,7 +842,7 @@ class ClockWidget(QWidget):
     # ==================================================
     def contextMenuEvent(self, event):
         menu = QMenu(self)
-        menu.setStyleSheet(MENU_STYLE)
+        menu.setStyleSheet(theme.menu_style(theme.current()))
 
         act_clear = menu.addAction("완료 항목 정리", self.todo_panel.clear_done)
         act_clear.setEnabled(self.todo_panel.has_done())

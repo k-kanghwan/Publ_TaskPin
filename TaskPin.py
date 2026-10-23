@@ -30,10 +30,11 @@ import sys
 from datetime import datetime
 
 from PySide6.QtCore import QTimer
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QGuiApplication
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon
 
 from manager import db, os_win, snippets, task_clock, task_store, widget_config
+from ui import theme
 from ui.clock_widget import ClockWidget
 from ui.confirm_dialog import ConfirmDialog
 from ui.settings_dialog import SettingsDialog
@@ -70,6 +71,9 @@ class TaskPinApp(TrayApp):
         # 등록된 명령이 낡았으면 갱신 (디버그에서는 설치본 exe 등록값을 python 명령으로 덮어쓰지 않도록 건너뜀)
         if not DEBUG:
             os_win.sync_autostart_command()
+        # 테마는 위젯을 만들기 전에 건다 (위젯 / 팝업은 만들 때 theme.current() 를 읽는다)
+        self._base_font = QApplication.font()
+        self._apply_theme()
         self.widget = ClockWidget(self.widget_cfg, force_on_top=DEBUG)
         self._settings = None  # 열려 있는 설정창 (한 번에 하나)
 
@@ -80,6 +84,10 @@ class TaskPinApp(TrayApp):
         self.widget.visibility_changed.connect(self.sync_widget_toggle_action)
         self.widget.reminder_due.connect(
             lambda _id, text: self.send_message_info("⏰ 리마인더", text)
+        )
+        # "시스템" 테마: Windows 앱 모드가 바뀌면 따라간다
+        QGuiApplication.styleHints().colorSchemeChanged.connect(
+            self._on_color_scheme_changed
         )
 
         widget_visible = bool(self.widget_cfg.get("visible", True))
@@ -194,11 +202,30 @@ class TaskPinApp(TrayApp):
         if self._settings is None:
             self._settings = SettingsDialog(self.widget_cfg, f"{APP_NAME} {VERSION}")
             self._settings.shortcuts_changed.connect(self.widget.apply_shortcuts)
+            self._settings.appearance_changed.connect(self.apply_appearance)
             self._settings.destroyed.connect(self._on_settings_destroyed)
         self._settings.show_front()
 
     def _on_settings_destroyed(self):
         self._settings = None
+
+    def _apply_theme(self):
+        """설정의 Appearance 값으로 현재 테마와 앱 기본 글꼴(툴팁 등)을 건다."""
+        appearance = widget_config.appearance(self.widget_cfg)
+        theme.set_current(theme.build(appearance, theme.system_dark()))
+        font = QFont(self._base_font)  # 힌팅 설정(PreferNoHinting)은 그대로
+        if appearance["font_family"]:
+            font.setFamilies([appearance["font_family"], self._base_font.family()])
+        QApplication.setFont(font)
+
+    def apply_appearance(self):
+        """설정창 Appearance 변경: 위젯을 다시 입힌다. 팝업은 다음에 띄울 때부터 따른다."""
+        self._apply_theme()
+        self.widget.apply_appearance()
+
+    def _on_color_scheme_changed(self, *_):
+        if widget_config.appearance(self.widget_cfg)["theme"] == "system":
+            self.apply_appearance()
 
     def toggle_widget(self, show: bool):
         """트레이 메뉴의 '위젯 보이기' 토글"""

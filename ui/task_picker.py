@@ -32,15 +32,8 @@ from PySide6.QtWidgets import (
 )
 
 from manager import task_clock
+from ui import theme
 from ui.text_input import expand_snippet_later, py_cursor
-from ui.theme import (
-    ACCENT,
-    FONT_FAMILY,
-    POPUP_BG_COLOR,
-    POPUP_FORM_STYLE,
-    TEXT_MAIN,
-    TEXT_SUB,
-)
 
 
 DURATIONS = list(
@@ -93,6 +86,7 @@ class TaskPicker(QFrame):
         self.setFixedWidth(PICKER_WIDTH)
         self._accepted = False
         self._snippets_provider = snippets_provider
+        self._theme = theme.current()
 
         now = datetime.now().astimezone()
         self._day = now.date()
@@ -122,32 +116,33 @@ class TaskPicker(QFrame):
     # UI 구성
     # ==================================================
     def _build_ui(self):
+        t = self._theme
         self.setStyleSheet(
             f"""
             QLabel {{
                 background: transparent;
-                color: {TEXT_MAIN};
-                font-family: {FONT_FAMILY};
+                color: {t.text_main};
+                font-family: {t.font_family};
                 font-size: 12px;
             }}
             QPushButton {{
                 background: transparent;
-                color: {TEXT_MAIN};
-                font-family: {FONT_FAMILY};
+                color: {t.text_main};
+                font-family: {t.font_family};
                 font-size: 12px;
-                border: 1px solid rgba(255,255,255,40);
+                border: 1px solid {t.overlay(40)};
                 border-radius: 6px;
                 padding: 4px 14px;
             }}
-            QPushButton:hover {{ background: rgba(255,255,255,30); }}
+            QPushButton:hover {{ background: {t.overlay(30)}; }}
             QPushButton#ok {{
-                background: {ACCENT};
-                color: white;
-                border: 1px solid {ACCENT};
+                background: {t.accent};
+                color: {t.on_accent};
+                border: 1px solid {t.accent};
             }}
-            QPushButton#ok:hover {{ background: #5b8be0; }}
+            QPushButton#ok:hover {{ background: {t.accent_hover}; }}
             """
-            + POPUP_FORM_STYLE
+            + theme.popup_form_style(t)
         )
 
         root = QVBoxLayout(self)
@@ -186,7 +181,7 @@ class TaskPicker(QFrame):
             )
         ):
             lb = QLabel(caption)
-            lb.setStyleSheet(f"color: {TEXT_SUB};")
+            lb.setStyleSheet(f"color: {t.text_sub};")
             form.addWidget(lb, row, 0)
             form.addWidget(field, row, 1)
         form.setColumnStretch(1, 1)
@@ -301,8 +296,8 @@ class TaskPicker(QFrame):
         painter.setRenderHint(QPainter.Antialiasing)
         path = QPainterPath()
         path.addRoundedRect(QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5), 8, 8)
-        painter.fillPath(path, POPUP_BG_COLOR)
-        painter.setPen(QColor(74, 74, 74))
+        painter.fillPath(path, QColor(self._theme.popup_bg))
+        painter.setPen(QColor(self._theme.menu_border))
         painter.drawPath(path)
 
     # ==================================================
