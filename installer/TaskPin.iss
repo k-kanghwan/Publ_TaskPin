@@ -3,7 +3,7 @@
 ; 먼저 standalone 빌드:  python -m nuitka TaskPin.py      -> build\TaskPin.dist\
 ; 그다음 설치본 빌드:    iscc installer\TaskPin.iss       -> dist\TaskPin-<버전>-setup.exe
 ;
-; 버전은 빌드된 exe 의 제품 버전(TaskPin.py 의 --product-version)에서 읽는다.
+; 버전은 빌드된 exe 의 제품 버전(version.py 의 VERSION -> --product-version)에서 읽는다.
 ; 사용자 데이터(%APPDATA%\TaskPin)는 제거할 때도 지우지 않는다.
 
 #define AppName "Task알림"

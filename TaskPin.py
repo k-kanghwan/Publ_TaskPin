@@ -2,7 +2,8 @@
 
 # ---- Nuitka 빌드 옵션 (python -m nuitka TaskPin.py -> build/TaskPin.dist) ----
 # 배포는 이 standalone 폴더를 Inno Setup(installer/TaskPin.iss)으로 묶은 설치본만 쓴다.
-# 버전을 올릴 때는 아래 --product-version 과 VERSION 을 같이 고친다. (설치본은 exe 에서 읽음)
+# 버전을 올릴 때는 version.py 만 고친다. (--product-version 도 거기서 읽고, 설치본은 exe 에서 읽음)
+# nuitka-project-set: APP_VERSION = __import__("re").search(r'^VERSION = "(.+)"', open({MAIN_DIRECTORY} + "/version.py", encoding="utf-8").read(), __import__("re").M).group(1)
 # nuitka-project: --mode=standalone
 # nuitka-project: --output-dir={MAIN_DIRECTORY}/build
 # nuitka-project: --enable-plugin=pyside6
@@ -10,7 +11,7 @@
 # nuitka-project: --windows-icon-from-ico={MAIN_DIRECTORY}/ico/taskpin.ico
 # nuitka-project: --include-data-files={MAIN_DIRECTORY}/ico/taskpin_icon_A_memo.svg=ico/taskpin_icon_A_memo.svg
 # nuitka-project: --product-name=Task알림
-# nuitka-project: --product-version=0.1.0
+# nuitka-project: --product-version={APP_VERSION}
 # nuitka-project: --file-description=Task알림
 # nuitka-project: --output-filename=Task알림.exe
 # nuitka-project: --assume-yes-for-downloads
@@ -19,7 +20,6 @@
 # ========= ========= ========= ========= =========
 
 APP_NAME = "Task알림"
-VERSION = "0.1.0"
 
 # ========= ========= ========= ========= =========
 # fmt: on
@@ -40,6 +40,7 @@ from ui.settings_dialog import SettingsDialog
 from ui.task_picker import TaskPicker
 from ui.text_input import ImeCharFilter
 from ui.tray_app import TrayApp
+from version import VERSION
 
 # VS Code 디버그 실행(.vscode/launch.json): 위젯 항상 위, 실제 앱과 분리
 # (데이터는 launch.json 이 APPDATA 를 .debug_appdata 로 바꿔 분리한다)

@@ -13,10 +13,9 @@ pip install -r requirements-dev.txt     # PySide6, pytest, nuitka, watchfiles
 
 ## 1. 버전 올리기 (새 버전을 낼 때)
 
-`TaskPin.py` 맨 위의 두 곳을 **같은 값으로** 고친다.
+루트의 `version.py` 한 곳만 고친다. 앱 안의 `VERSION`과 Nuitka `--product-version`이 모두 이 값을 쓴다.
 
 ```python
-# nuitka-project: --product-version=0.1.0
 VERSION = "0.1.0"
 ```
 
