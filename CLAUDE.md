@@ -13,7 +13,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## 명령
 
 ```bash
-pip install -r requirements-dev.txt          # PySide6, pytest, nuitka
+pip install -r requirements-dev.txt          # PySide6, pytest, nuitka, watchfiles
 python TaskPin.py                            # 실행 (트레이 + 위젯)
 pytest                                       # 전체 테스트 (Qt 없이 실행)
 pytest tests/test_task_clock.py::test_floor_slot   # 단일 테스트
@@ -22,8 +22,8 @@ iscc installer\TaskPin.iss                   # 설치본 -> dist/TaskPin-<버전
 ```
 
 - 빌드 옵션은 `TaskPin.py` 맨 위 `# nuitka-project:` 주석에 있다. 버전을 올릴 때는 거기의 `--product-version`과 `VERSION`을 같이 고친다. 설치본 버전은 exe에서 읽는다.
-- 앱을 띄워 확인할 때 실제 데이터를 건드리지 않으려면 `APPDATA` 환경변수를 임시 폴더로 바꿔 실행한다(`os_win.user_data_dir()`가 이 값을 따른다).
-- VS Code F5(`.vscode/launch.json`): "저장 시 재시작"은 `tools/dev_run.py`가 `.py` 저장마다 앱을 다시 띄운다. 두 구성 모두 `APPDATA=.debug_appdata`, `TASKPIN_DEBUG=1`(위젯 항상 위, 단일 인스턴스 ID 분리, 자동 실행 레지스트리 갱신·mutex 생략)로 실행한다.
+- 앱을 띄워 확인할 때 실제 데이터를 건드리지 않으려면 `APPDATA` 환경변수를 임시 폴더로 바꿔 실행한다(`os_win.user_data_dir()`가 이 값을 따른다). 이때 user site-packages(`%APPDATA%\Python`)도 함께 사라지므로 `PYTHONUSERBASE`를 원래 `%APPDATA%\Python`으로 지정한다(`anyio` 등 `pip --user` 패키지).
+- VS Code F5(`.vscode/launch.json`): "저장 시 재시작"은 `tools/dev_run.py`(watchfiles `run_process`)가 `.py` 저장마다 앱을 다시 띄운다. 두 구성 모두 `APPDATA=.debug_appdata`, `TASKPIN_DEBUG=1`(위젯 항상 위, 단일 인스턴스 ID 분리, 자동 실행 레지스트리 갱신·mutex 생략)로 실행한다.
 
 ## 구조
 
