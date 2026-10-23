@@ -50,6 +50,23 @@ def load_todos() -> list:
     return [_normalize(dict(row)) for row in rows]
 
 
+def load_archived() -> list:
+    """보관한 TODO 를 최근 보관 순으로 읽어온다(archived_at 포함). 읽지 못하면 빈 목록"""
+    try:
+        rows = (
+            db.conn()
+            .execute(
+                f"SELECT {', '.join(_COLUMNS)}, archived_at FROM todos"
+                " WHERE archived_at IS NOT NULL ORDER BY archived_at DESC, position"
+            )
+            .fetchall()
+        )
+    except sqlite3.Error as e:
+        print(f"보관 TODO 불러오기 실패: {e}")
+        return []
+    return [_normalize(dict(row)) for row in rows]
+
+
 def save_todos(items: list) -> None:
     """화면 목록을 저장한다(목록에서 빠진 활성 행은 삭제). 실패해도 앱 동작을 막지 않는다."""
     c = db.conn()

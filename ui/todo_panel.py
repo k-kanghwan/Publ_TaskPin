@@ -406,7 +406,8 @@ class TodoPanel(QWidget):
     # 조회
     # ==================================================
     def items(self) -> list:
-        return self._items
+        """화면 목록 사본 (내보내기용)"""
+        return list(self._items)
 
     def has_done(self) -> bool:
         return any(item["done"] for item in self._items)

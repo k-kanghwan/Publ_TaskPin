@@ -13,24 +13,27 @@ Priv_dtcal/dtcal_poc.py 에서 검증된 기법을 이식:
 입력칸이 먼저 가져가므로(ShortcutOverride) 할 일이나 이름을 입력하는 중에는 글자로 들어간다.
 """
 
+import os
 from datetime import datetime
 
-from PySide6.QtCore import QEvent, Qt, QPoint, QRectF, QTimer, Signal
+from PySide6.QtCore import QEvent, QStandardPaths, Qt, QPoint, QRectF, QTimer, Signal
 from PySide6.QtGui import QColor, QKeySequence, QPainter, QPainterPath, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
+    QFileDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QMenu,
+    QMessageBox,
     QPushButton,
     QSlider,
     QVBoxLayout,
     QWidget,
 )
 
-from manager import os_win, snippets, todo_store, widget_config
+from manager import os_win, snippets, todo_export, todo_store, widget_config
 from ui import theme
 from ui.reminder_popup import ReminderPopup
 from ui.theme import CORNER_RADIUS, px
@@ -860,6 +863,16 @@ class ClockWidget(QWidget):
 
         act_clear = menu.addAction("완료 항목 정리", self.todo_panel.clear_done)
         act_clear.setEnabled(self.todo_panel.has_done())
+        export_menu = menu.addMenu("TODO 내보내기")
+        export_menu.setStyleSheet(menu.styleSheet())
+        act_active = export_menu.addAction(
+            "화면 목록…", lambda: self._export_todos(archived=False)
+        )
+        act_active.setEnabled(bool(self.todo_panel.items()))
+        act_archived = export_menu.addAction(
+            "보관 항목 전체…", lambda: self._export_todos(archived=True)
+        )
+        act_archived.setEnabled(bool(todo_store.load_archived()))
         menu.addSeparator()
 
         if self._orientation == ORIENTATION_HORIZONTAL:
@@ -892,6 +905,36 @@ class ClockWidget(QWidget):
         menu.addAction("종료", self.quit_requested.emit)
 
         menu.exec(event.globalPos())
+
+    def _export_todos(self, archived: bool):
+        """TODO 를 Markdown 체크리스트 파일로 저장한다. 마지막 저장 폴더를 기억한다."""
+        now = datetime.now()
+        if archived:
+            text = todo_export.archived_to_markdown(todo_store.load_archived(), now)
+        else:
+            text = todo_export.to_markdown(self.todo_panel.items(), now)
+
+        folder = self._cfg.get("export_dir") or QStandardPaths.writableLocation(
+            QStandardPaths.DocumentsLocation
+        )
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "TODO 내보내기",
+            os.path.normpath(
+                os.path.join(folder, todo_export.default_filename(archived, now))
+            ),
+            "Markdown (*.md)",
+        )
+        if not path:
+            return
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(text)
+        except OSError as e:
+            QMessageBox.warning(self, "TODO 내보내기", f"파일을 저장하지 못했습니다.\n{e}")
+            return
+        self._cfg["export_dir"] = os.path.dirname(path)
+        widget_config.save_config(self._cfg)
 
     def set_locked(self, locked: bool):
         self._locked = locked
