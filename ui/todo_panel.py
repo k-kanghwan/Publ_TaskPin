@@ -4,7 +4,9 @@
 - 입력 중 `(@` 를 치면 리마인더 피커가 떠서 `(@YYYY-MM-DD HH:mm)` 토큰을 넣는다
 - 체크하면 취소선 + 목록 아래로, 우클릭 메뉴 "완료 항목 정리" 로 일괄 보관(DB 에는 남음)
 - 더블클릭으로 그 자리에서 수정 (Enter/포커스 이동: 저장, Esc: 취소)
-- 리마인더 항목은 항상 위에 시각순 고정, 나머지는 드래그 앤 드롭으로 순서 변경
+- 드래그 앤 드롭으로 순서/레벨 변경: 행 가운데에 놓으면 그 항목의 하위로, 행 사이에 놓으면 그 자리로
+  (계층 규칙은 manager/todo_tree 참고 - 상위를 완료하면 하위도 완료, 상위를 지우면 하위는 한 단계 위로)
+- 형제끼리는 미완료 -> 완료 순, 리마인더 항목이 시각순으로 위에 고정되고 나머지는 사용자가 정한 순서
 """
 
 from datetime import UTC, datetime
@@ -25,7 +27,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from manager import todo_store
+from manager import todo_store, todo_tree
 from ui.reminder_picker import ReminderPicker
 from ui.theme import ACCENT, FONT_FAMILY, TEXT_MAIN, TEXT_SUB, TEXT_WARN
 
@@ -36,6 +38,13 @@ ROW_RADIUS = 4
 TODO_MIME = "application/x-taskpin-todo-id"  # 드래그 앤 드롭으로 옮기는 항목 id
 AUTO_SCROLL_MARGIN = 16  # 드래그 중 목록 위/아래 끝에서 자동 스크롤되는 영역(px)
 AUTO_SCROLL_STEP = 8
+INDENT_STEP = 16  # 레벨 하나당 들여쓰기(px) - 체크박스 + 간격
+MAX_INDENT_DEPTH = 3  # 위젯 폭이 좁으므로 이보다 깊은 레벨은 같은 들여쓰기로 표시
+
+
+def _indent(depth: int) -> int:
+    return min(depth, MAX_INDENT_DEPTH) * INDENT_STEP
+
 
 PANEL_STYLE = f"""
     QScrollArea, QScrollArea > QWidget > QWidget {{ background: transparent; border: none; }}
@@ -156,17 +165,17 @@ class TodoRow(QWidget):
     edited = Signal(str, str)
     drag_requested = Signal(object)  # TodoRow
 
-    def __init__(self, item: dict, reminders_provider, draggable: bool, parent=None):
+    def __init__(self, item: dict, depth: int, reminders_provider, parent=None):
         super().__init__(parent)
         self.item = item
-        self.draggable = draggable
+        self.depth = depth  # 레벨 (최상위 0)
         self._editing = False
         self._hover = False
         self._press_pos = None  # 드래그 시작 판정용 누른 지점
 
         layout = QHBoxLayout(self)
         # 좌우 여백은 hover 배경이 체크박스/삭제 버튼에 붙지 않게
-        layout.setContentsMargins(4, 2, 4, 2)
+        layout.setContentsMargins(4 + self.indent(), 2, 4, 2)
         layout.setSpacing(6)
 
         self.check = QCheckBox()
@@ -180,11 +189,7 @@ class TodoRow(QWidget):
         self.label.setTextInteractionFlags(Qt.NoTextInteraction)
         self.label.setWordWrap(True)
         self.label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        self.label.setToolTip(
-            "더블클릭하여 수정 · 드래그하여 순서 변경"
-            if draggable
-            else "더블클릭하여 수정"
-        )
+        self.label.setToolTip("더블클릭하여 수정 · 드래그하여 이동")
         self.label.installEventFilter(self)
 
         self.editor = TodoInput(reminders_provider)
@@ -211,6 +216,10 @@ class TodoRow(QWidget):
         layout.addWidget(self.btn_delete, 0, Qt.AlignTop)
 
         self.render()
+
+    def indent(self) -> int:
+        """레벨에 따른 왼쪽 들여쓰기(px)"""
+        return _indent(self.depth)
 
     def render(self, now: datetime = None):
         now = now or datetime.now().astimezone()
@@ -265,9 +274,9 @@ class TodoRow(QWidget):
             return True
         return super().eventFilter(obj, event)
 
-    # 드래그 가능한 행은 누름을 받아서 위젯 창 이동으로 넘어가지 않게 한다
+    # 행의 누름은 드래그용으로 받아서 위젯 창 이동으로 넘어가지 않게 한다
     def mousePressEvent(self, event):
-        if self.draggable and not self._editing and event.button() == Qt.LeftButton:
+        if not self._editing and event.button() == Qt.LeftButton:
             self._press_pos = event.position().toPoint()
             event.accept()
             return
@@ -304,7 +313,9 @@ class TodoRow(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         path = QPainterPath()
-        path.addRoundedRect(QRectF(self.rect()), ROW_RADIUS, ROW_RADIUS)
+        path.addRoundedRect(
+            QRectF(self.rect().adjusted(self.indent(), 0, 0, 0)), ROW_RADIUS, ROW_RADIUS
+        )
         painter.fillPath(path, ROW_HOVER_COLOR)
 
 
@@ -314,10 +325,10 @@ class TodoPanel(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._items = todo_store.load_todos()
+        todo_tree.detach_orphans(self._items)
         self._rows = []
-        self._pending_move = (
-            None  # 드롭된 (옮길 id, 이 id 앞으로 / None 이면 그룹 맨 뒤로)
-        )
+        # 드롭된 (옮길 id, 새 상위 id / None 이면 최상위, 이 id 앞으로 / None 이면 형제 맨 뒤로)
+        self._pending_move = None
         self.setStyleSheet(PANEL_STYLE)
 
         root = QVBoxLayout(self)
@@ -344,9 +355,15 @@ class TodoPanel(QWidget):
         # ---- 드래그 앤 드롭 (행들은 드롭을 받지 않으므로 container 로 올라온다) ----
         self.container.setAcceptDrops(True)
         self.container.installEventFilter(self)
-        self.drop_line = QFrame(self.container)  # 놓일 자리 표시
+        self.drop_line = QFrame(self.container)  # 행 사이에 놓일 자리 표시
         self.drop_line.setStyleSheet(f"background: {ACCENT}; border: none;")
         self.drop_line.hide()
+        self.drop_box = QFrame(self.container)  # 하위로 들어갈 행 표시
+        self.drop_box.setStyleSheet(
+            f"background: transparent; border: 1px solid {ACCENT};"
+            f" border-radius: {ROW_RADIUS}px;"
+        )
+        self.drop_box.hide()
         root.addWidget(self.scroll, 1)
 
         self.input = TodoInput(self.reminders)
@@ -390,9 +407,8 @@ class TodoPanel(QWidget):
         QTimer.singleShot(0, lambda: self.scroll.ensureWidgetVisible(row))
 
     def set_done(self, item_id: str, done: bool):
-        item = self._find(item_id)
-        if item is not None and item["done"] != done:
-            item["done"] = done
+        """완료하면 하위도 모두 완료, 해제하면 상위도 모두 해제"""
+        if todo_tree.set_done(self._items, item_id, done):
             self._save_and_rebuild()
 
     def edit_item(self, item_id: str, text: str):
@@ -407,8 +423,9 @@ class TodoPanel(QWidget):
         self._save_and_rebuild()
 
     def delete_item(self, item_id: str):
-        self._items = [item for item in self._items if item["id"] != item_id]
-        self._save_and_rebuild()
+        """항목만 지운다. 하위 항목은 한 단계 위로 올라간다."""
+        if todo_tree.remove_promote(self._items, item_id):
+            self._save_and_rebuild()
 
     def clear_done(self):
         """완료 항목을 목록에서 뺀다. DB 에서는 지우지 않고 보관 처리한다."""
@@ -442,6 +459,9 @@ class TodoPanel(QWidget):
             row.render(now)
 
     def _save_and_rebuild(self):
+        todo_tree.detach_orphans(
+            self._items
+        )  # 상위가 지워지거나 보관된 항목은 최상위로
         todo_store.save_todos(self._items)
         self._rebuild()
 
@@ -450,22 +470,17 @@ class TodoPanel(QWidget):
         due = todo_store.due_at(item)  # 행에 표시되는 시각(미룬 시각 우선)과 같은 기준
         return (item["done"], due is None, due or datetime.min.replace(tzinfo=UTC))
 
-    @staticmethod
-    def _is_draggable(item: dict) -> bool:
-        """리마인더 항목은 시각순으로 고정, 나머지만 사용자가 순서를 정한다."""
-        return todo_store.due_at(item) is None
-
     def _rebuild(self):
         for row in self._rows:
             self.list_layout.removeWidget(row)
             row.deleteLater()
         self._rows = []
 
-        # 미완료 -> 완료 순, 각각 리마인더 일시가 빠른 순
+        # 하위는 상위 바로 밑에. 형제끼리 미완료 -> 완료 순, 각각 리마인더 일시가 빠른 순
         # 리마인더 없는 항목은 그 뒤에 self._items 순서(= 드래그로 정한 순서) 그대로 (안정 정렬)
-        ordered = sorted(self._items, key=self._sort_key)
-        for idx, item in enumerate(ordered):
-            row = TodoRow(item, self.reminders, self._is_draggable(item))
+        ordered = todo_tree.flatten(self._items, self._sort_key)
+        for idx, (item, depth) in enumerate(ordered):
+            row = TodoRow(item, depth, self.reminders)
             row.toggled.connect(self.set_done)
             row.deleted.connect(self.delete_item)
             row.edited.connect(self.edit_item)
@@ -476,7 +491,7 @@ class TodoPanel(QWidget):
         self.empty_label.setVisible(not ordered)
 
     # ==================================================
-    # 드래그 앤 드롭으로 순서 변경
+    # 드래그 앤 드롭으로 순서 / 레벨 변경
     # ==================================================
     def _start_drag(self, row: "TodoRow"):
         drag = QDrag(self)
@@ -488,7 +503,7 @@ class TodoPanel(QWidget):
 
         self._pending_move = None
         drag.exec(Qt.MoveAction)
-        self.drop_line.hide()
+        self._show_drop_mark(None)
 
         # 드래그 루프 안에서 행을 지우면(rebuild) 드래그를 시작한 행이 사라지므로 끝난 뒤에 옮긴다
         if self._pending_move is not None:
@@ -496,22 +511,70 @@ class TodoPanel(QWidget):
             self._pending_move = None
 
     def _drop_target(self, item: dict, y: int):
-        """같은 그룹(완료 여부가 같은 드래그 가능 항목) 행 사이에서 y 에 해당하는 자리
+        """끌고 있는 항목을 y 에 놓았을 때의 자리. 행 높이를 3등분해서
+        위쪽(행 사이 여백 포함)은 그 행 앞, 가운데는 그 행의 하위 맨 뒤, 아래쪽은 다음 행 앞.
 
         Returns
         -------
-        (이 행 앞에 놓음 / None 이면 그룹 맨 뒤, 표시선 y)
+        None : 끌고 있는 항목(또는 그 하위) 위 - 놓아도 아무 일 없음
+        (새 상위 id, 이 id 앞으로 / None 이면 형제 맨 뒤, 표시) :
+            표시는 ("line", 표시선 y, 레벨) 또는 ("box", 하위로 들어갈 행)
         """
-        group = [
-            row
-            for row in self._rows
-            if self._is_draggable(row.item) and row.item["done"] == item["done"]
-        ]
-        for row in group:
+        moving = {item["id"]}
+        moving.update(
+            other["id"] for other in todo_tree.descendants(self._items, item["id"])
+        )
+        moving_rows = [row for row in self._rows if row.item["id"] in moving]
+        rows = [row for row in self._rows if row.item["id"] not in moving]
+        # 하위 항목은 상위 바로 밑에 이어서 보이므로 끌고 있는 묶음은 한 덩어리다
+        if moving_rows and (
+            moving_rows[0].geometry().top() <= y <= moving_rows[-1].geometry().bottom()
+        ):
+            return None
+        if not rows:
+            return None
+
+        for idx, row in enumerate(rows):
             geo = row.geometry()
-            if y < geo.center().y():
-                return row, geo.top() - 1
-        return None, group[-1].geometry().bottom() + 1
+            if y > geo.bottom():
+                continue
+            third = geo.height() / 3
+            if y < geo.top() + third:
+                return (
+                    row.item["parent_id"],
+                    row.item["id"],
+                    ("line", geo.top() - 1, row.depth),
+                )
+            if y < geo.bottom() - third:
+                return row.item["id"], None, ("box", row)
+            if idx + 1 < len(rows):
+                nxt = rows[idx + 1]
+                return (
+                    nxt.item["parent_id"],
+                    nxt.item["id"],
+                    ("line", geo.bottom() + 1, nxt.depth),
+                )
+            break
+        return None, None, ("line", rows[-1].geometry().bottom() + 1, 0)
+
+    def _show_drop_mark(self, mark):
+        """_drop_target 의 표시를 그린다. None 이면 모두 숨긴다."""
+        if mark is not None and mark[0] == "line":
+            _, y, depth = mark
+            x = _indent(depth)
+            self.drop_line.setGeometry(x, y - 1, self.container.width() - 4 - x, 2)
+            self.drop_line.raise_()
+            self.drop_line.show()
+        else:
+            self.drop_line.hide()
+
+        if mark is not None and mark[0] == "box":
+            row = mark[1]
+            self.drop_box.setGeometry(row.geometry().adjusted(row.indent(), 0, 0, 0))
+            self.drop_box.raise_()
+            self.drop_box.show()
+        else:
+            self.drop_box.hide()
 
     def _dragged_item(self, event):
         if not event.mimeData().hasFormat(TODO_MIME):
@@ -531,20 +594,19 @@ class TodoPanel(QWidget):
                 return True
 
             y = event.position().toPoint().y()
-            target, line_y = self._drop_target(item, y)
+            target = self._drop_target(item, y)
             if event.type() == QEvent.Drop:
-                self.drop_line.hide()
-                self._pending_move = (item["id"], target.item["id"] if target else None)
+                self._show_drop_mark(None)
+                if target is not None:
+                    self._pending_move = (item["id"], target[0], target[1])
             else:
-                self.drop_line.setGeometry(0, line_y - 1, self.container.width() - 4, 2)
-                self.drop_line.raise_()
-                self.drop_line.show()
+                self._show_drop_mark(target[2] if target is not None else None)
                 self._auto_scroll(y)
             event.acceptProposedAction()
             return True
 
         if obj is self.container and event.type() == QEvent.DragLeave:
-            self.drop_line.hide()
+            self._show_drop_mark(None)
         return super().eventFilter(obj, event)
 
     def _auto_scroll(self, container_y: int):
@@ -560,28 +622,10 @@ class TodoPanel(QWidget):
         elif y > viewport.height() - AUTO_SCROLL_MARGIN:
             bar.setValue(bar.value() + AUTO_SCROLL_STEP)
 
-    def _move_item(self, item_id: str, before_id):
-        """item_id 를 before_id 앞으로 (None 이면 같은 그룹의 맨 뒤로) 옮긴다."""
-        item = self._find(item_id)
-        if item is None or item_id == before_id:
-            return
-        others = [
-            other
-            for other in self._items
-            if other is not item
-            and self._is_draggable(other)
-            and other["done"] == item["done"]
-        ]
-        if not others:
-            return
-
-        self._items.remove(item)
-        if before_id is not None:
-            idx = self._items.index(self._find(before_id))
-        else:
-            idx = self._items.index(others[-1]) + 1
-        self._items.insert(idx, item)
-        self._save_and_rebuild()
+    def _move_item(self, item_id: str, parent_id, before_id):
+        """item_id 를 (하위와 함께) parent_id 아래 before_id 앞으로 (None 이면 형제 맨 뒤로) 옮긴다."""
+        if todo_tree.move(self._items, item_id, parent_id, before_id):
+            self._save_and_rebuild()
 
     def _on_input_return(self):
         text = self.input.text().strip()

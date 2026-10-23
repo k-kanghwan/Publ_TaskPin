@@ -28,7 +28,7 @@ iscc installer\TaskPin.iss                   # 설치본 -> dist/TaskPin-<버전
 ## 구조
 
 - `TaskPin.py` — `TaskPinApp(TrayApp)`: 위젯 연결, 1초 tick(현재시간·남은시간·Task 종료 트레이 알림 1회), Task 등록
-- `manager/` — Qt 없는 로직: `task_clock`(15분 단위·남은시간 계산), `task_store`/`todo_store`(SQLite), `db`(연결 1개, `PRAGMA user_version` 마이그레이션), `widget_config`(config.json), `paths`, `os_win`
+- `manager/` — Qt 없는 로직: `task_clock`(15분 단위·남은시간 계산), `task_store`/`todo_store`(SQLite), `todo_tree`(TODO 상위/하위), `db`(연결 1개, `PRAGMA user_version` 마이그레이션), `widget_config`(config.json), `paths`, `os_win`
 - `ui/` — `clock_widget`(좌측 Task 패널 + TODO 배치, "멍청한 뷰"), `task_picker`(등록 팝업), `todo_panel`/`reminder_*`(참고 소스 이식), `tray_app`, `theme`
 
 ## 참고 소스: `C:\Users\kh.Cha\Documents\MyProject\Priv_WimsClockManager\`
@@ -57,6 +57,7 @@ iscc installer\TaskPin.iss                   # 설치본 -> dist/TaskPin-<버전
   - 등록 전에는 시작이 `--:--`. 종료 = 시작 + 소요 시간. 남은시간이 0을 지나면 초과 시간을 `+`로 표시한다.
 - 더블클릭으로 편집할 수 있는 곳은 사용자 이름 하나뿐이다.
 - 이미 실행 중일 때 다시 실행하면 경고 없이 기존 앱의 위젯을 띄운다(`TrayApp.on_second_instance`). 기존 앱은 백그라운드라 전경 잠금에 걸리므로, 두 번째 실행이 `os_win.allow_set_foreground()`로 권한을 넘기고 연결이 끊길 때까지 기다린다.
+- TODO 레벨: `todos.parent_id`(NULL이면 최상위)와 형제 사이 순서 `position`. 트리 규칙은 `manager/todo_tree.py`에 있다. 행 가운데에 놓으면 그 항목의 하위로, 행 위/아래 1/3에 놓으면 그 자리로 간다. "완료된 상위 ⇒ 하위도 모두 완료"를 유지하고, 상위를 삭제하면 하위는 한 단계 올린다. 들여쓰기는 3단계까지만 늘어난다.
 
 ## 데이터 저장 / 경로
 

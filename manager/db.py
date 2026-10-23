@@ -38,7 +38,13 @@ ALTER TABLE tasks ADD COLUMN cleared_at TEXT;
 PRAGMA user_version = 2;
 """
 
-_MIGRATIONS = ((1, _SCHEMA_V1), (2, _SCHEMA_V2))
+# user_version 2 -> 3: TODO 상위 항목 id (NULL 이면 최상위)
+_SCHEMA_V3 = """
+ALTER TABLE todos ADD COLUMN parent_id TEXT;
+PRAGMA user_version = 3;
+"""
+
+_MIGRATIONS = ((1, _SCHEMA_V1), (2, _SCHEMA_V2), (3, _SCHEMA_V3))
 
 _conn = None
 

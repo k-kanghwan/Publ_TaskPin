@@ -5,6 +5,7 @@ obsidian-reminder 와 같이 텍스트 안의 `(@YYYY-MM-DD HH:mm)` 토큰을
 
 TodoPanel 은 메모리 목록을 통째로 save_todos() 에 넘긴다. 저장은 화면 목록(활성 행)만
 맞추고, "완료 항목 정리"로 보관한(archived_at) 행은 건드리지 않는다.
+상위/하위 계층은 parent_id 로, 형제 사이 순서는 position 으로 저장한다.
 """
 
 import html
@@ -22,7 +23,7 @@ DATETIME_FMT = "%Y-%m-%d %H:%M"
 
 REMINDER_RE = re.compile(r"\(@(\d{4}-\d{2}-\d{2})(?:\s+(\d{1,2}:\d{2}))?\)")
 
-_COLUMNS = ("id", "text", "done", "created", "snooze_until", "fired")
+_COLUMNS = ("id", "text", "done", "created", "snooze_until", "fired", "parent_id")
 
 
 # ==================================================
@@ -61,11 +62,11 @@ def save_todos(items: list) -> None:
             )
             c.executemany(
                 f"INSERT INTO todos ({', '.join(_COLUMNS)}, position)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
                 " ON CONFLICT(id) DO UPDATE SET"
                 " text = excluded.text, done = excluded.done, created = excluded.created,"
                 " snooze_until = excluded.snooze_until, fired = excluded.fired,"
-                " position = excluded.position",
+                " parent_id = excluded.parent_id, position = excluded.position",
                 [
                     (
                         item["id"],
@@ -74,6 +75,7 @@ def save_todos(items: list) -> None:
                         item.get("created"),
                         item.get("snooze_until"),
                         item.get("fired"),
+                        item.get("parent_id"),
                         pos,
                     )
                     for pos, item in enumerate(items)
@@ -105,6 +107,7 @@ def new_item(text: str) -> dict:
         "created": datetime.now().astimezone().strftime(DATETIME_FMT),
         "snooze_until": None,  # "나중에 알림" 으로 미룬 시각
         "fired": None,  # 마지막으로 알림을 보낸 due 문자열
+        "parent_id": None,  # 상위 항목 id (계층은 manager/todo_tree 참고)
     }
 
 

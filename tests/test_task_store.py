@@ -70,7 +70,8 @@ def test_v1_db_is_migrated(tmp_path):
         )
     db.connect(str(path))
     try:
-        assert db.conn().execute("PRAGMA user_version").fetchone()[0] == 2
+        latest = db._MIGRATIONS[-1][0]
+        assert db.conn().execute("PRAGMA user_version").fetchone()[0] == latest
         assert task_store.latest().title == "old"
     finally:
         db.close()

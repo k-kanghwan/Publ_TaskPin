@@ -1,6 +1,6 @@
 import sqlite3
 
-from manager import todo_store
+from manager import db, todo_store
 
 
 def _items(*texts):
@@ -61,6 +61,39 @@ def test_archived_items_leave_list_but_stay_in_db(temp_db):
     # 이후 저장이 반복되어도 보관 행은 남는다
     todo_store.save_todos(remaining[:1])
     assert [row[0] for row in _archived_rows(temp_db)] == [items[1]["id"]]
+
+
+def test_parent_id_is_saved(temp_db):
+    items = _items("a", "b")
+    items[1]["parent_id"] = items[0]["id"]
+    todo_store.save_todos(items)
+    assert [item["parent_id"] for item in todo_store.load_todos()] == [
+        None,
+        items[0]["id"],
+    ]
+
+    items[1]["parent_id"] = None
+    todo_store.save_todos(items)
+    assert todo_store.load_todos()[1]["parent_id"] is None
+
+
+def test_migrate_v2_adds_parent_id(tmp_path):
+    path = tmp_path / "v2.db"
+    with sqlite3.connect(path) as c:
+        c.executescript(db._SCHEMA_V1 + db._SCHEMA_V2)
+        c.execute(
+            "INSERT INTO todos (id, text, done, position) VALUES ('x', 'old', 0, 0)"
+        )
+    c.close()
+
+    db.connect(str(path))
+    try:
+        latest = db._MIGRATIONS[-1][0]
+        assert db.conn().execute("PRAGMA user_version").fetchone()[0] == latest
+        loaded = todo_store.load_todos()
+        assert [(item["id"], item["parent_id"]) for item in loaded] == [("x", None)]
+    finally:
+        db.close()
 
 
 def test_reminder_token_helpers_unchanged():
