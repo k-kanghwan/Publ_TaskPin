@@ -30,12 +30,15 @@ import sys
 from datetime import datetime
 
 from PySide6.QtCore import QTimer
+from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon
 
-from manager import db, os_win, task_clock, task_store, widget_config
+from manager import db, os_win, snippets, task_clock, task_store, widget_config
 from ui.clock_widget import ClockWidget
 from ui.confirm_dialog import ConfirmDialog
+from ui.settings_dialog import SettingsDialog
 from ui.task_picker import TaskPicker
+from ui.text_input import ImeCharFilter
 from ui.tray_app import TrayApp
 
 # VS Code 디버그 실행(.vscode/launch.json): 위젯 항상 위, 실제 앱과 분리
@@ -67,9 +70,11 @@ class TaskPinApp(TrayApp):
         if not DEBUG:
             os_win.sync_autostart_command()
         self.widget = ClockWidget(self.widget_cfg, force_on_top=DEBUG)
+        self._settings = None  # 열려 있는 설정창 (한 번에 하나)
 
         self.widget.task_register_requested.connect(self.open_task_picker)
         self.widget.task_clear_requested.connect(self.clear_task)
+        self.widget.settings_requested.connect(self.open_settings)
         self.widget.quit_requested.connect(self.app_close)
         self.widget.visibility_changed.connect(self.sync_widget_toggle_action)
         self.widget.reminder_due.connect(
@@ -125,7 +130,9 @@ class TaskPinApp(TrayApp):
 
     def open_task_picker(self):
         """위젯의 'Task 등록' 버튼: 등록 창을 버튼 위에 띄운다."""
-        picker = TaskPicker(self._shown_task, self.widget)
+        picker = TaskPicker(
+            self._shown_task, lambda: snippets.from_config(self.widget_cfg), self.widget
+        )
         picker.picked.connect(self.register_task)
         picker.popup_for(self.widget.btn_task)
 
@@ -181,6 +188,17 @@ class TaskPinApp(TrayApp):
             )
         return dialog.exec_over(self.widget)
 
+    def open_settings(self):
+        """위젯 우클릭 '설정' / 설정 단축키: 설정창을 띄운다. 이미 떠 있으면 앞으로 올린다."""
+        if self._settings is None:
+            self._settings = SettingsDialog(self.widget_cfg, f"{APP_NAME} {VERSION}")
+            self._settings.shortcuts_changed.connect(self.widget.apply_shortcuts)
+            self._settings.destroyed.connect(self._on_settings_destroyed)
+        self._settings.show_front()
+
+    def _on_settings_destroyed(self):
+        self._settings = None
+
     def toggle_widget(self, show: bool):
         """트레이 메뉴의 '위젯 보이기' 토글"""
         if show:
@@ -208,6 +226,8 @@ class TaskPinApp(TrayApp):
     def app_close(self):
         """트레이 / 위젯 메뉴의 '종료': 위젯 정지 / 설정 저장 후 종료"""
         self.widget_tick.stop()
+        if self._settings is not None:
+            self._settings.close()
         self.widget.close()
         widget_config.save_config(self.widget_cfg)
         db.close()
@@ -219,6 +239,14 @@ if __name__ == "__main__":
     app.setQuitOnLastWindowClosed(False)
     app.setApplicationName(APP_NAME)
     app.setApplicationVersion(VERSION)
+
+    # 컬러 이모지는 힌팅을 끄면 테두리가 덜 뭉개진다 (웹 브라우저도 힌팅 없이 그림)
+    font = app.font()
+    font.setHintingPreference(QFont.PreferNoHinting)
+    app.setFont(font)
+    # Win+. 이모지 패널 입력 보정 (Qt 6.8 이 서로게이트 쌍을 버림 - ui/text_input 참고)
+    ime_filter = ImeCharFilter()
+    app.installNativeEventFilter(ime_filter)
 
     if not DEBUG:  # 디버그 앱이 설치/제거를 막지 않도록
         os_win.create_app_mutex()

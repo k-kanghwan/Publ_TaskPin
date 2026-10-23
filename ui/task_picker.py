@@ -1,6 +1,7 @@
 """`Task 등록` 버튼으로 뜨는 Task 등록 창
 
 업무명(비워도 됨) / 시작 / 소요 / 종료
+  - 업무명에서도 `:idea:` 같은 스니펫 트리거를 문구로 바꾼다.
   - 시작은 오늘 00:00 ~ 23:45 (15분 단위), 기본값은 현재시간을 15분 단위로 내린 값
   - 소요를 바꾸면 종료를, 종료를 바꾸면 소요를 다시 계산한다.
   - 시작을 바꾸면 소요는 그대로 두고 종료 목록을 다시 만든다.
@@ -31,6 +32,7 @@ from PySide6.QtWidgets import (
 )
 
 from manager import task_clock
+from ui.text_input import expand_snippet_later, py_cursor
 from ui.theme import (
     ACCENT,
     FONT_FAMILY,
@@ -54,9 +56,15 @@ class _TitleEdit(QLineEdit):
     마지막 글자를 조합하는 중에 확인 버튼(NoFocus)을 누르면 조합이 확정되지 않아
     text() 에 빠지므로, 확인 시 preedit 을 함께 읽는다."""
 
-    def __init__(self, parent=None):
+    def __init__(self, snippets_provider, parent=None):
         super().__init__(parent)
         self.preedit = ""
+        self._snippets_provider = snippets_provider
+        self.textEdited.connect(self._on_text_edited)
+
+    def _on_text_edited(self, _text: str):
+        if not self.preedit:
+            expand_snippet_later(self, self._snippets_provider)
 
     def inputMethodEvent(self, event):
         self.preedit = event.preeditString()
@@ -65,7 +73,7 @@ class _TitleEdit(QLineEdit):
     def full_text(self) -> str:
         text = self.text()
         if self.preedit:
-            pos = self.cursorPosition()
+            pos = py_cursor(self)
             text = text[:pos] + self.preedit + text[pos:]
         return text
 
@@ -74,8 +82,9 @@ class TaskPicker(QFrame):
     picked = Signal(str, object, object)  # 업무명, 시작 datetime, 종료 datetime
     closed = Signal()  # 확인/취소와 관계없이 닫힐 때
 
-    def __init__(self, task=None, parent=None):
-        """task: 오늘 시작한 Task 가 있으면 그 값으로 채운다 (None 이면 기본값)"""
+    def __init__(self, task, snippets_provider, parent=None):
+        """task: 오늘 시작한 Task 가 있으면 그 값으로 채운다 (None 이면 기본값)
+        snippets_provider: () -> {트리거: 문구} (업무명 스니펫 치환)"""
         super().__init__(parent, Qt.Tool | Qt.FramelessWindowHint)
         self.setAttribute(Qt.WA_DeleteOnClose, True)
         # 둥근 모서리 바깥을 투명하게 (배경은 paintEvent 가 그림)
@@ -83,6 +92,7 @@ class TaskPicker(QFrame):
         self.setFocusPolicy(Qt.StrongFocus)
         self.setFixedWidth(PICKER_WIDTH)
         self._accepted = False
+        self._snippets_provider = snippets_provider
 
         now = datetime.now().astimezone()
         self._day = now.date()
@@ -154,7 +164,7 @@ class TaskPicker(QFrame):
 
         # Enter 는 returnPressed 로 연결하지 않는다 - QLineEdit 가 Enter 를 부모로 넘겨
         # keyPressEvent 에서도 처리되므로 두 번 등록된다.
-        self.title_edit = _TitleEdit()
+        self.title_edit = _TitleEdit(self._snippets_provider)
         self.title_edit.setPlaceholderText("업무명 (선택)")
 
         self.start_combo = self._combo()

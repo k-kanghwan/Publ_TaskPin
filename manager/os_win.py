@@ -73,6 +73,23 @@ def is_own_window(hwnd) -> bool:
     return pid.value == os.getpid()
 
 
+DWMWA_USE_IMMERSIVE_DARK_MODE = 20  # Windows 10 20H1 이상
+
+
+def set_dark_title_bar(hwnd: int):
+    """제목줄을 어둡게 (Windows 를 라이트 모드로 써도 다크 테마 창과 어울리게). 실패는 무시한다."""
+    value = ctypes.c_int(1)
+    try:
+        ctypes.windll.dwmapi.DwmSetWindowAttribute(
+            wintypes.HWND(hwnd),
+            DWMWA_USE_IMMERSIVE_DARK_MODE,
+            ctypes.byref(value),
+            ctypes.sizeof(value),
+        )
+    except OSError:
+        pass
+
+
 ASFW_ANY = 0xFFFFFFFF
 
 
@@ -81,6 +98,51 @@ def allow_set_foreground():
     백그라운드에서 돌던 기존 앱은 Windows 전경 잠금 때문에 스스로 창을 활성화하지 못하므로,
     사용자가 방금 실행한(전경 권한이 있는) 두 번째 실행이 대신 허락해 준다."""
     _user32.AllowSetForegroundWindow(ASFW_ANY)
+
+
+# ==================================================
+# IME 문자 메시지 (Win+. 이모지 패널)
+# ==================================================
+# 이모지 패널은 고른 이모지를 WM_IME_CHAR 로 UTF-16 코드 단위 하나씩 보낸다.
+# Qt 6.8 은 BMP 글자는 넣지만 서로게이트 쌍(🚀 = D83D DE80)은 버리므로
+# ui/text_input.ImeCharFilter 가 이 메시지를 대신 받아 입력칸에 넣는다.
+WM_CHAR = 0x0102
+WM_IME_CHAR = 0x0286
+
+
+def char_message(message_ptr: int):
+    """네이티브 메시지가 WM_CHAR / WM_IME_CHAR 이면 (메시지, UTF-16 코드 단위), 아니면 None"""
+    msg = wintypes.MSG.from_address(message_ptr)
+    if msg.message in (WM_CHAR, WM_IME_CHAR):
+        return msg.message, msg.wParam & 0xFFFF
+    return None
+
+
+class ImeCharDecoder:
+    """문자 메시지를 Qt 대신 받을지 정하고, 서로게이트 쌍을 한 글자로 합친다.
+
+    - WM_IME_CHAR 는 모두 받는다. BMP 글자(ZWJ, 변형 선택자)도 같은 경로로 넣어야
+      👨‍👩‍👧 같은 이모지 시퀀스의 순서가 섞이지 않는다.
+    - WM_CHAR 는 서로게이트만 받는다. 일반 글자는 Qt 키 이벤트(단축키 등)로 둔다.
+    """
+
+    def __init__(self):
+        self._high = None  # 짝을 기다리는 상위 서로게이트
+
+    def feed(self, message: int, unit: int):
+        """Returns (Qt 에 넘기지 않고 가로챌지, 넣을 문자열 또는 None)"""
+        if 0xD800 <= unit <= 0xDBFF:
+            self._high = unit
+            return True, None
+        if 0xDC00 <= unit <= 0xDFFF:
+            high, self._high = self._high, None
+            if high is None:  # 짝 없는 하위 서로게이트는 버린다
+                return True, None
+            return True, chr(0x10000 + ((high - 0xD800) << 10) + (unit - 0xDC00))
+        self._high = None
+        if message == WM_IME_CHAR:
+            return True, chr(unit)
+        return False, None
 
 
 # ==================================================

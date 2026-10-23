@@ -8,12 +8,15 @@ Priv_dtcal/dtcal_poc.py 에서 검증된 기법을 이식:
 이 위젯은 "멍청한 뷰"다. Task 저장 / 시간 계산은 전부 TaskPinApp 이 담당하고,
 위젯은 시그널로 요청만 올려보낸 뒤 apply_task() / set_clock() 으로 값을 받아 그린다.
 (사용자 이름 / TODO / 위젯 설정은 위젯이 직접 저장한다)
+
+단축키(설정창 Keyboard Shortcuts 탭)는 위젯 창이 활성일 때만 동작한다. E/C/A 같은 글자 키는
+입력칸이 먼저 가져가므로(ShortcutOverride) 할 일이나 이름을 입력하는 중에는 글자로 들어간다.
 """
 
 from datetime import datetime
 
 from PySide6.QtCore import QEvent, Qt, QPoint, QRectF, QTimer, Signal
-from PySide6.QtGui import QColor, QPainter, QPainterPath
+from PySide6.QtGui import QColor, QKeySequence, QPainter, QPainterPath, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QFrame,
@@ -27,7 +30,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from manager import os_win, todo_store, widget_config
+from manager import os_win, snippets, todo_store, widget_config
 from ui.reminder_popup import ReminderPopup
 from ui.theme import (
     ACCENT,
@@ -178,6 +181,7 @@ class ClockWidget(QWidget):
 
     task_register_requested = Signal()
     task_clear_requested = Signal()
+    settings_requested = Signal()
     quit_requested = Signal()
     visibility_changed = Signal(bool)
     reminder_due = Signal(str, str)  # item id, 본문
@@ -191,6 +195,7 @@ class ClockWidget(QWidget):
         self._locked = bool(cfg.get("locked", False))
         self._drag_offset = None
         self._popups = []
+        self._shortcuts = []
         # 트레이 클릭으로 다른 앱보다 위에 꺼내 둔 상태
         self._front = False
         self._front_baseline = (
@@ -216,6 +221,7 @@ class ClockWidget(QWidget):
         self._orientation = None
         self._apply_orientation(self._cfg_orientation())
         self._restore_position()
+        self.apply_shortcuts(widget_config.shortcuts(self._cfg))
 
         # 4) 리마인더 (위젯이 숨겨져 있어도 계속 확인)
         self.reminder_timer = QTimer(self)
@@ -527,7 +533,7 @@ class ClockWidget(QWidget):
         root.addWidget(self._right_col, 1)
 
         # ---- TODO 리스트 (높이를 늘리면 이 영역만 커짐 / 위치는 _apply_orientation) ----
-        self.todo_panel = TodoPanel()
+        self.todo_panel = TodoPanel(lambda: snippets.from_config(self._cfg))
 
         self.set_user_name(self._cfg.get("user_name", ""))
         self.apply_task(None)
@@ -705,6 +711,32 @@ class ClockWidget(QWidget):
         self.name_edit.hide()
         self.name_label.show()
 
+    def apply_shortcuts(self, mapping: dict):
+        """단축키를 다시 건다. mapping: {동작: QKeySequence PortableText} ("" 이면 해제)"""
+        for shortcut in self._shortcuts:
+            shortcut.setEnabled(False)
+            shortcut.deleteLater()
+        self._shortcuts = []
+
+        handlers = {
+            "task_register": self.task_register_requested.emit,
+            "task_clear": self._on_clear_shortcut,
+            "todo_focus": self.todo_panel.focus_input,
+            "settings": self.settings_requested.emit,
+        }
+        for action, keys in mapping.items():
+            sequence = QKeySequence(keys, QKeySequence.PortableText)
+            if action not in handlers or sequence.isEmpty():
+                continue
+            shortcut = QShortcut(sequence, self)
+            shortcut.setContext(Qt.WindowShortcut)
+            shortcut.activated.connect(handlers[action])
+            self._shortcuts.append(shortcut)
+
+    def _on_clear_shortcut(self):
+        if self.btn_task_clear.isEnabled():
+            self.task_clear_requested.emit()
+
     def set_clock(self, now_text: str, remaining_text: str):
         self.now_label.setText(f"현재시간  {now_text}")
         self.remaining_label.setText(remaining_text)
@@ -807,6 +839,7 @@ class ClockWidget(QWidget):
         # act_top.setChecked(bool(self._cfg.get("always_on_top", False)))
         # act_top.toggled.connect(self.set_always_on_top)
 
+        menu.addAction("설정", self.settings_requested.emit)
         menu.addAction("위젯 숨기기", self.hide_widget)
         menu.addSeparator()
         menu.addAction("종료", self.quit_requested.emit)

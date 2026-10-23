@@ -23,6 +23,10 @@ DATETIME_FMT = "%Y-%m-%d %H:%M"
 
 REMINDER_RE = re.compile(r"\(@(\d{4}-\d{2}-\d{2})(?:\s+(\d{1,2}:\d{2}))?\)")
 
+# 이모지 한 덩어리: 이모지 + 이어지는 변형 선택자(FE0F) / ZWJ / 피부색 / 다음 이모지
+_EMOJI_CHARS = "\U0001f000-\U0001faff⌀-⏿☀-➿⬀-⯿"
+EMOJI_RE = re.compile(f"[{_EMOJI_CHARS}][️‍{_EMOJI_CHARS}]*")
+
 _COLUMNS = ("id", "text", "done", "created", "snooze_until", "fired", "parent_id")
 
 
@@ -168,9 +172,17 @@ def is_due(item: dict, now: datetime) -> bool:
     return due is not None and due <= now and item.get("fired") != due_key(due)
 
 
-def to_html(text: str) -> str:
-    """표시용 HTML (반드시 escape - 사용자 입력이 RichText 로 해석되지 않도록)"""
-    return html.escape(strip_reminder(text))
+def to_html(text: str, emoji_style: str = "") -> str:
+    """표시용 HTML (반드시 escape - 사용자 입력이 RichText 로 해석되지 않도록)
+
+    emoji_style 을 주면 이모지 덩어리를 그 스타일의 <span> 으로 감싼다.
+    (본문 크기의 컬러 이모지는 테두리가 뭉개져서 조금 크게 그린다)"""
+    body = html.escape(strip_reminder(text))
+    if emoji_style:
+        body = EMOJI_RE.sub(
+            lambda m: f'<span style="{emoji_style}">{m.group()}</span>', body
+        )
+    return body
 
 
 if __name__ == "__main__":

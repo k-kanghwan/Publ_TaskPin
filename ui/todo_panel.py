@@ -2,6 +2,7 @@
 
 - 목록 아래 입력창에서 Enter 로 바로 추가 (별도 창 없음)
 - 입력 중 `(@` 를 치면 리마인더 피커가 떠서 `(@YYYY-MM-DD HH:mm)` 토큰을 넣는다
+- 입력 중 `:idea:` 같은 스니펫 트리거를 치면 설정한 문구(💡)로 바뀐다 (설정창 Snippets 탭)
 - 체크하면 취소선 + 목록 아래로, 우클릭 메뉴 "완료 항목 정리" 로 일괄 보관(DB 에는 남음)
 - 더블클릭으로 그 자리에서 수정 (Enter/포커스 이동: 저장, Esc: 취소)
 - 드래그 앤 드롭으로 순서/레벨 변경: 행 가운데에 놓으면 그 항목의 하위로, 행 사이에 놓으면 그 자리로
@@ -29,6 +30,7 @@ from PySide6.QtWidgets import (
 
 from manager import todo_store, todo_tree
 from ui.reminder_picker import ReminderPicker
+from ui.text_input import expand_snippet_later, py_cursor, utf16_pos
 from ui.theme import ACCENT, FONT_FAMILY, TEXT_MAIN, TEXT_SUB, TEXT_WARN
 
 
@@ -40,6 +42,8 @@ AUTO_SCROLL_MARGIN = 16  # 드래그 중 목록 위/아래 끝에서 자동 스�
 AUTO_SCROLL_STEP = 8
 INDENT_STEP = 16  # 레벨 하나당 들여쓰기(px) - 체크박스 + 간격
 MAX_INDENT_DEPTH = 3  # 위젯 폭이 좁으므로 이보다 깊은 레벨은 같은 들여쓰기로 표시
+# 본문(12px) 크기의 컬러 이모지는 테두리가 뭉개지므로 행에서는 조금 크게 그린다
+EMOJI_STYLE = "font-size:14px;"
 
 
 def _indent(depth: int) -> int:
@@ -96,15 +100,17 @@ PANEL_STYLE = f"""
 
 
 class TodoInput(QLineEdit):
-    """`(@` 를 감지해 리마인더 피커를 띄우는 입력창"""
+    """`(@` 를 감지해 리마인더 피커를 띄우고, 스니펫 트리거를 문구로 바꾸는 입력창"""
 
     escaped = Signal()
     focus_lost = Signal()
 
-    def __init__(self, reminders_provider, parent=None):
-        """reminders_provider: () -> [(datetime, 본문)]  (피커에 보여줄 기존 리마인더)"""
+    def __init__(self, reminders_provider, snippets_provider, parent=None):
+        """reminders_provider: () -> [(datetime, 본문)]  (피커에 보여줄 기존 리마인더)
+        snippets_provider: () -> {트리거: 문구}"""
         super().__init__(parent)
         self._reminders_provider = reminders_provider
+        self._snippets_provider = snippets_provider
         self._picker = None
         self._trigger_pos = 0
         self.textEdited.connect(self._on_text_edited)
@@ -114,9 +120,11 @@ class TodoInput(QLineEdit):
         return self._picker is not None
 
     def _on_text_edited(self, text: str):
-        pos = self.cursorPosition()
+        pos = py_cursor(self)
         if pos >= len(TRIGGER) and text[pos - len(TRIGGER) : pos] == TRIGGER:
             self.open_picker(pos)
+        else:
+            expand_snippet_later(self, self._snippets_provider)
 
     def open_picker(self, trigger_pos: int):
         self._trigger_pos = trigger_pos
@@ -139,7 +147,7 @@ class TodoInput(QLineEdit):
         if right and not right.startswith(" "):
             token += " "
         self.setText(left + token + right)
-        self.setCursorPosition(len(left) + len(token))
+        self.setCursorPosition(utf16_pos(self.text(), len(left) + len(token)))
 
     def _on_picker_closed(self):
         self._picker = None
@@ -165,7 +173,9 @@ class TodoRow(QWidget):
     edited = Signal(str, str)
     drag_requested = Signal(object)  # TodoRow
 
-    def __init__(self, item: dict, depth: int, reminders_provider, parent=None):
+    def __init__(
+        self, item: dict, depth: int, reminders_provider, snippets_provider, parent=None
+    ):
         super().__init__(parent)
         self.item = item
         self.depth = depth  # 레벨 (최상위 0)
@@ -192,7 +202,7 @@ class TodoRow(QWidget):
         self.label.setToolTip("더블클릭하여 수정 · 드래그하여 이동")
         self.label.installEventFilter(self)
 
-        self.editor = TodoInput(reminders_provider)
+        self.editor = TodoInput(reminders_provider, snippets_provider)
         self.editor.hide()
         self.editor.returnPressed.connect(self._commit_edit)
         self.editor.focus_lost.connect(self._commit_edit)
@@ -224,7 +234,7 @@ class TodoRow(QWidget):
     def render(self, now: datetime = None):
         now = now or datetime.now().astimezone()
         done = self.item["done"]
-        body = todo_store.to_html(self.item["text"]) or "&nbsp;"
+        body = todo_store.to_html(self.item["text"], EMOJI_STYLE) or "&nbsp;"
         color = TEXT_SUB if done else TEXT_MAIN
         html = f'<span style="color:{color};">{body}</span>'
         if done:
@@ -322,8 +332,10 @@ class TodoRow(QWidget):
 class TodoPanel(QWidget):
     """TODO 목록 + 입력창. 상태는 todo_store 로 바로바로 저장한다."""
 
-    def __init__(self, parent=None):
+    def __init__(self, snippets_provider, parent=None):
+        """snippets_provider: () -> {트리거: 문구} (입력칸 스니펫 치환)"""
         super().__init__(parent)
+        self._snippets_provider = snippets_provider
         self._items = todo_store.load_todos()
         todo_tree.detach_orphans(self._items)
         self._rows = []
@@ -366,10 +378,10 @@ class TodoPanel(QWidget):
         self.drop_box.hide()
         root.addWidget(self.scroll, 1)
 
-        self.input = TodoInput(self.reminders)
+        self.input = TodoInput(self.reminders, snippets_provider)
         self.input.setPlaceholderText("+ 할 일 추가 · (@ 리마인더")
         self.input.returnPressed.connect(self._on_input_return)
-        self.input.escaped.connect(self.input.clear)
+        self.input.escaped.connect(self._on_input_escaped)
         root.addWidget(self.input)
 
         self._rebuild()
@@ -480,7 +492,7 @@ class TodoPanel(QWidget):
         # 리마인더 없는 항목은 그 뒤에 self._items 순서(= 드래그로 정한 순서) 그대로 (안정 정렬)
         ordered = todo_tree.flatten(self._items, self._sort_key)
         for idx, (item, depth) in enumerate(ordered):
-            row = TodoRow(item, depth, self.reminders)
+            row = TodoRow(item, depth, self.reminders, self._snippets_provider)
             row.toggled.connect(self.set_done)
             row.deleted.connect(self.delete_item)
             row.edited.connect(self.edit_item)
@@ -626,6 +638,16 @@ class TodoPanel(QWidget):
         """item_id 를 (하위와 함께) parent_id 아래 before_id 앞으로 (None 이면 형제 맨 뒤로) 옮긴다."""
         if todo_tree.move(self._items, item_id, parent_id, before_id):
             self._save_and_rebuild()
+
+    def focus_input(self):
+        """할 일 추가 단축키: 입력칸으로 커서 이동"""
+        self.input.setFocus(Qt.ShortcutFocusReason)
+        self.input.end(False)
+
+    def _on_input_escaped(self):
+        """Esc: 입력을 지우고 입력칸에서 빠진다 (E / C 같은 글자 단축키가 다시 동작하도록)"""
+        self.input.clear()
+        self.input.clearFocus()
 
     def _on_input_return(self):
         text = self.input.text().strip()

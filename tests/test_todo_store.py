@@ -104,3 +104,14 @@ def test_reminder_token_helpers_unchanged():
     assert (
         todo_store.parse_reminder("날짜만 (@2026-10-21)").strftime("%H:%M") == "09:00"
     )
+
+
+def test_to_html_wraps_emoji_runs():
+    style = "font-size:14px;"
+    html = todo_store.to_html("배포 🚀 <b>👨‍👩‍👧 ok ❤️</b> (@2026-10-23 09:00)", style)
+    span = f'<span style="{style}">'
+    assert html == (
+        f"배포 {span}🚀</span> &lt;b&gt;{span}👨‍👩‍👧</span> ok {span}❤️</span>&lt;/b&gt;"
+    )
+    # 스타일을 주지 않으면 그대로
+    assert todo_store.to_html("a 🚀") == "a 🚀"
