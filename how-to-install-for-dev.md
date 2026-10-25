@@ -1,6 +1,6 @@
 # 배포 파일 만들기 (개발자용)
 
-배포 파일은 **설치본(`dist/TaskPin-<버전>-setup.exe`) 하나**다. Nuitka로 exe 폴더를 빌드한 뒤, 그 폴더를 Inno Setup으로 묶는다.
+배포 파일은 **설치본(`dist/TaskPin-<버전>-setup.exe`) 하나**다. Nuitka로 exe 폴더를 빌드한 뒤, 그 폴더를 Inno Setup으로 묶는다. 이 과정은 `python tools/build_installer.py` 한 줄로 끝난다(2단계).
 
 ## 0. 준비 (처음 한 번만)
 
@@ -19,9 +19,23 @@ pip install -r requirements-dev.txt     # PySide6, pytest, nuitka, watchfiles
 VERSION = "0.1.0"
 ```
 
-설치본 버전은 빌드된 exe에서 자동으로 읽어 오므로 `installer/TaskPin.iss`는 고치지 않는다.
+설치본 버전은 빌드된 exe에서 자동으로 읽어 오므로 `installer/TaskPin.iss`는 고치지 않는다. 빌드 스크립트도 이 값으로 결과 파일 이름을 확인한다.
 
-## 2. 테스트 → exe 빌드
+## 2. 한 번에 만들기 (빌드 스크립트)
+
+```powershell
+pytest
+python tools/build_installer.py
+```
+
+- Nuitka 빌드 → ISCC 컴파일 → `dist\TaskPin-<버전>-setup.exe` 생성 확인을 차례로 실행하고, 마지막에 설치본 경로·크기·걸린 시간을 출력한다.
+- `ISCC.exe`는 PATH → `%LOCALAPPDATA%\Programs\Inno Setup 6` → `C:\Program Files (x86)\Inno Setup 6` → `C:\Program Files\Inno Setup 6` 순서로 찾는다.
+- nuitka 패키지나 `ISCC.exe`가 없으면 빌드를 시작하기 전에 설치 방법을 안내하고 멈춘다. 중간 단계가 실패하면 그 자리에서 멈춘다.
+- 테스트(`pytest`)는 스크립트에 들어 있지 않으므로 먼저 따로 실행한다.
+
+단계별로 확인하고 싶을 때는 아래 3·4단계처럼 손으로 실행한다.
+
+## 3. 수동으로 만들기: 테스트 → exe 빌드
 
 ```powershell
 pytest
@@ -32,7 +46,7 @@ python -m nuitka TaskPin.py
 - 결과: `build\TaskPin.dist\Task알림.exe`. exe 하나가 아니라 폴더 전체가 실행 단위다.
 - 이 단계에서 `build\TaskPin.dist\Task알림.exe`를 직접 실행해 트레이 아이콘과 위젯이 뜨는지 확인한다.
 
-## 3. 설치본 만들기
+## 4. 수동으로 만들기: 설치본
 
 ```powershell
 & "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe" installer\TaskPin.iss
