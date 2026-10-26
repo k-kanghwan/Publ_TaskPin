@@ -159,3 +159,11 @@ def test_to_html_marks_spans():
     # 표시 구간 안의 이모지도 감싼다
     html = todo_store.to_html(text, "x;", [(4, 5)], "m;")
     assert html == 'a&lt;b <span style="m;"><span style="x;">🚀</span></span> c'
+
+
+def test_collapsed_roundtrip(temp_db):
+    items = [todo_store.new_item("a"), todo_store.new_item("b")]
+    items[0]["collapsed"] = True
+    todo_store.save_todos(items)
+    loaded = {i["text"]: i["collapsed"] for i in todo_store.load_todos()}
+    assert loaded == {"a": True, "b": False}

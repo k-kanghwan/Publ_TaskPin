@@ -43,8 +43,9 @@ def detach_orphans(items: list) -> bool:
     return changed
 
 
-def flatten(items: list, sort_key=None) -> list:
+def flatten(items: list, sort_key=None, hide_collapsed: bool = True) -> list:
     """화면에 보일 순서로 펼친다. 하위는 상위 바로 밑에 붙고, 형제끼리만 sort_key 로 (안정) 정렬한다.
+    hide_collapsed: 접힌(item["collapsed"]) 항목의 하위는 뺀다. 거르는 중에는 False
 
     Returns
     -------
@@ -64,10 +65,40 @@ def flatten(items: list, sort_key=None) -> list:
             siblings = sorted(siblings, key=sort_key)
         for item in siblings:
             result.append((item, depth))
-            visit(item["id"], depth + 1)
+            if not (hide_collapsed and item.get("collapsed")):
+                visit(item["id"], depth + 1)
 
     visit(None, 0)
     return result
+
+
+def has_children(items: list, item_id) -> bool:
+    return any(item.get("parent_id") == item_id for item in items)
+
+
+def set_collapsed(items: list, item_id, collapsed: bool) -> bool:
+    """Returns
+    -------
+    bool : 바뀌었으면 True
+    """
+    item = _find(items, item_id)
+    if item is None or bool(item.get("collapsed")) == collapsed:
+        return False
+    item["collapsed"] = collapsed
+    return True
+
+
+def expand_ancestors(items: list, item_id) -> bool:
+    """item_id 가 보이도록 접힌 상위를 모두 펼친다.
+
+    Returns
+    -------
+    bool : 펼친 항목이 있으면 True
+    """
+    changed = False
+    for parent in ancestors(items, item_id):
+        changed |= set_collapsed(items, parent["id"], False)
+    return changed
 
 
 def descendants(items: list, item_id) -> list:

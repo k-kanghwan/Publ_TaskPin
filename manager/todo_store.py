@@ -41,6 +41,7 @@ _COLUMNS = (
     "fired",
     "parent_id",
     "tag",
+    "collapsed",
 )
 
 
@@ -97,11 +98,12 @@ def save_todos(items: list) -> None:
             )
             c.executemany(
                 f"INSERT INTO todos ({', '.join(_COLUMNS)}, position)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
                 " ON CONFLICT(id) DO UPDATE SET"
                 " text = excluded.text, done = excluded.done, created = excluded.created,"
                 " snooze_until = excluded.snooze_until, fired = excluded.fired,"
                 " parent_id = excluded.parent_id, tag = excluded.tag,"
+                " collapsed = excluded.collapsed,"
                 " position = excluded.position",
                 [
                     (
@@ -113,6 +115,7 @@ def save_todos(items: list) -> None:
                         item.get("fired"),
                         item.get("parent_id"),
                         item.get("tag"),
+                        int(bool(item.get("collapsed"))),
                         pos,
                     )
                     for pos, item in enumerate(items)
@@ -146,6 +149,7 @@ def new_item(text: str) -> dict:
         "fired": None,  # 마지막으로 알림을 보낸 due 문자열
         "parent_id": None,  # 상위 항목 id (계층은 manager/todo_tree 참고)
         "tag": None,  # 색 태그 (TAGS 중 하나)
+        "collapsed": False,  # True 면 하위 항목을 숨김 (manager/todo_tree.flatten)
     }
 
 
@@ -154,6 +158,7 @@ def _normalize(item: dict) -> dict:
     base = new_item(str(item.get("text", "")))
     base.update(item)
     base["done"] = bool(base["done"])
+    base["collapsed"] = bool(base["collapsed"])
     # 기본 태그(TAGS) 또는 사용자 태그 키(widget_config.custom_tags). 지워진 사용자 태그는 표시만 안 된다
     tag = base["tag"]
     if not (isinstance(tag, str) and 0 < len(tag) <= TAG_MAX_LEN):

@@ -145,3 +145,38 @@ def test_move_many_under_done_reopens_parent():
     items[0]["done"] = True
     assert todo_tree.move_many(items, ["b", "c"], "a", None)
     assert not items[0]["done"]
+
+
+def test_flatten_hides_children_of_collapsed():
+    items = _items(("a", None), ("a1", "a"), ("a1x", "a1"), ("b", None))
+    items[0]["collapsed"] = True
+    assert _layout(items) == [("a", 0), ("b", 0)]
+    items[0]["collapsed"] = False
+    items[1]["collapsed"] = True  # 중간만 접히면 손자만 숨는다
+    assert _layout(items) == [("a", 0), ("a1", 1), ("b", 0)]
+
+
+def test_flatten_ignores_collapsed_when_asked():
+    items = _items(("a", None), ("a1", "a"))
+    items[0]["collapsed"] = True
+    assert [i["id"] for i, _ in todo_tree.flatten(items, hide_collapsed=False)] == [
+        "a",
+        "a1",
+    ]
+
+
+def test_set_collapsed_and_has_children():
+    items = _items(("a", None), ("a1", "a"))
+    assert todo_tree.has_children(items, "a")
+    assert not todo_tree.has_children(items, "a1")
+    assert todo_tree.set_collapsed(items, "a", True)
+    assert not todo_tree.set_collapsed(items, "a", True)
+    assert not todo_tree.set_collapsed(items, "none", True)
+
+
+def test_expand_ancestors():
+    items = _items(("a", None), ("a1", "a"), ("a1x", "a1"))
+    items[0]["collapsed"] = items[1]["collapsed"] = True
+    assert todo_tree.expand_ancestors(items, "a1x")
+    assert not items[0]["collapsed"] and not items[1]["collapsed"]
+    assert not todo_tree.expand_ancestors(items, "a1x")

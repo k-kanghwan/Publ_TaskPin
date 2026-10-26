@@ -64,6 +64,12 @@ UPDATE tasks SET cleared_as = 'completed' WHERE cleared_at IS NOT NULL;
 PRAGMA user_version = 6;
 """
 
+# user_version 6 -> 7: TODO 하위 항목 접힘 (1 이면 하위를 숨김)
+_SCHEMA_V7 = """
+ALTER TABLE todos ADD COLUMN collapsed INTEGER NOT NULL DEFAULT 0;
+PRAGMA user_version = 7;
+"""
+
 _MIGRATIONS = (
     (1, _SCHEMA_V1),
     (2, _SCHEMA_V2),
@@ -71,6 +77,7 @@ _MIGRATIONS = (
     (4, _SCHEMA_V4),
     (5, _SCHEMA_V5),
     (6, _SCHEMA_V6),
+    (7, _SCHEMA_V7),
 )
 
 _conn = None

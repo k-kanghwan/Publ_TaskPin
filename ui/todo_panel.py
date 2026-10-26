@@ -70,6 +70,7 @@ MAX_INDENT_DEPTH = 3  # 위젯 폭이 좁으므로 이보다 깊은 레벨은 �
 # 본문(12px) 크기의 컬러 이모지는 테두리가 뭉개지므로 행에서는 조금 크게 그린다
 EMOJI_PX = 14
 TAG_BAR_WIDTH = 3  # 체크박스 왼쪽 태그 막대 (태그가 없어도 자리는 둔다)
+TOGGLE_SIZE = 14  # 하위 접기/펼치기 ▸/▾ 버튼 (하위가 없어도 자리는 둔다)
 TAG_BAR_GAP = 3  # 태그 막대 - 체크박스 간격 (체크박스 - 글자 간격보다 가깝게)
 TAG_ICON_PX = 12
 # 태그 (메뉴 이름, 색) - 키는 todo_store.TAGS 와 같다
@@ -367,6 +368,7 @@ class TodoRow(QWidget):
     toggled = Signal(str, bool)
     deleted = Signal(str)
     edited = Signal(str, str)
+    collapse_toggled = Signal(str)
     clicked = Signal(
         object, object
     )  # TodoRow, Qt.KeyboardModifiers (드래그 없이 눌렀다 뗌)
@@ -384,10 +386,12 @@ class TodoRow(QWidget):
         snippets_provider,
         tag_color,
         context=False,
+        has_children=False,
         parent=None,
     ):
         """tag_color: (태그 키) -> "#rrggbb" / None (태그 없음 또는 지워진 사용자 태그)
-        context: 검색 / 날짜별 보기에는 맞지 않지만 맞는 항목의 상위라서 보이는 행 (흐리게)"""
+        context: 검색 / 날짜별 보기에는 맞지 않지만 맞는 항목의 상위라서 보이는 행 (흐리게)
+        has_children: 하위가 있으면 ▸/▾ 접기 버튼을 보인다 (item["collapsed"] 가 방향을 정함)"""
         super().__init__(parent)
         self.item = item
         self.depth = depth  # 레벨 (최상위 0)
@@ -405,6 +409,20 @@ class TodoRow(QWidget):
         layout.setContentsMargins(4 + self.indent(), 2, 4, 2)
         layout.setSpacing(6)
 
+        # 접기/펼치기 버튼. 하위가 없어도 자리는 비워 둬서 체크박스 위치를 맞춘다
+        self.btn_toggle = QPushButton()
+        self.btn_toggle.setObjectName("toggle")
+        self.btn_toggle.setFixedSize(TOGGLE_SIZE, TOGGLE_SIZE)
+        self.btn_toggle.setFocusPolicy(Qt.NoFocus)
+        self.btn_toggle.setCursor(Qt.PointingHandCursor)
+        self.btn_toggle.clicked.connect(
+            lambda: self.collapse_toggled.emit(self.item["id"])
+        )
+        self.btn_toggle.setVisible(has_children)
+        policy = self.btn_toggle.sizePolicy()
+        policy.setRetainSizeWhenHidden(True)
+        self.btn_toggle.setSizePolicy(policy)
+
         # 태그 막대 (행 높이만큼) + 체크박스. 태그가 없어도 막대 자리는 비워 둔다
         self.tag_bar = QFrame()
         self.tag_bar.setFixedWidth(TAG_BAR_WIDTH)
@@ -415,6 +433,7 @@ class TodoRow(QWidget):
         self.check.setCursor(Qt.PointingHandCursor)
         self.check.setChecked(item["done"])
         self.check.toggled.connect(lambda on: self.toggled.emit(self.item["id"], on))
+        lead.addWidget(self.btn_toggle, 0, Qt.AlignTop)
         lead.addWidget(self.tag_bar)
         lead.addWidget(self.check, 0, Qt.AlignTop)
 
@@ -462,6 +481,14 @@ class TodoRow(QWidget):
         s = t.todo_scale
         done = self.item["done"]
         tag_color = self._tag_color(self.item.get("tag"))
+        collapsed = self.item.get("collapsed")
+        self.btn_toggle.setText("▸" if collapsed else "▾")
+        self.btn_toggle.setToolTip("하위 펼치기" if collapsed else "하위 접기")
+        self.btn_toggle.setStyleSheet(
+            f"QPushButton {{ background: transparent; border: none; padding: 0;"
+            f" color: {t.text_sub}; font-size: {px(11, s)}px; }}"
+            f"QPushButton:hover {{ color: {t.accent}; }}"
+        )
         self.tag_bar.setStyleSheet(
             f"background: {tag_color or 'transparent'}; border: none;"
             f" border-radius: {TAG_BAR_WIDTH // 2}px;"
@@ -758,10 +785,19 @@ class TodoPanel(QWidget):
         if parent_id is not None:
             # 완료된 상위 아래로 들어가면 상위는 다시 미완료가 된다 (todo_tree.move)
             todo_tree.move(self._items, item["id"], parent_id, None)
+            todo_tree.expand_ancestors(self._items, item["id"])  # 접힌 상위면 펼쳐서 보이게
         self._save_and_rebuild()
         # 레이아웃이 갱신된 뒤에 새 항목이 보이도록 스크롤
         row = next(row for row in self._rows if row.item is item)
         QTimer.singleShot(0, lambda: self.scroll.ensureWidgetVisible(row))
+
+    def toggle_collapse(self, item_id: str):
+        """▸/▾ 버튼: 하위를 접거나 펼친다 (숨은 하위는 _rebuild 가 선택에서 뺀다)"""
+        item = self._find(item_id)
+        if item is not None and todo_tree.set_collapsed(
+            self._items, item_id, not item.get("collapsed")
+        ):
+            self._save_and_rebuild()
 
     def _add_parent_id(self):
         if self._anchor_id in self._selected:
@@ -924,7 +960,11 @@ class TodoPanel(QWidget):
 
         # 하위는 상위 바로 밑에. 형제끼리 미완료 -> 완료 순, 각각 리마인더 일시가 빠른 순
         # 리마인더 없는 항목은 그 뒤에 self._items 순서(= 드래그로 정한 순서) 그대로 (안정 정렬)
-        ordered = todo_tree.flatten(self._items, self._sort_key)
+        # 거르는 중에는 접힘을 무시한다 (맞는 항목이 접힌 상위 아래에 숨지 않게)
+        ordered = todo_tree.flatten(
+            self._items, self._sort_key, hide_collapsed=not self._filtering()
+        )
+        parents = {item.get("parent_id") for item in self._items}
         now = datetime.now().astimezone()
         context = set()
         self._shown_ids = None
@@ -941,6 +981,7 @@ class TodoPanel(QWidget):
                 self._snippets_provider,
                 self._tag_color,
                 context=item["id"] in context,
+                has_children=item["id"] in parents,
             )
             if self._mark_level > 0:
                 row.mark_query = self._mark_query
@@ -949,6 +990,7 @@ class TodoPanel(QWidget):
             row.toggled.connect(self.set_done)
             row.deleted.connect(self.delete_item)
             row.edited.connect(self.edit_item)
+            row.collapse_toggled.connect(self.toggle_collapse)
             row.clicked.connect(self._on_row_clicked)
             row.drag_started.connect(self._begin_drag)
             row.drag_moved.connect(self._update_drag)
@@ -1311,6 +1353,8 @@ class TodoPanel(QWidget):
     def _move_items(self, ids: list, parent_id, before_id):
         """ids 를 (하위와 함께) parent_id 아래 before_id 앞으로 (None 이면 형제 맨 뒤로) 옮긴다."""
         if todo_tree.move_many(self._items, ids, parent_id, before_id):
+            for item_id in ids:
+                todo_tree.expand_ancestors(self._items, item_id)  # 접힌 상위로 넣었으면 펼침
             self._save_and_rebuild()
 
     # ==================================================
