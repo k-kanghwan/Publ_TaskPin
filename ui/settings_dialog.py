@@ -5,7 +5,7 @@
   - Snippets           : `:트리거:` -> 문구 목록. 빈 칸 / 중복 트리거는 저장하지 않고 표시만
   - Appearance         : 테마 / 강조색 / 배경색 / 글자도 함께 투명 / 폰트, 좌·우패널 글자 크기, TODO 글자색.
                          바꾸면 appearance_changed 로 위젯에 바로 반영한다.
-  - Application        : 준비 중
+  - Application        : 설정 내보내기(폴더를 고르면 config.json 을 그대로 저장) / 가져오기(바로 적용)
 
 설정창 자체는 테마(다크 / 라이트)와 강조색만 따른다. 배경색 / 폰트 / 글자 크기는 위젯에만 적용한다.
 
@@ -13,12 +13,16 @@
   - Esc : 닫기 (단축키 입력칸에서는 입력 취소)
 """
 
-from PySide6.QtCore import QSize, Qt, Signal
+import os
+from datetime import datetime
+
+from PySide6.QtCore import QSize, QStandardPaths, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QFontDatabase, QIcon, QKeySequence, QPixmap
 from PySide6.QtWidgets import (
     QButtonGroup,
     QColorDialog,
     QComboBox,
+    QFileDialog,
     QFrame,
     QHBoxLayout,
     QKeySequenceEdit,
@@ -33,6 +37,7 @@ from PySide6.QtWidgets import (
 
 from manager import os_win, snippets, widget_config
 from ui import theme
+from ui.confirm_dialog import ConfirmDialog
 
 
 WINDOW_TITLE = "Task알림 설정"
@@ -77,6 +82,8 @@ ACCENT_SWATCHES = [
     ("#8e8e93", "회색"),
 ]
 DEFAULT_FONT_LABEL = "기본 (맑은 고딕)"
+EXPORT_HINT = "폴더를 고르면 지금 설정을 JSON 파일로 그대로 저장합니다"
+IMPORT_HINT = "내보낸 JSON 파일로 지금 설정을 바꾸고 바로 적용합니다"
 
 
 def _settings_theme(cfg: dict) -> theme.Theme:
@@ -281,6 +288,8 @@ class SettingsDialog(QWidget):
     shortcuts_changed = Signal(dict)  # {동작: PortableText} - 위젯이 단축키를 다시 건다
     # config 의 "appearance" 가 바뀜 - 위젯이 테마를 다시 입힌다
     appearance_changed = Signal()
+    # 설정 가져오기 - 새 설정 dict. TaskPinApp 이 cfg 를 바꾸고 위젯 / 이 창에 다시 적용한다
+    config_imported = Signal(dict)
 
     def __init__(self, cfg: dict, version_text: str, parent=None):
         """cfg: 위젯과 같은 설정 dict (여기서 고친 값을 바로 저장한다)"""
@@ -309,11 +318,7 @@ class SettingsDialog(QWidget):
         self.stack.addWidget(self._build_shortcuts_page())
         self.stack.addWidget(self._build_snippets_page())
         self.stack.addWidget(self._build_appearance_page())
-        self.stack.addWidget(
-            self._build_placeholder_page(
-                "Application", "앱 동작 설정이 들어갈 자리입니다."
-            )
-        )
+        self.stack.addWidget(self._build_application_page())
         root.addWidget(self.stack, 1)
 
         self._nav_group.button(0).setChecked(True)
@@ -805,13 +810,98 @@ class SettingsDialog(QWidget):
         self._font_combo.setCurrentIndex(idx)
 
     # ==================================================
-    # Application (준비 중)
+    # Application: 설정 내보내기 / 가져오기
     # ==================================================
-    def _build_placeholder_page(self, title: str, subtitle: str) -> QWidget:
-        page, _card, card_layout = self._page(title)
-        self._add_row(card_layout, "준비 중", subtitle)
+    def _build_application_page(self) -> QWidget:
+        page, _card, card_layout = self._page(
+            "Application",
+            "위젯 설정(config.json)을 파일로 내보내거나 가져옵니다. TODO / Task 기록은 들어가지 않습니다.",
+        )
+        btn_export = QPushButton("내보내기…")
+        btn_export.clicked.connect(self._export_config)
+        btn_import = QPushButton("가져오기…")
+        btn_import.clicked.connect(self._import_config)
+        for btn in (btn_export, btn_import):
+            btn.setObjectName("small")
+            btn.setCursor(Qt.PointingHandCursor)
+        self._export_note = self._add_row(
+            card_layout,
+            "설정 내보내기",
+            EXPORT_HINT,
+            btn_export,
+        )
+        self._import_note = self._add_row(
+            card_layout,
+            "설정 가져오기",
+            IMPORT_HINT,
+            btn_import,
+        )
+        for note in (self._export_note, self._import_note):
+            note.setWordWrap(True)
         page.layout().addStretch(1)
         return page
+
+    def _start_folder(self) -> str:
+        return self._cfg.get("export_dir") or QStandardPaths.writableLocation(
+            QStandardPaths.DocumentsLocation
+        )
+
+    def _show_note(self, label: QLabel, message: str, warn: bool = False):
+        label.setText(message)
+        label.setStyleSheet(f"color: {self._look.text_warn};" if warn else "")
+
+    def _export_config(self):
+        folder = QFileDialog.getExistingDirectory(
+            self, "설정을 내보낼 폴더", self._start_folder()
+        )
+        if not folder:
+            return
+        try:
+            path = widget_config.export_config(self._cfg, folder, datetime.now())
+        except OSError as e:
+            self._show_note(self._export_note, f"저장하지 못했습니다. {e}", warn=True)
+            return
+        self._show_note(self._export_note, f"저장했습니다: {os.path.normpath(path)}")
+        self._cfg["export_dir"] = folder
+        widget_config.save_config(self._cfg)
+
+    def _import_config(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "설정 가져오기", self._start_folder(), "JSON (*.json)"
+        )
+        if not path:
+            return
+        new = widget_config.read_import(path)
+        if new is None:
+            self._show_note(
+                self._import_note, "Task알림 설정 파일이 아니거나 읽지 못했습니다.", warn=True
+            )
+            return
+        dialog = ConfirmDialog(
+            "설정 가져오기",
+            "지금 설정을 이 파일의 설정으로 바꿀까요?",
+            confirm_text="가져오기",
+            note=os.path.basename(path),
+            parent=self,
+        )
+        if not dialog.exec_over(self):
+            return
+        self.config_imported.emit(new)
+        self._show_note(self._import_note, f"가져왔습니다: {os.path.basename(path)}")
+
+    def reload_values(self):
+        """설정 가져오기 뒤: 모든 탭의 표시를 바뀐 cfg 로 다시 맞춘다."""
+        current = widget_config.shortcuts(self._cfg)
+        for action, edit in self._shortcut_edits.items():
+            edit.set_saved(current[action])
+            self._show_shortcut_note(action)
+        for row in list(self._snippet_rows):
+            self._snippet_layout.removeWidget(row)
+            row.deleteLater()
+        self._snippet_rows = []
+        for trigger, text in snippets.from_config(self._cfg).items():
+            self._append_snippet_row(trigger, text)
+        self.apply_theme()
 
     # ==================================================
     # 표시

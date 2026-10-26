@@ -203,6 +203,7 @@ class TaskPinApp(TrayApp):
             self._settings = SettingsDialog(self.widget_cfg, f"{APP_NAME} {VERSION}")
             self._settings.shortcuts_changed.connect(self.widget.apply_shortcuts)
             self._settings.appearance_changed.connect(self.apply_appearance)
+            self._settings.config_imported.connect(self.apply_imported_config)
             self._settings.destroyed.connect(self._on_settings_destroyed)
         self._settings.show_front()
 
@@ -222,6 +223,17 @@ class TaskPinApp(TrayApp):
         """설정창 Appearance 변경: 위젯을 다시 입힌다. 팝업은 다음에 띄울 때부터 따른다."""
         self._apply_theme()
         self.widget.apply_appearance()
+
+    def apply_imported_config(self, new: dict):
+        """설정창 '설정 가져오기': 위젯 / 설정창이 함께 쓰는 cfg 를 제자리에서 바꾸고 모두 다시 적용한다."""
+        self.widget_cfg.clear()
+        self.widget_cfg.update(new)
+        widget_config.save_config(self.widget_cfg)
+        self.apply_appearance()
+        self.widget.apply_shortcuts(widget_config.shortcuts(self.widget_cfg))
+        self.widget.reload_config()
+        if self._settings is not None:
+            self._settings.reload_values()
 
     def _on_color_scheme_changed(self, *_):
         if widget_config.appearance(self.widget_cfg)["theme"] == "system":

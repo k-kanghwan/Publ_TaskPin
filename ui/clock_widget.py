@@ -1013,7 +1013,9 @@ class ClockWidget(QWidget):
     def set_always_on_top(self, on_top: bool):
         self._cfg["always_on_top"] = on_top
         widget_config.save_config(self._cfg)
+        self._reapply_window_flags()
 
+    def _reapply_window_flags(self):
         # setWindowFlags 는 창을 숨기므로 표시 중이었다면 다시 보여준다
         was_visible = self.isVisible()
         pos = self.pos()
@@ -1022,6 +1024,33 @@ class ClockWidget(QWidget):
         if was_visible:
             self.show()
             self._apply_z_order()
+
+    def reload_config(self):
+        """설정 가져오기: 새 값으로 바뀐 cfg 를 위젯 배치 / 상태에 다시 적용한다.
+        (테마 / 단축키는 TaskPinApp 이 apply_appearance / apply_shortcuts 로 따로 건다)"""
+        self._locked = bool(self._cfg.get("locked", False))
+        self._grip.set_enabled(not self._locked)
+
+        self.opacity_slider.blockSignals(True)  # 슬라이더 변경이 다시 저장하지 않도록
+        self.opacity_slider.setValue(round((1 - self._cfg_opacity()) * 100))
+        self.opacity_slider.blockSignals(False)
+        self.opacity_value.setText(f"{self.opacity_slider.value()}%")
+        self._apply_opacity()
+        self.set_user_name(self._cfg.get("user_name", ""))
+
+        on_top = bool(self.windowFlags() & Qt.WindowStaysOnTopHint)
+        if on_top != self._on_top():
+            self._reapply_window_flags()
+        self._apply_orientation(self._cfg_orientation())
+        self._apply_size_limits()  # 같은 모드여도 저장된 폭 / 높이로
+        self._place_grip()
+        self._restore_position()
+
+        visible = bool(self._cfg.get("visible", True))
+        if visible and not self.isVisible():
+            self.show_widget()
+        elif not visible and self.isVisible():
+            self.hide_widget()
 
     def _on_autostart_toggled(self, enable: bool):
         if not os_win.set_autostart(enable):

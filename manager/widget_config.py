@@ -6,11 +6,14 @@
 
 import copy
 import json
+import os
 import re
+from datetime import datetime
 
 from manager import paths, snippets
 
 CONFIG_NAME = "config.json"
+EXPORT_PREFIX = "TaskPin-config"  # 설정 내보내기 파일 이름
 
 # 위젯 단축키 (위젯 창이 활성일 때만 동작). 값은 QKeySequence PortableText, "" 이면 해제
 DEFAULT_SHORTCUTS = {
@@ -51,6 +54,8 @@ DEFAULT_CONFIG = {
     "snippets": snippets.DEFAULT_SNIPPETS,  # 설정창 Snippets 탭 [[":idea:", "💡"], ...]
     "appearance": DEFAULT_APPEARANCE,  # 설정창 Appearance 탭
 }
+# 기본값은 없지만 저장될 수 있는 키 (설정 가져오기에서도 받는다)
+EXTRA_KEYS = ("export_dir",)  # TODO / 설정 내보내기 마지막 폴더
 
 
 def load_config() -> dict:
@@ -110,10 +115,46 @@ def appearance(cfg: dict) -> dict:
     }
 
 
+def _write(cfg: dict, path: str) -> None:
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, ensure_ascii=False, indent=4)
+
+
 def save_config(cfg: dict) -> None:
     """위젯 설정을 저장한다. 실패해도 앱 동작을 막지 않는다."""
     try:
-        with open(paths.data_path(CONFIG_NAME), "w", encoding="utf-8") as f:
-            json.dump(cfg, f, ensure_ascii=False, indent=4)
+        _write(cfg, paths.data_path(CONFIG_NAME))
     except OSError as e:
         print(f"위젯 설정 저장 실패: {e}")
+
+
+# ==================================================
+# 설정 내보내기 / 가져오기 (설정창 Application 탭)
+# ==================================================
+def export_config(cfg: dict, folder: str, now: datetime) -> str:
+    """config.json 과 같은 내용을 folder 에 TaskPin-config-YYYYMMDD.json 으로 저장하고 경로를 돌려준다.
+    같은 이름이 있으면 시각을 붙인다. 저장하지 못하면 OSError"""
+    path = os.path.join(folder, f"{EXPORT_PREFIX}-{now:%Y%m%d}.json")
+    if os.path.exists(path):
+        path = os.path.join(folder, f"{EXPORT_PREFIX}-{now:%Y%m%d-%H%M%S}.json")
+    _write(cfg, path)
+    return path
+
+
+def read_import(path: str):
+    """내보낸 설정 파일을 읽어 기본값 위에 덮어쓴 새 설정을 돌려준다.
+    알려진 키만 가져온다(값은 shortcuts / appearance 등 각 접근자가 바로잡음).
+    읽지 못했거나 TaskPin 설정이 아니면(알려진 키가 하나도 없음) None"""
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            saved = json.load(f)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(saved, dict):
+        return None
+    known = {k: v for k, v in saved.items() if k in DEFAULT_CONFIG or k in EXTRA_KEYS}
+    if not known:
+        return None
+    cfg = copy.deepcopy(DEFAULT_CONFIG)
+    cfg.update(known)
+    return cfg
