@@ -68,6 +68,7 @@ SHORTCUT_ROWS = [
     ("task_edit", "Task 수정", "진행 중인 Task를 수정합니다"),
     ("task_clear", "Task 완료", "진행 중인 Task를 완료합니다"),
     ("todo_focus", "할 일 추가", "할 일 입력칸으로 커서 이동"),
+    ("todo_search", "할 일 검색", "검색 · 날짜별 보기 줄을 엽니다"),
     ("settings", "설정 열기", "이 설정창을 엽니다"),
 ]
 

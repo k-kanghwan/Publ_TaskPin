@@ -15,6 +15,9 @@
   여러 개를 선택한 채 우클릭하면 선택 항목 전체에 적용된다.
   태그는 기본 6색 + 사용자 태그(config.json custom_tags, "+ 태그 추가…" / 설정창에서 관리)
 - 형제끼리는 미완료 -> 완료 순, 리마인더 항목이 시각순으로 위에 고정되고 나머지는 사용자가 정한 순서
+- Ctrl+F / 우클릭 "검색": 목록 위에 [전체][오늘][지연][예정] 칩 + 검색칸 줄이 열린다 (manager/todo_filter).
+  맞는 항목의 상위는 흐리게 함께 보인다. 거르는 중에는 드래그하지 않고, 할 일을 추가하면 전체 보기로 돌아간다.
+  Esc: 검색어를 지우고, 비어 있으면 줄을 닫는다 (닫으면 필터도 풀림)
 
 드래그는 QDrag(Windows OLE DoDragDrop)를 쓰지 않고 행의 마우스 grab 으로 직접 처리한다.
 OLE 드래그 루프 동안에는 휠이 오지 않고, 커서를 움직일 때만 자동 스크롤되기 때문이다.
@@ -26,6 +29,7 @@ from PySide6.QtCore import QEvent, QPoint, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QCursor, QIcon, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
+    QButtonGroup,
     QCheckBox,
     QFrame,
     QHBoxLayout,
@@ -39,11 +43,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from manager import todo_store, todo_tree
+from manager import todo_filter, todo_store, todo_tree
 from ui import theme
 from ui.reminder_picker import ReminderPicker
 from ui.tag_dialog import TagDialog
-from ui.text_input import expand_snippet_later, py_cursor, utf16_pos
+from ui.text_input import PreeditLineEdit, expand_snippet_later, py_cursor, utf16_pos
 from ui.theme import px
 
 
@@ -78,6 +82,11 @@ TAG_COLORS = {
 }
 PLACEHOLDER = "+ 할 일 추가 · (@ 리마인더"
 PLACEHOLDER_CHILD = "+ 하위 할 일 추가 · Esc 선택 해제"
+SEARCH_PLACEHOLDER = "🔍 검색 · Esc 닫기"
+EMPTY_TEXT = "할 일이 없습니다"
+EMPTY_FILTERED_TEXT = "일치하는 할 일이 없습니다"
+# 검색 줄의 날짜별 보기 칩 - 키는 todo_filter.VIEWS 와 같다
+VIEW_LABELS = {"all": "전체", "today": "오늘", "overdue": "지연", "upcoming": "예정"}
 
 
 def _indent(depth: int) -> int:
@@ -153,6 +162,22 @@ def _panel_style(t: theme.Theme) -> str:
         font-size: {px(11, s)}px;
     }}
     QPushButton#delete:hover {{ color: {t.text_warn}; }}
+    QPushButton#chip {{
+        background: transparent;
+        color: {t.text_sub};
+        font-family: {t.font_family};
+        font-size: {px(11, s)}px;
+        border: 1px solid {t.overlay(40)};
+        border-radius: 9px;
+        padding: 1px 8px;
+        outline: none;
+    }}
+    QPushButton#chip:hover {{ color: {t.text_main}; border: 1px solid {t.overlay(90)}; }}
+    QPushButton#chip:checked {{
+        background: {t.accent};
+        color: {t.on_accent};
+        border: 1px solid {t.accent};
+    }}
 """
 
 
@@ -224,6 +249,93 @@ class TodoInput(QLineEdit):
             self.focus_lost.emit()
 
 
+class _SearchEdit(PreeditLineEdit):
+    """검색칸. Esc 는 FilterBar 가 처리한다."""
+
+    escaped = Signal()
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_Escape:
+            self.escaped.emit()
+            return
+        super().keyPressEvent(event)
+
+
+class FilterBar(QWidget):
+    """Ctrl+F / 우클릭 "검색" 으로 여는 줄: 날짜별 보기 칩 + 검색칸.
+    한글은 조합 중인 글자까지 바로 걸러지도록 preedit 이 바뀔 때도 changed 를 보낸다."""
+
+    changed = Signal()  # 보기 / 검색어가 바뀜
+    close_requested = Signal()  # ✕ / 빈 검색칸에서 Esc
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 4, 0)
+        root.setSpacing(4)
+
+        chips = QHBoxLayout()
+        chips.setSpacing(4)
+        self._group = QButtonGroup(self)
+        self._chips = {}
+        for view in todo_filter.VIEWS:
+            chip = QPushButton(VIEW_LABELS[view])
+            chip.setObjectName("chip")
+            chip.setCheckable(True)
+            chip.setFocusPolicy(Qt.NoFocus)
+            chip.setCursor(Qt.PointingHandCursor)
+            self._group.addButton(chip)
+            self._chips[view] = chip
+            chips.addWidget(chip)
+        chips.addStretch(1)
+        self._chips["all"].setChecked(True)
+        self._group.buttonClicked.connect(lambda _button: self.changed.emit())
+        root.addLayout(chips)
+
+        search = QHBoxLayout()
+        search.setSpacing(4)
+        self.edit = _SearchEdit()
+        self.edit.setPlaceholderText(SEARCH_PLACEHOLDER)
+        self.edit.textChanged.connect(lambda _text: self.changed.emit())
+        self.edit.preedit_changed.connect(self.changed.emit)
+        self.edit.escaped.connect(self._on_escaped)
+        btn_close = QPushButton("✕")
+        btn_close.setObjectName("delete")
+        btn_close.setFixedSize(16, 16)
+        btn_close.setFocusPolicy(Qt.NoFocus)
+        btn_close.setCursor(Qt.PointingHandCursor)
+        btn_close.setToolTip("검색 닫기")
+        btn_close.clicked.connect(self.close_requested.emit)
+        search.addWidget(self.edit, 1)
+        search.addWidget(btn_close)
+        root.addLayout(search)
+
+    def view(self) -> str:
+        return next(view for view, chip in self._chips.items() if chip.isChecked())
+
+    def query(self) -> str:
+        return self.edit.full_text()
+
+    def set_counts(self, counts: dict):
+        """칩 글자에 개수 표시 ("오늘 2", 0 이면 이름만)"""
+        for view, n in counts.items():
+            label = VIEW_LABELS[view]
+            self._chips[view].setText(f"{label} {n}" if n else label)
+
+    def reset(self):
+        """전체 보기 + 빈 검색어 (changed 는 보내지 않는다)"""
+        self.blockSignals(True)
+        self._chips["all"].setChecked(True)
+        self.edit.clear()
+        self.blockSignals(False)
+
+    def _on_escaped(self):
+        if self.edit.text():
+            self.edit.clear()
+        else:
+            self.close_requested.emit()
+
+
 class TodoRow(QWidget):
     toggled = Signal(str, bool)
     deleted = Signal(str)
@@ -244,12 +356,15 @@ class TodoRow(QWidget):
         reminders_provider,
         snippets_provider,
         tag_color,
+        context=False,
         parent=None,
     ):
-        """tag_color: (태그 키) -> "#rrggbb" / None (태그 없음 또는 지워진 사용자 태그)"""
+        """tag_color: (태그 키) -> "#rrggbb" / None (태그 없음 또는 지워진 사용자 태그)
+        context: 검색 / 날짜별 보기에는 맞지 않지만 맞는 항목의 상위라서 보이는 행 (흐리게)"""
         super().__init__(parent)
         self.item = item
         self.depth = depth  # 레벨 (최상위 0)
+        self.context = context
         self._tag_color = tag_color
         self._editing = False
         self._hover = False
@@ -324,7 +439,7 @@ class TodoRow(QWidget):
         )
         emoji_style = f"font-size:{px(EMOJI_PX, s)}px;"
         body = todo_store.to_html(self.item["text"], emoji_style) or "&nbsp;"
-        color = t.text_sub if done else t.todo_color
+        color = t.text_sub if done or self.context else t.todo_color
         html = f'<span style="color:{color};">{body}</span>'
         if done:
             html = f"<s>{html}</s>"
@@ -466,6 +581,8 @@ class TodoPanel(QWidget):
         self._anchor_id = (
             None  # 마지막으로 클릭한 항목 (Shift 범위 기준 / 하위 추가 대상)
         )
+        # 거르는 중에 보이는 항목 id (todo_filter.visible) / None 이면 전체
+        self._shown_ids = None
 
         # 드래그 중 상태 (_begin_drag ~ _end_drag)
         self._drag_ids = None  # 옮길 항목 id (화면 순서) / None 이면 드래그 중 아님
@@ -480,6 +597,12 @@ class TodoPanel(QWidget):
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(4)
+
+        self.filter_bar = FilterBar()  # 검색 / 날짜별 보기 (Ctrl+F, 우클릭 "검색")
+        self.filter_bar.changed.connect(self._rebuild)
+        self.filter_bar.close_requested.connect(self.close_search)
+        self.filter_bar.hide()
+        root.addWidget(self.filter_bar)
 
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
@@ -497,7 +620,7 @@ class TodoPanel(QWidget):
         self.list_layout.setContentsMargins(0, 0, 4, 0)
         self.list_layout.setSpacing(2)
 
-        self.empty_label = QLabel("할 일이 없습니다")
+        self.empty_label = QLabel(EMPTY_TEXT)
         self.list_layout.addWidget(self.empty_label)
         self.list_layout.addStretch(1)
         self.scroll.setWidget(self.container)
@@ -572,7 +695,9 @@ class TodoPanel(QWidget):
     # 변경 (모두 저장까지 수행)
     # ==================================================
     def add_item(self, text: str):
-        """선택한 항목이 있으면 그 하위 맨 뒤로 넣는다 (마지막으로 클릭한 항목 우선)."""
+        """선택한 항목이 있으면 그 하위 맨 뒤로 넣는다 (마지막으로 클릭한 항목 우선).
+        거르는 중이면 새 항목이 숨지 않도록 전체 보기로 돌아간다 (검색 줄은 열어 둔다)."""
+        self.filter_bar.reset()
         item = todo_store.new_item(text)
         self._items.append(item)
         parent_id = self._add_parent_id()
@@ -655,10 +780,48 @@ class TodoPanel(QWidget):
     # 표시
     # ==================================================
     def refresh_rows(self):
-        """지난 리마인더 색 등 시간에 따라 바뀌는 표시만 갱신"""
+        """지난 리마인더 색 등 시간에 따라 바뀌는 표시만 갱신.
+        거르는 중에 시간이 지나 보일 항목이 바뀌면(오늘 -> 지연 등) 목록을 다시 만든다."""
         now = datetime.now().astimezone()
+        if self._filtering() and self._visible(now)[0] != self._shown_ids:
+            self._rebuild()
+            return
+        self._update_counts(now)
         for row in self._rows:
             row.render(now)
+
+    # ==================================================
+    # 검색 / 날짜별 보기
+    # ==================================================
+    def open_search(self):
+        """Ctrl+F / 우클릭 "검색": 검색 줄을 열고 검색칸으로 커서 이동 (이미 열려 있으면 이동만)"""
+        if self.filter_bar.isHidden():
+            self.filter_bar.show()
+            self._update_counts(datetime.now().astimezone())
+        self.filter_bar.edit.setFocus(Qt.ShortcutFocusReason)
+        self.filter_bar.edit.selectAll()
+
+    def close_search(self):
+        """검색 줄을 닫고 필터를 푼다 (검색칸에서 빠져 E / C 같은 글자 단축키가 다시 동작하도록)"""
+        self.filter_bar.edit.clearFocus()
+        self.filter_bar.reset()
+        self.filter_bar.hide()
+        self._rebuild()
+
+    def _filtering(self) -> bool:
+        bar = self.filter_bar
+        return not bar.isHidden() and todo_filter.is_active(bar.view(), bar.query())
+
+    def _visible(self, now: datetime):
+        return todo_filter.visible(
+            self._items, self.filter_bar.view(), self.filter_bar.query(), now
+        )
+
+    def _update_counts(self, now: datetime):
+        if not self.filter_bar.isHidden():
+            self.filter_bar.set_counts(
+                todo_filter.counts(self._items, self.filter_bar.query(), now)
+            )
 
     def _save_and_rebuild(self):
         todo_tree.detach_orphans(
@@ -682,9 +845,22 @@ class TodoPanel(QWidget):
         # 하위는 상위 바로 밑에. 형제끼리 미완료 -> 완료 순, 각각 리마인더 일시가 빠른 순
         # 리마인더 없는 항목은 그 뒤에 self._items 순서(= 드래그로 정한 순서) 그대로 (안정 정렬)
         ordered = todo_tree.flatten(self._items, self._sort_key)
+        now = datetime.now().astimezone()
+        context = set()
+        self._shown_ids = None
+        if self._filtering():
+            # 거를 때도 상위가 함께 남으므로 펼친 순서 / 레벨은 그대로 둔다
+            self._shown_ids, context = self._visible(now)
+            ordered = [pair for pair in ordered if pair[0]["id"] in self._shown_ids]
+        self._update_counts(now)
         for idx, (item, depth) in enumerate(ordered):
             row = TodoRow(
-                item, depth, self.reminders, self._snippets_provider, self._tag_color
+                item,
+                depth,
+                self.reminders,
+                self._snippets_provider,
+                self._tag_color,
+                context=item["id"] in context,
             )
             row.toggled.connect(self.set_done)
             row.deleted.connect(self.delete_item)
@@ -697,9 +873,12 @@ class TodoPanel(QWidget):
             self.list_layout.insertWidget(idx, row)
             self._rows.append(row)
 
+        self.empty_label.setText(
+            EMPTY_FILTERED_TEXT if self._shown_ids is not None else EMPTY_TEXT
+        )
         self.empty_label.setVisible(not ordered)
-        # 지워지거나 보관된 항목은 선택에서 뺀다
-        ids = {item["id"] for item in self._items}
+        # 지워지거나 보관된 항목, 거르는 중에 숨은 항목은 선택에서 뺀다 (숨은 항목에 태그 등이 붙지 않게)
+        ids = {row.item["id"] for row in self._rows}
         self._selected &= ids
         if self._anchor_id not in ids:
             self._anchor_id = None
@@ -801,6 +980,8 @@ class TodoPanel(QWidget):
         menu = QMenu(self)
         menu.setStyleSheet(theme.menu_style(t))
 
+        menu.addAction("검색", self.open_search)
+        menu.addSeparator()
         act_clear = menu.addAction("완료 항목 정리", self.clear_done)
         act_clear.setEnabled(self.has_done())
         export_menu = menu.addMenu("TODO 내보내기")
@@ -870,6 +1051,8 @@ class TodoPanel(QWidget):
         item_id = row.item["id"]
         if item_id not in self._selected:
             self._select_only(item_id)
+        if self._shown_ids is not None:
+            return  # 거르는 중에는 옮기지 않는다 - 숨은 형제 사이 어디에 놓일지 알 수 없다
         self._drag_ids = todo_tree.top_selected(self._items, self._selected_ids())
         self._drag_moving = set(self._drag_ids)
         for moving_id in self._drag_ids:

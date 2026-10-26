@@ -976,6 +976,7 @@ class ClockWidget(QWidget):
             "task_edit": self._on_edit_shortcut,
             "task_clear": self._on_clear_shortcut,
             "todo_focus": self.todo_panel.focus_input,
+            "todo_search": self.todo_panel.open_search,
             "settings": self.settings_requested.emit,
         }
         for action, keys in mapping.items():

@@ -28,7 +28,6 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QLabel,
-    QLineEdit,
     QPlainTextEdit,
     QPushButton,
     QSizePolicy,
@@ -38,7 +37,7 @@ from PySide6.QtWidgets import (
 
 from manager import task_clock
 from ui import theme
-from ui.text_input import expand_snippet_later, py_cursor
+from ui.text_input import PreeditLineEdit, expand_snippet_later
 
 
 DURATIONS = list(
@@ -49,32 +48,20 @@ FORM_WIDTH = 210  # 왼쪽 업무명 / 시간 칸 (나머지는 상세 업무)
 ANCHOR_GAP = 4
 
 
-class _TitleEdit(QLineEdit):
-    """조합 중인 한글(preedit)을 기억하는 입력칸
+class _TitleEdit(PreeditLineEdit):
+    """업무명 칸. 스니펫을 치환한다.
 
     마지막 글자를 조합하는 중에 확인 버튼(NoFocus)을 누르면 조합이 확정되지 않아
-    text() 에 빠지므로, 확인 시 preedit 을 함께 읽는다."""
+    text() 에 빠지므로, 확인 시 full_text() 로 preedit 을 함께 읽는다."""
 
     def __init__(self, snippets_provider, parent=None):
         super().__init__(parent)
-        self.preedit = ""
         self._snippets_provider = snippets_provider
         self.textEdited.connect(self._on_text_edited)
 
     def _on_text_edited(self, _text: str):
         if not self.preedit:
             expand_snippet_later(self, self._snippets_provider)
-
-    def inputMethodEvent(self, event):
-        self.preedit = event.preeditString()
-        super().inputMethodEvent(event)
-
-    def full_text(self) -> str:
-        text = self.text()
-        if self.preedit:
-            pos = py_cursor(self)
-            text = text[:pos] + self.preedit + text[pos:]
-        return text
 
 
 class _DetailEdit(QPlainTextEdit):
