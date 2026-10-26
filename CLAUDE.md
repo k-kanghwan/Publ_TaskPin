@@ -83,7 +83,7 @@ iscc installer\TaskPin.iss                   # 설치본 -> dist/TaskPin-<버전
   - `config.json` — 위젯 설정(위치·크기·투명도·모드 등), 사용자 이름, `shortcuts`(동작별 QKeySequence PortableText), `snippets`(`[[":idea:", "💡"], ...]`), `appearance`(`widget_config.appearance()`가 깨진 값을 기본값으로 채움), `export_dir`(TODO·설정 내보내기 마지막 폴더), `custom_tags`(사용자 TODO 태그). 크기는 세로 모드 `vertical_width`·`height`, 가로 모드 `width`·`horizontal_height`를 따로 저장한다. 세로 모드는 폭 280~364(1.3배)·높이 최소~583(486의 1.2배), 가로 모드는 폭 540~810·높이 최소~1.5배. 높이는 하단 핸들, 폭은 우측 핸들로 조절하고, 좌측 칼럼은 가로 모드에서만 폭이 고정이다
   - `taskpin.db` — SQLite: TODO(계층·태그 포함), 정리된 완료 항목, Task 등록 정보(업무명·상세 업무·시간·완료/해제)
 - "완료 항목 정리"(`TodoPanel.clear_done`)는 행을 지우지 않고 보관 상태로 바꾼다.
-- "TODO 내보내기"(우패널 우클릭 서브메뉴: 화면 목록 / 보관 항목 전체)는 Markdown 체크리스트(.md, UTF-8)로 저장한다. 하위는 2칸 들여쓰기, 보관 항목은 보관 날짜별 섹션. 텍스트를 그대로 써서 `(@...)` 리마인더 토큰이 Obsidian에서도 읽힌다.
+- "TODO 내보내기"(우패널 우클릭 서브메뉴: 화면 목록 / 보관 항목 전체)는 Markdown 체크리스트(.md, UTF-8)로 저장한다. 하위는 2칸 들여쓰기, 보관 항목은 보관 날짜별 섹션. 보관 항목은 섹션마다 상위 사슬을 함께 쓴다(`todo_export._with_ancestors`) - 상위가 화면 목록에 남아 있으면(미완료) `- [ ]`로, 다른 날짜에 보관됐으면 그 섹션에도 다시 나온다. 그래야 하위가 다른 항목의 하위나 최상위처럼 보이지 않는다. 텍스트를 그대로 써서 `(@...)` 리마인더 토큰이 Obsidian에서도 읽힌다.
 - 참고 소스처럼 `os.chdir(BASE_DIR)` 후 CWD 기준 `src/*`에 쓰면 안 된다. 자동 실행 시 CWD는 system32이고, 설치 폴더(`%LOCALAPPDATA%\Programs\TaskPin`)는 재설치·제거 때 바뀐다.
 - 번들 리소스(아이콘 등)는 `paths.resource_path()`(`__file__` 기준)로 찾는다. 컴파일 여부는 `"__compiled__" in globals()`, exe 경로는 `sys.argv[0]` 기준. PyInstaller의 `sys._MEIPASS`는 쓰지 않는다.
 

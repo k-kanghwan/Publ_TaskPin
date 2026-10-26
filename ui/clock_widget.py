@@ -1126,7 +1126,9 @@ class ClockWidget(QWidget):
         """우패널 "TODO 내보내기": TODO 를 Markdown 체크리스트 파일로 저장한다. 마지막 저장 폴더를 기억한다."""
         now = datetime.now()
         if archived:
-            text = todo_export.archived_to_markdown(todo_store.load_archived(), now)
+            text = todo_export.archived_to_markdown(
+                todo_store.load_archived(), now, self.todo_panel.items()
+            )
         else:
             text = todo_export.to_markdown(self.todo_panel.items(), now)
 

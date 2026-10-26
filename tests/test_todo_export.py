@@ -41,7 +41,7 @@ def test_markdown_keeps_hierarchy_and_done_state():
     ]
 
 
-def test_archived_grouped_by_day_with_orphans_on_top():
+def test_archived_grouped_by_day_with_active_parent():
     active_parent = _item("남은 상위")
     newer = _item("최근", done=True, archived_at="2026-10-23 10:00:00")
     child = _item("하위", done=True, parent=newer, archived_at="2026-10-23 10:00:00")
@@ -50,17 +50,57 @@ def test_archived_grouped_by_day_with_orphans_on_top():
     )
     older = _item("예전", done=True, archived_at="2026-10-20 18:00:00")
 
-    lines = todo_export.archived_to_markdown([newer, child, orphan, older], NOW)
+    lines = todo_export.archived_to_markdown(
+        [newer, child, orphan, older], NOW, [active_parent]
+    )
     assert _body(lines) == [
         "## 2026-10-23 보관",
         "",
         "- [x] 최근",
         "  - [x] 하위",
-        "- [x] 고아",
+        "- [ ] 남은 상위",  # 아직 화면 목록에 있는(미완료) 상위도 함께
+        "  - [x] 고아",
         "",
         "## 2026-10-20 보관",
         "",
         "- [x] 예전",
+    ]
+
+
+def test_archived_keeps_whole_parent_chain():
+    # 사용자 예: 단계C 아래 미완료 "진행 중" 이 남아 있고, 그 아래 d 들만 보관됨
+    stage = _item("단계C")
+    doing = _item("진행 중", parent=stage)
+    d1 = _item("d1", done=True, parent=doing, archived_at="2026-10-23 10:00:00")
+    d2 = _item("d2", done=True, parent=doing, archived_at="2026-10-23 10:00:00")
+    phase = _item("phase D and F", done=True, archived_at="2026-10-23 10:00:00")
+
+    lines = todo_export.archived_to_markdown([phase, d1, d2], NOW, [stage, doing])
+    assert _body(lines) == [
+        "## 2026-10-23 보관",
+        "",
+        "- [x] phase D and F",
+        "- [ ] 단계C",
+        "  - [ ] 진행 중",
+        "    - [x] d1",
+        "    - [x] d2",
+    ]
+
+
+def test_archived_parent_from_other_day_repeats_in_each_section():
+    parent = _item("상위", done=True, archived_at="2026-10-20 18:00:00")
+    child = _item("하위", done=True, parent=parent, archived_at="2026-10-23 10:00:00")
+
+    lines = todo_export.archived_to_markdown([child, parent], NOW)
+    assert _body(lines) == [
+        "## 2026-10-23 보관",
+        "",
+        "- [x] 상위",
+        "  - [x] 하위",
+        "",
+        "## 2026-10-20 보관",
+        "",
+        "- [x] 상위",
     ]
 
 
