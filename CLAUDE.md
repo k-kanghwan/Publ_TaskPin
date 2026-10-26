@@ -51,14 +51,15 @@ iscc installer\TaskPin.iss                   # 설치본 -> dist/TaskPin-<버전
 - 시간은 로컬 현재시간 기준. 첫 실행 때 입력받는 값은 없다.
 - 라벨 변경: "출근" → "시작", "퇴근" → "종료", "남은 근무시간" → "남은시간". 라벨은 고정이다(편집 불가).
 - 좌측 패널은 한 번에 한 업무(Task)의 시간만 관리한다. 우측 TODO 리스트는 이와 별개로, 기존 기능 그대로 둔다.
-  - "Task 등록" 버튼으로 업무명(선택)·시작시간·소요 시간을 고른다. 시작시간은 15분 단위로 고르고, 기본값은 현재시간을 15분 단위로 올린 값이다(06:36 → 06:45, `task_clock.ceil_slot`). "Task 해제"는 확인 창(`ui/confirm_dialog.py`, 시간이 남았으면 남은시간 표시)을 거친 뒤 기록을 남기고(`tasks.cleared_at`) 위젯에서만 내린다.
-  - 좌측 하단 배치: 업무명 배지(가운데 정렬·테두리, 비어 있으면 숨김) → [Task 등록][Task 해제] → 투명도 슬라이더
+  - "Task 등록" 버튼으로 업무명(선택)·상세 업무(선택, 여러 줄)·시작시간·소요 시간을 고른다. 시작시간은 15분 단위로 고르고, 기본값은 현재시간을 15분 단위로 올린 값이다(06:36 → 06:45, `task_clock.ceil_slot`). "Task 완료"는 확인 창(`ui/confirm_dialog.py`, 시간이 남았으면 남은시간 표시)을 거친 뒤 기록을 남기고(`tasks.cleared_at`) 위젯에서만 내린다. 화면 문구는 "해제"가 아니라 "완료"로 쓴다.
+  - 좌측 하단 배치: 상세 업무(최대 3줄, 넘치면 "…" + 툴팁, 비어 있으면 숨김) → 업무명 배지(가운데 정렬·테두리, 비어 있으면 숨김) → [Task 등록][Task 완료] → 투명도 슬라이더. 상세 업무 줄 수가 바뀌면 `_apply_size_limits()`로 최소 높이를 다시 맞춘다.
+  - 등록 창은 왼쪽이 업무명/시간 폼, 오른쪽이 상세 업무(`QPlainTextEdit`) 칸이다. 상세 칸에서 Enter는 줄바꿈이고 Ctrl+Enter는 어디서든 확인이다. 조합 중인 한글은 업무명처럼 preedit을 합쳐 읽는다.
   - 등록 창(`TaskPicker`)은 `Qt.Popup`이 아니라 활성화되는 Tool 창이다. Windows에서 Popup은 전경 창이 되지 않아 IME가 붙지 않는다(한글 입력 불가).
   - 등록 전에는 시작이 `--:--`. 종료 = 시작 + 소요 시간. 남은시간이 0을 지나면 초과 시간을 `+`로 표시한다.
 - 더블클릭으로 편집할 수 있는 곳은 사용자 이름 하나뿐이다.
-- 우클릭 메뉴는 패널마다 다르다. 좌패널(`ClockWidget.contextMenuEvent`): 가로/세로 모드·잠금·자동 실행·설정·위젯 숨기기·종료. 우패널(`TodoPanel.contextMenuEvent`, 위로 올려 보내지 않음): 완료 항목 정리·TODO 내보내기·추가·삭제·태그. 내보내기는 cfg(`export_dir`)가 필요해 `TodoPanel.export_requested`로 위젯에 맡긴다.
+- 우클릭 메뉴는 패널마다 다르다. 좌패널(`ClockWidget.contextMenuEvent`): 가로/세로 모드·잠금·자동 실행·설정·위젯 숨기기·프로그램 종료. 우패널(`TodoPanel.contextMenuEvent`, 위로 올려 보내지 않음): 완료 항목 정리·TODO 내보내기·추가·삭제·태그. 내보내기는 cfg(`export_dir`)가 필요해 `TodoPanel.export_requested`로 위젯에 맡긴다.
 - 설정창(`ui/settings_dialog.py`)은 좌패널 우클릭 "설정"과 Ctrl+,로 연다(트레이 메뉴에는 넣지 않음). 탭은 Keyboard Shortcuts / Snippets / Appearance / Application이고, Application은 아직 "준비 중"이다. 확인 버튼 없이 바꾸는 즉시 저장한다.
-  - 단축키(기본 E: Task 등록, C: Task 해제, A: 할 일 입력칸 포커스, Ctrl+,: 설정)는 `QShortcut(Qt.WindowShortcut)`이라 위젯 창이 활성일 때만 동작한다. 글자 키는 입력칸이 ShortcutOverride로 먼저 가져가므로 입력 중에는 글자로 들어간다.
+  - 단축키(기본 E: Task 등록, C: Task 완료, A: 할 일 입력칸 포커스, Ctrl+,: 설정)는 `QShortcut(Qt.WindowShortcut)`이라 위젯 창이 활성일 때만 동작한다. 글자 키는 입력칸이 ShortcutOverride로 먼저 가져가므로 입력 중에는 글자로 들어간다.
   - Appearance: 테마(다크/라이트/시스템), 강조색, 배경색, 폰트, 좌·우패널 글자 배율(`widget_config.LEFT_SCALES`/`TODO_SCALES`), TODO 글자색, "글자도 함께 투명"(`fade_text`, 기본 끔: 투명도 슬라이더가 배경만 반투명하게 칠하고, 켜면 `setWindowOpacity`로 창 전체). 배경색을 고르면 글자색은 테마 대신 배경 밝기를 따른다. 설정창은 테마(다크/라이트)와 강조색만 따르고(`settings_dialog._settings_theme`), 제목줄도 `os_win.set_dark_title_bar(hwnd, dark)`로 맞춘다.
   - 테마 반영: `theme.build(appearance)` → `theme.set_current()` 후 `ClockWidget.apply_appearance()`(→ `TodoPanel.apply_appearance()`)로 다시 입힌다. 팝업은 만들 때 `theme.current()`를 읽는다. 스타일에 색을 쓸 때는 `ui.theme` 상수를 import하지 말고 `theme.current()`에서 읽고, 흰색 반투명은 `t.overlay(alpha)`로 쓴다(라이트에서는 검정).
   - 스니펫은 TODO 입력/수정칸과 Task 업무명에서 `:트리거:`를 치면 문구로 바꾼다. textEdited 안에서 바로 고치면 Ctrl+Z가 듣지 않으므로 `QTimer.singleShot(0)`으로 미뤄서 바꾼다.
@@ -76,7 +77,7 @@ iscc installer\TaskPin.iss                   # 설치본 -> dist/TaskPin-<버전
 
 - 사용자 데이터 위치: `%APPDATA%\TaskPin\`
   - `config.json` — 위젯 설정(위치·크기·투명도·모드 등), 사용자 이름, `shortcuts`(동작별 QKeySequence PortableText), `snippets`(`[[":idea:", "💡"], ...]`), `appearance`(`widget_config.appearance()`가 깨진 값을 기본값으로 채움), `export_dir`(TODO 내보내기 마지막 저장 폴더)
-  - `taskpin.db` — SQLite: TODO(계층·태그 포함), 정리된 완료 항목, Task 시간 등록 정보
+  - `taskpin.db` — SQLite: TODO(계층·태그 포함), 정리된 완료 항목, Task 등록 정보(업무명·상세 업무·시간)
 - "완료 항목 정리"(`TodoPanel.clear_done`)는 행을 지우지 않고 보관 상태로 바꾼다.
 - "TODO 내보내기"(우패널 우클릭 서브메뉴: 화면 목록 / 보관 항목 전체)는 Markdown 체크리스트(.md, UTF-8)로 저장한다. 하위는 2칸 들여쓰기, 보관 항목은 보관 날짜별 섹션. 텍스트를 그대로 써서 `(@...)` 리마인더 토큰이 Obsidian에서도 읽힌다.
 - 참고 소스처럼 `os.chdir(BASE_DIR)` 후 CWD 기준 `src/*`에 쓰면 안 된다. 자동 실행 시 CWD는 system32이고, 설치 폴더(`%LOCALAPPDATA%\Programs\TaskPin`)는 재설치·제거 때 바뀐다.
