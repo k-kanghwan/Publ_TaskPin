@@ -210,17 +210,31 @@ def is_due(item: dict, now: datetime) -> bool:
     return due is not None and due <= now and item.get("fired") != due_key(due)
 
 
-def to_html(text: str, emoji_style: str = "") -> str:
+def to_html(
+    text: str, emoji_style: str = "", marks=(), mark_style: str = ""
+) -> str:
     """표시용 HTML (반드시 escape - 사용자 입력이 RichText 로 해석되지 않도록)
 
     emoji_style 을 주면 이모지 덩어리를 그 스타일의 <span> 으로 감싼다.
-    (본문 크기의 컬러 이모지는 테두리가 뭉개져서 조금 크게 그린다)"""
-    body = html.escape(strip_reminder(text))
-    if emoji_style:
-        body = EMOJI_RE.sub(
-            lambda m: f'<span style="{emoji_style}">{m.group()}</span>', body
-        )
-    return body
+    (본문 크기의 컬러 이모지는 테두리가 뭉개져서 조금 크게 그린다)
+    marks: 토큰을 뺀 본문 기준 구간 [(시작, 끝)] - mark_style 의 <span> 으로 감싼다 (검색 하이라이트)"""
+
+    def piece(part: str) -> str:
+        part = html.escape(part)
+        if emoji_style:
+            part = EMOJI_RE.sub(
+                lambda m: f'<span style="{emoji_style}">{m.group()}</span>', part
+            )
+        return part
+
+    body = strip_reminder(text)
+    out, pos = [], 0
+    for start, end in marks:
+        out.append(piece(body[pos:start]))
+        out.append(f'<span style="{mark_style}">{piece(body[start:end])}</span>')
+        pos = end
+    out.append(piece(body[pos:]))
+    return "".join(out)
 
 
 if __name__ == "__main__":

@@ -53,6 +53,20 @@ def test_matches_ignores_reminder_token():
     assert todo_filter.matches(item, "회의")
 
 
+def test_match_spans():
+    assert todo_filter.match_spans("Weekly 회의자료 준비", "weekly 회의") == [
+        (0, 6),
+        (7, 9),
+    ]
+    # 같은 단어가 여러 번 / 대소문자 무시
+    assert todo_filter.match_spans("abc x ABC", "abc") == [(0, 3), (6, 9)]
+    # 겹치거나 붙은 구간은 합친다
+    assert todo_filter.match_spans("회의자료", "회의 의자") == [(0, 3)]
+    assert todo_filter.match_spans("회의자료", "회의 자료") == [(0, 4)]
+    assert todo_filter.match_spans("회의", "") == []
+    assert todo_filter.match_spans("a.b", ".") == [(1, 2)]
+
+
 def test_is_active():
     assert not todo_filter.is_active("all", "")
     assert not todo_filter.is_active("all", "   ")
