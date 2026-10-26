@@ -33,7 +33,7 @@ iscc installer\TaskPin.iss                   # 설치본 -> dist/TaskPin-<버전
 
 ## 참고 소스: `C:\Users\kh.Cha\Documents\MyProject\Priv_WimsClockManager\`
 
-이 프로젝트의 위젯/TODO 부분을 가져오고 사내 서버(WIMS) 연동은 뺐다(이식 완료). 아래는 이식 기준으로 남겨 둔다.
+이 프로젝트의 위젯/TODO 부분을 가져오고 사내 서버 연동은 뺐다(이식 완료). 아래는 이식 기준으로 남겨 둔다.
 
 - 가져올 것
   - `ui/clock_widget.py` — 좌측 시간 패널 + 우측 TODO 위젯, 투명도 슬라이더, 리사이즈, 가로/세로 모드, 항상 위/아래(Win32 `SetWindowPos`)
@@ -51,12 +51,13 @@ iscc installer\TaskPin.iss                   # 설치본 -> dist/TaskPin-<버전
 - 시간은 로컬 현재시간 기준. 첫 실행 때 입력받는 값은 없다.
 - 라벨 변경: "출근" → "시작", "퇴근" → "종료", "남은 근무시간" → "남은시간". 라벨은 고정이다(편집 불가).
 - 좌측 패널은 한 번에 한 업무(Task)의 시간만 관리한다. 우측 TODO 리스트는 이와 별개로, 기존 기능 그대로 둔다.
-  - "Task 등록" 버튼으로 업무명(선택)·시작시간·소요 시간을 고른다. 시작시간은 기본값이 현재시간이고 15분 단위로 고른다. "Task 해제"는 확인 창(`ui/confirm_dialog.py`, 시간이 남았으면 남은시간 표시)을 거친 뒤 기록을 남기고(`tasks.cleared_at`) 위젯에서만 내린다.
+  - "Task 등록" 버튼으로 업무명(선택)·시작시간·소요 시간을 고른다. 시작시간은 15분 단위로 고르고, 기본값은 현재시간을 15분 단위로 올린 값이다(06:36 → 06:45, `task_clock.ceil_slot`). "Task 해제"는 확인 창(`ui/confirm_dialog.py`, 시간이 남았으면 남은시간 표시)을 거친 뒤 기록을 남기고(`tasks.cleared_at`) 위젯에서만 내린다.
   - 좌측 하단 배치: 업무명 배지(가운데 정렬·테두리, 비어 있으면 숨김) → [Task 등록][Task 해제] → 투명도 슬라이더
   - 등록 창(`TaskPicker`)은 `Qt.Popup`이 아니라 활성화되는 Tool 창이다. Windows에서 Popup은 전경 창이 되지 않아 IME가 붙지 않는다(한글 입력 불가).
   - 등록 전에는 시작이 `--:--`. 종료 = 시작 + 소요 시간. 남은시간이 0을 지나면 초과 시간을 `+`로 표시한다.
 - 더블클릭으로 편집할 수 있는 곳은 사용자 이름 하나뿐이다.
-- 설정창(`ui/settings_dialog.py`)은 위젯 우클릭 "설정"과 Ctrl+,로 연다(트레이 메뉴에는 넣지 않음). 탭은 Keyboard Shortcuts / Snippets / Appearance / Application이고, Application은 아직 "준비 중"이다. 확인 버튼 없이 바꾸는 즉시 저장한다.
+- 우클릭 메뉴는 패널마다 다르다. 좌패널(`ClockWidget.contextMenuEvent`): 가로/세로 모드·잠금·자동 실행·설정·위젯 숨기기·종료. 우패널(`TodoPanel.contextMenuEvent`, 위로 올려 보내지 않음): 완료 항목 정리·TODO 내보내기·추가·삭제·태그. 내보내기는 cfg(`export_dir`)가 필요해 `TodoPanel.export_requested`로 위젯에 맡긴다.
+- 설정창(`ui/settings_dialog.py`)은 좌패널 우클릭 "설정"과 Ctrl+,로 연다(트레이 메뉴에는 넣지 않음). 탭은 Keyboard Shortcuts / Snippets / Appearance / Application이고, Application은 아직 "준비 중"이다. 확인 버튼 없이 바꾸는 즉시 저장한다.
   - 단축키(기본 E: Task 등록, C: Task 해제, A: 할 일 입력칸 포커스, Ctrl+,: 설정)는 `QShortcut(Qt.WindowShortcut)`이라 위젯 창이 활성일 때만 동작한다. 글자 키는 입력칸이 ShortcutOverride로 먼저 가져가므로 입력 중에는 글자로 들어간다.
   - Appearance: 테마(다크/라이트/시스템), 강조색, 배경색, 폰트, 좌·우패널 글자 배율(`widget_config.LEFT_SCALES`/`TODO_SCALES`), TODO 글자색, "글자도 함께 투명"(`fade_text`, 기본 끔: 투명도 슬라이더가 배경만 반투명하게 칠하고, 켜면 `setWindowOpacity`로 창 전체). 배경색을 고르면 글자색은 테마 대신 배경 밝기를 따른다. 설정창은 테마(다크/라이트)와 강조색만 따르고(`settings_dialog._settings_theme`), 제목줄도 `os_win.set_dark_title_bar(hwnd, dark)`로 맞춘다.
   - 테마 반영: `theme.build(appearance)` → `theme.set_current()` 후 `ClockWidget.apply_appearance()`(→ `TodoPanel.apply_appearance()`)로 다시 입힌다. 팝업은 만들 때 `theme.current()`를 읽는다. 스타일에 색을 쓸 때는 `ui.theme` 상수를 import하지 말고 `theme.current()`에서 읽고, 흰색 반투명은 `t.overlay(alpha)`로 쓴다(라이트에서는 검정).
@@ -67,14 +68,17 @@ iscc installer\TaskPin.iss                   # 설치본 -> dist/TaskPin-<버전
   - 컬러 이모지가 뭉개지지 않도록 앱 폰트는 `PreferNoHinting`으로 둔다. TODO 행에서는 이모지를 14px로 그린다(`todo_store.to_html(text, emoji_style)`).
 - 이미 실행 중일 때 다시 실행하면 경고 없이 기존 앱의 위젯을 띄운다(`TrayApp.on_second_instance`). 기존 앱은 백그라운드라 전경 잠금에 걸리므로, 두 번째 실행이 `os_win.allow_set_foreground()`로 권한을 넘기고 연결이 끊길 때까지 기다린다.
 - TODO 레벨: `todos.parent_id`(NULL이면 최상위)와 형제 사이 순서 `position`. 트리 규칙은 `manager/todo_tree.py`에 있다. 행 가운데에 놓으면 그 항목의 하위로, 행 위/아래 1/3에 놓으면 그 자리로 간다. "완료된 상위 ⇒ 하위도 모두 완료"를 유지하고, 상위를 삭제하면 하위는 한 단계 올린다. 들여쓰기는 3단계까지만 늘어난다.
+- TODO 선택: 클릭(그 행만)·Ctrl+클릭(추가/빼기)·Shift+클릭(범위), 빈 곳 클릭·Esc로 해제. 선택은 메모리에만 두고(`TodoPanel._selected`) 강조색 테두리로 그린다. 선택한 채 입력하면 마지막으로 클릭한 항목의 하위 맨 뒤로 들어간다. 선택한 행을 끌면 선택 항목이 함께 옮겨진다(`todo_tree.move_many`, 상위가 함께 선택된 항목은 상위를 따라감). 우클릭 "삭제"는 완료 없이 선택 항목을 지운다(하위는 한 단계 위로).
+- TODO 드래그는 `QDrag`(Windows OLE `DoDragDrop`)를 쓰지 않는다. OLE 루프 동안은 휠이 오지 않고 커서를 움직일 때만 자동 스크롤되기 때문이다. 행의 마우스 grab으로 이동/놓음을 받고(`TodoRow.drag_*` 시그널), 반투명 ToolTip 창이 커서를 따라가며, `QTimer`가 목록 위·아래 끝에서 계속 스크롤한다. 놓은 뒤 이동은 `QTimer.singleShot(0)`으로 미룬다(놓은 행이 rebuild로 사라짐).
+- TODO 태그: `todos.tag`(`todo_store.TAGS` 중 하나, NULL이면 없음). 색은 `todo_panel.TAG_COLORS`. 체크박스 왼쪽 세로 막대로만 표시하고(글자색·기울임 없음) 태그가 없어도 막대 자리는 비워 둔다.
 
 ## 데이터 저장 / 경로
 
 - 사용자 데이터 위치: `%APPDATA%\TaskPin\`
   - `config.json` — 위젯 설정(위치·크기·투명도·모드 등), 사용자 이름, `shortcuts`(동작별 QKeySequence PortableText), `snippets`(`[[":idea:", "💡"], ...]`), `appearance`(`widget_config.appearance()`가 깨진 값을 기본값으로 채움), `export_dir`(TODO 내보내기 마지막 저장 폴더)
-  - `taskpin.db` — SQLite: TODO, 정리된 완료 항목, Task 시간 등록 정보
+  - `taskpin.db` — SQLite: TODO(계층·태그 포함), 정리된 완료 항목, Task 시간 등록 정보
 - "완료 항목 정리"(`TodoPanel.clear_done`)는 행을 지우지 않고 보관 상태로 바꾼다.
-- "TODO 내보내기"(위젯 우클릭 서브메뉴: 화면 목록 / 보관 항목 전체)는 Markdown 체크리스트(.md, UTF-8)로 저장한다. 하위는 2칸 들여쓰기, 보관 항목은 보관 날짜별 섹션. 텍스트를 그대로 써서 `(@...)` 리마인더 토큰이 Obsidian에서도 읽힌다.
+- "TODO 내보내기"(우패널 우클릭 서브메뉴: 화면 목록 / 보관 항목 전체)는 Markdown 체크리스트(.md, UTF-8)로 저장한다. 하위는 2칸 들여쓰기, 보관 항목은 보관 날짜별 섹션. 텍스트를 그대로 써서 `(@...)` 리마인더 토큰이 Obsidian에서도 읽힌다.
 - 참고 소스처럼 `os.chdir(BASE_DIR)` 후 CWD 기준 `src/*`에 쓰면 안 된다. 자동 실행 시 CWD는 system32이고, 설치 폴더(`%LOCALAPPDATA%\Programs\TaskPin`)는 재설치·제거 때 바뀐다.
 - 번들 리소스(아이콘 등)는 `paths.resource_path()`(`__file__` 기준)로 찾는다. 컴파일 여부는 `"__compiled__" in globals()`, exe 경로는 `sys.argv[0]` 기준. PyInstaller의 `sys._MEIPASS`는 쓰지 않는다.
 
