@@ -1246,7 +1246,7 @@ class ClockWidget(QWidget):
 
     def _popup_position(self, popup: QWidget) -> QPoint:
         """위젯 위치와 상관없이 주 모니터 우측 상단부터 아래로 쌓고,
-        아래 공간이 없으면 왼쪽 열로 넘어가 다시 위에서부터 쌓는다. (팝업 폭은 고정)"""
+        아래 공간이 없으면 왼쪽 열로 넘어가 다시 위에서부터 쌓는다. (팝업 폭은 설정의 알림 창 크기)"""
         area = QApplication.primaryScreen().availableGeometry()
         top = area.top() + SCREEN_MARGIN
         bottom = area.bottom() + 1 - SCREEN_MARGIN

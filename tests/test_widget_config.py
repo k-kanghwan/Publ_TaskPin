@@ -105,6 +105,8 @@ def test_appearance_keeps_valid_values():
         "todo_scale": 130,
         "todo_text_color": "#ffffff",
         "fade_text": True,
+        "popup_width": 380,
+        "popup_scale": 130,
     }
     result = widget_config.appearance({"appearance": saved})
     assert result == {
@@ -124,6 +126,8 @@ def test_appearance_replaces_broken_values():
         "todo_scale": 100.0,
         "todo_text_color": "#12345",
         "fade_text": "yes",  # bool 만 받는다
+        "popup_width": 300,  # 정해진 폭만
+        "popup_scale": 200,
     }
     result = widget_config.appearance({"appearance": saved})
     assert result == widget_config.DEFAULT_APPEARANCE

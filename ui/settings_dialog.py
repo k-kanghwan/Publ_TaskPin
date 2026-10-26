@@ -4,6 +4,7 @@
   - Keyboard Shortcuts : 위젯 단축키. 다른 동작과 겹치면 저장하지 않고 경고
   - Snippets           : `:트리거:` -> 문구 목록. 빈 칸 / 중복 트리거는 저장하지 않고 표시만
   - Appearance         : 테마 / 강조색 / 배경색 / 글자도 함께 투명 / 폰트, 좌·우패널 글자 크기, TODO 글자색,
+                         리마인더 알림 창 폭 / 글자 크기(실제 크기 예시 포함),
                          사용자 태그(이름 / 색 변경, 추가, 삭제 - config.json custom_tags).
                          바꾸면 appearance_changed 로 위젯에 바로 반영한다.
   - Application        : 설정 내보내기(폴더를 고르면 config.json 을 그대로 저장) / 가져오기(바로 적용)
@@ -39,6 +40,7 @@ from manager import os_win, snippets, widget_config
 from ui import theme
 from ui.color_dialog import pick_color
 from ui.confirm_dialog import ConfirmDialog
+from ui.reminder_popup import ReminderPopup
 from ui.tag_dialog import TagDialog
 
 
@@ -76,6 +78,8 @@ SHORTCUT_ROWS = [
 THEME_OPTIONS = [("dark", "다크"), ("light", "라이트"), ("system", "시스템")]
 ON_OFF_OPTIONS = [(False, "끔"), (True, "켬")]
 SCALE_NAMES = {90: "작게", 100: "보통", 115: "크게", 130: "아주 크게"}
+POPUP_WIDTH_NAMES = {220: "좁게", 260: "보통", 320: "넓게", 380: "아주 넓게"}
+POPUP_PREVIEW_TEXT = "회의자료 준비하기 (예시)"
 ACCENT_SWATCHES = [
     ("#4a7bd0", "파랑"),
     ("#3fa7a0", "청록"),
@@ -682,6 +686,30 @@ class SettingsDialog(QWidget):
             self._reset_button(lambda: self._set_appearance("todo_text_color", "")),
         )
 
+        # ---- 리마인더 알림 창 ----
+        card_layout = self._add_group(groups, "알림 창 (리마인더)")
+        box, self._popup_width_group = self._segmented(
+            [(w, POPUP_WIDTH_NAMES[w]) for w in widget_config.POPUP_WIDTHS],
+            lambda v: self._set_appearance("popup_width", v),
+        )
+        self._popup_width_sub = self._add_row(card_layout, "크기", "", box)
+        box, self._popup_scale_group = self._segmented(
+            [(s, SCALE_NAMES[s]) for s in widget_config.POPUP_SCALES],
+            lambda v: self._set_appearance("popup_scale", v),
+        )
+        self._add_row(card_layout, "글자 크기", "제목 · 내용 · 버튼", box)
+        # 실제 알림 창과 같은 크기 / 테마로 그린 예시 (값을 바꿀 때마다 다시 만든다)
+        card_layout.addWidget(_line())
+        preview_row = QWidget()
+        self._popup_preview_layout = QVBoxLayout(preview_row)
+        self._popup_preview_layout.setContentsMargins(0, 10, 0, 12)
+        self._popup_preview_layout.setSpacing(8)
+        preview_sub = QLabel("실제 크기 예시 · 높이는 내용에 맞춰집니다")
+        preview_sub.setObjectName("sub")
+        self._popup_preview_layout.addWidget(preview_sub)
+        self._popup_preview = None
+        card_layout.addWidget(preview_row)
+
         # ---- 사용자 태그 (우패널 우클릭 "태그" 의 "태그 없음" 아래에 보인다) ----
         card_layout = self._add_group(groups, "TODO 태그")
         tags_box = QWidget()
@@ -905,6 +933,14 @@ class SettingsDialog(QWidget):
         self._todo_scale_group.button(
             widget_config.TODO_SCALES.index(a["todo_scale"])
         ).setChecked(True)
+        self._popup_width_group.button(
+            widget_config.POPUP_WIDTHS.index(a["popup_width"])
+        ).setChecked(True)
+        self._popup_scale_group.button(
+            widget_config.POPUP_SCALES.index(a["popup_scale"])
+        ).setChecked(True)
+        self._popup_width_sub.setText(f"폭 {a['popup_width']}px")
+        self._rebuild_popup_preview(a)
 
         idx = self._font_combo.findData(a["font_family"])
         # 저장된 폰트가 지워졌으면 이름만 남겨 둔다 (Qt 가 대체 폰트로 그림)
@@ -912,6 +948,22 @@ class SettingsDialog(QWidget):
             self._font_combo.addItem(f"{a['font_family']} (없음)", a["font_family"])
             idx = self._font_combo.count() - 1
         self._font_combo.setCurrentIndex(idx)
+
+    def _rebuild_popup_preview(self, a: dict):
+        """알림 창 예시를 지금 설정으로 다시 만든다. 설정창 테마가 아니라 실제 팝업과 같은
+        위젯 테마(배경색 / 폰트 포함)로, 같은 폭 / 글자 크기로 그린다."""
+        if self._popup_preview is not None:
+            self._popup_preview_layout.removeWidget(self._popup_preview)
+            self._popup_preview.deleteLater()
+        due = datetime.now().astimezone().replace(second=0, microsecond=0)
+        self._popup_preview = ReminderPopup(
+            "",
+            POPUP_PREVIEW_TEXT,
+            due,
+            look=theme.build(a, theme.system_dark()),
+            preview=True,
+        )
+        self._popup_preview_layout.addWidget(self._popup_preview, 0, Qt.AlignLeft)
 
     # ==================================================
     # Application: 설정 내보내기 / 가져오기

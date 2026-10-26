@@ -164,19 +164,10 @@ def _panel_style(t: theme.Theme) -> str:
     QPushButton#delete:hover {{ color: {t.text_warn}; }}
     QPushButton#chip {{
         background: transparent;
-        color: {t.text_sub};
         font-family: {t.font_family};
         font-size: {px(11, s)}px;
-        border: 1px solid {t.overlay(40)};
-        border-radius: 9px;
-        padding: 1px 8px;
-        outline: none;
-    }}
-    QPushButton#chip:hover {{ color: {t.text_main}; border: 1px solid {t.overlay(90)}; }}
-    QPushButton#chip:checked {{
-        background: {t.accent};
-        color: {t.on_accent};
-        border: 1px solid {t.accent};
+        border: 1px solid transparent;
+        padding: 2px 8px;
     }}
 """
 
@@ -261,6 +252,40 @@ class _SearchEdit(PreeditLineEdit):
         super().keyPressEvent(event)
 
 
+class _Chip(QPushButton):
+    """검색 줄의 보기 칩 (알약 모양). 스타일시트의 border-radius 는 안티앨리어싱 없이 그려져
+    둥근 끝이 계단처럼 깨지므로 직접 그린다. 크기(글자 / 여백)만 스타일시트(QPushButton#chip)를 따른다."""
+
+    def __init__(self, text: str, parent=None):
+        super().__init__(text, parent)
+        self.setObjectName("chip")
+        self.setCheckable(True)
+        self.setFocusPolicy(Qt.NoFocus)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setAttribute(Qt.WA_Hover, True)
+
+    def paintEvent(self, event):
+        t = theme.current()
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        # 1px 선이 픽셀 경계에 걸쳐 흐려지지 않도록 반 픽셀 안쪽에 그린다
+        rect = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
+        radius = rect.height() / 2
+        hover = self.underMouse()
+        if self.isChecked():
+            painter.setPen(QPen(QColor(t.accent), 1))
+            painter.setBrush(QColor(t.accent))
+            text_color = t.on_accent
+        else:
+            painter.setPen(QPen(t.overlay_color(90 if hover else 40), 1))
+            painter.setBrush(Qt.NoBrush)
+            text_color = t.text_main if hover else t.text_sub
+        painter.drawRoundedRect(rect, radius, radius)
+        painter.setPen(QColor(text_color))
+        painter.setFont(self.font())
+        painter.drawText(self.rect(), Qt.AlignCenter, self.text())
+
+
 class FilterBar(QWidget):
     """Ctrl+F / 우클릭 "검색" 으로 여는 줄: 날짜별 보기 칩 + 검색칸.
     한글은 조합 중인 글자까지 바로 걸러지도록 preedit 이 바뀔 때도 changed 를 보낸다."""
@@ -279,11 +304,7 @@ class FilterBar(QWidget):
         self._group = QButtonGroup(self)
         self._chips = {}
         for view in todo_filter.VIEWS:
-            chip = QPushButton(VIEW_LABELS[view])
-            chip.setObjectName("chip")
-            chip.setCheckable(True)
-            chip.setFocusPolicy(Qt.NoFocus)
-            chip.setCursor(Qt.PointingHandCursor)
+            chip = _Chip(VIEW_LABELS[view])
             self._group.addButton(chip)
             self._chips[view] = chip
             chips.addWidget(chip)
