@@ -161,6 +161,43 @@ def move(items: list, item_id, parent_id, before_id) -> bool:
     return changed
 
 
+def top_selected(items: list, ids) -> list:
+    """ids 중 상위가 함께 들어 있지 않은 것만 (상위를 옮기면 하위는 따라온다). ids 순서 유지"""
+    chosen = set(ids)
+    return [
+        item_id
+        for item_id in ids
+        if not any(parent["id"] in chosen for parent in ancestors(items, item_id))
+    ]
+
+
+def move_many(items: list, ids: list, parent_id, before_id) -> bool:
+    """여러 항목을 (각각 하위와 함께) parent_id 아래, before_id 앞으로 ids 순서대로 옮긴다.
+
+    Parameters
+    ----------
+    ids : 옮길 항목 id 들 (화면 순서). 상위가 함께 들어 있는 항목은 상위를 따라간다.
+    parent_id / before_id : move 와 같다
+
+    Returns
+    -------
+    bool : 바뀐 것이 있으면 True. 옮기는 묶음 안으로는 옮기지 않는다 (아무것도 바꾸지 않음).
+    """
+    roots = [item_id for item_id in top_selected(items, ids) if _find(items, item_id)]
+    if not roots:
+        return False
+    moving = set(roots)
+    for item_id in roots:
+        moving.update(other["id"] for other in descendants(items, item_id))
+    if parent_id in moving or before_id in moving:
+        return False
+
+    changed = False
+    for item_id in roots:
+        changed = move(items, item_id, parent_id, before_id) or changed
+    return changed
+
+
 def remove_promote(items: list, item_id) -> bool:
     """항목 하나만 지우고, 바로 아래 하위들은 지운 항목의 상위로 올려 그 자리에 순서대로 둔다.
 

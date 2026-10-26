@@ -114,3 +114,34 @@ def test_remove_promote_lifts_children_in_place():
     assert todo_tree.remove_promote(items, "b")
     assert _layout(items) == [("a", 0), ("b2", 0), ("b1", 0), ("b1x", 1)]
     assert not todo_tree.remove_promote(items, "b")
+
+
+def test_move_many_keeps_order():
+    items = _items(("a", None), ("b", None), ("c", None), ("d", None))
+    assert todo_tree.move_many(items, ["b", "d"], "a", None)
+    assert _layout(items) == [("a", 0), ("b", 1), ("d", 1), ("c", 0)]
+
+    assert todo_tree.move_many(items, ["b", "d"], None, "a")
+    assert _layout(items) == [("b", 0), ("d", 0), ("a", 0), ("c", 0)]
+
+
+def test_move_many_children_follow_selected_parent():
+    items = _items(("a", None), ("a1", "a"), ("b", None))
+    assert todo_tree.top_selected(items, ["a", "a1"]) == ["a"]
+    assert todo_tree.move_many(items, ["a", "a1"], "b", None)
+    assert _layout(items) == [("b", 0), ("a", 1), ("a1", 2)]
+
+
+def test_move_many_rejects_own_bundle():
+    items = _items(("a", None), ("b", None), ("b1", "b"))
+    assert not todo_tree.move_many(items, ["a", "b"], "b1", None)
+    assert not todo_tree.move_many(items, ["a", "b"], None, "b")
+    assert not todo_tree.move_many(items, [], None, None)
+    assert _layout(items) == [("a", 0), ("b", 0), ("b1", 1)]
+
+
+def test_move_many_under_done_reopens_parent():
+    items = _items(("a", None), ("b", None), ("c", None))
+    items[0]["done"] = True
+    assert todo_tree.move_many(items, ["b", "c"], "a", None)
+    assert not items[0]["done"]

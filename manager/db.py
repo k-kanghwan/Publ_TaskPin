@@ -44,7 +44,13 @@ ALTER TABLE todos ADD COLUMN parent_id TEXT;
 PRAGMA user_version = 3;
 """
 
-_MIGRATIONS = ((1, _SCHEMA_V1), (2, _SCHEMA_V2), (3, _SCHEMA_V3))
+# user_version 3 -> 4: TODO 색 태그 (todo_store.TAGS / NULL 이면 없음)
+_SCHEMA_V4 = """
+ALTER TABLE todos ADD COLUMN tag TEXT;
+PRAGMA user_version = 4;
+"""
+
+_MIGRATIONS = ((1, _SCHEMA_V1), (2, _SCHEMA_V2), (3, _SCHEMA_V3), (4, _SCHEMA_V4))
 
 _conn = None
 

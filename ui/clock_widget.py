@@ -470,6 +470,7 @@ class ClockWidget(QWidget):
 
         # ---- TODO 리스트 (높이를 늘리면 이 영역만 커짐 / 위치는 _apply_orientation) ----
         self.todo_panel = TodoPanel(lambda: snippets.from_config(self._cfg))
+        self.todo_panel.export_requested.connect(self._export_todos)
 
         self.apply_task(None)
 
@@ -858,22 +859,9 @@ class ClockWidget(QWidget):
     # 우클릭 컨텍스트 메뉴
     # ==================================================
     def contextMenuEvent(self, event):
+        """좌패널(Task) 메뉴. TODO 목록 위에서는 TodoPanel 이 자기 메뉴를 띄운다."""
         menu = QMenu(self)
         menu.setStyleSheet(theme.menu_style(theme.current()))
-
-        act_clear = menu.addAction("완료 항목 정리", self.todo_panel.clear_done)
-        act_clear.setEnabled(self.todo_panel.has_done())
-        export_menu = menu.addMenu("TODO 내보내기")
-        export_menu.setStyleSheet(menu.styleSheet())
-        act_active = export_menu.addAction(
-            "화면 목록…", lambda: self._export_todos(archived=False)
-        )
-        act_active.setEnabled(bool(self.todo_panel.items()))
-        act_archived = export_menu.addAction(
-            "보관 항목 전체…", lambda: self._export_todos(archived=True)
-        )
-        act_archived.setEnabled(bool(todo_store.load_archived()))
-        menu.addSeparator()
 
         if self._orientation == ORIENTATION_HORIZONTAL:
             menu.addAction(
@@ -907,7 +895,7 @@ class ClockWidget(QWidget):
         menu.exec(event.globalPos())
 
     def _export_todos(self, archived: bool):
-        """TODO 를 Markdown 체크리스트 파일로 저장한다. 마지막 저장 폴더를 기억한다."""
+        """우패널 "TODO 내보내기": TODO 를 Markdown 체크리스트 파일로 저장한다. 마지막 저장 폴더를 기억한다."""
         now = datetime.now()
         if archived:
             text = todo_export.archived_to_markdown(todo_store.load_archived(), now)

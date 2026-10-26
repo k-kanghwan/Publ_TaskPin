@@ -96,6 +96,34 @@ def test_migrate_v2_adds_parent_id(tmp_path):
         db.close()
 
 
+def test_tag_is_saved_and_invalid_tag_dropped(temp_db):
+    items = _items("a", "b")
+    items[0]["tag"] = "blue"
+    todo_store.save_todos(items)
+    assert [item["tag"] for item in todo_store.load_todos()] == ["blue", None]
+
+    with sqlite3.connect(temp_db) as c:
+        c.execute("UPDATE todos SET tag = 'purple-ish' WHERE id = ?", (items[0]["id"],))
+    c.close()
+    assert todo_store.load_todos()[0]["tag"] is None
+
+
+def test_migrate_v3_adds_tag(tmp_path):
+    path = tmp_path / "v3.db"
+    with sqlite3.connect(path) as c:
+        c.executescript(db._SCHEMA_V1 + db._SCHEMA_V2 + db._SCHEMA_V3)
+        c.execute(
+            "INSERT INTO todos (id, text, done, position) VALUES ('x', 'old', 0, 0)"
+        )
+    c.close()
+
+    db.connect(str(path))
+    try:
+        assert [item["tag"] for item in todo_store.load_todos()] == [None]
+    finally:
+        db.close()
+
+
 def test_reminder_token_helpers_unchanged():
     assert (
         todo_store.strip_reminder("회의자료 (@2026-10-21 09:00) 준비")
