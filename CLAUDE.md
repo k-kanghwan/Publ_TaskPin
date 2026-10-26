@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 프로젝트 상태
 
-- v0.1.0 구현 완료(계획: `.claude/plans/init-todo.md`). 요구사항 원본은 `PRD.md`이고, 기능 판단은 PRD를 따른다.
+- 현재 버전은 `version.py`의 `VERSION`(지금 0.1.11). 초기 구현 계획은 `.claude/plans/init-todo.md`, 요구사항 원본은 `PRD.md`이고, 기능 판단은 PRD를 따른다.
 - 앱 표시명은 **Task알림**(창 제목·exe 표시명). 폴더명·자동 실행 레지스트리 키·단일 인스턴스 ID·mutex 같은 내부 식별자는 ASCII **TaskPin**을 쓴다.
 - 앱 아이콘 원본은 `ico/taskpin_icon_A_memo.svg`(임시 지정). exe/설치본용 `ico/taskpin.ico`는 `python tools/make_ico.py`로 다시 만든다. `img/image.png`는 참고 앱 화면이라 PRD의 FE 변경사항이 반영되지 않았다.
 - 스택: Python 3.11.4 이상, PySide6, SQLite(내장 `sqlite3`), Nuitka standalone + Inno Setup 설치본. 버전은 Semantic Versioning.
@@ -19,17 +19,26 @@ pytest                                       # 전체 테스트 (Qt 없이 실�
 pytest tests/test_task_clock.py::test_floor_slot   # 단일 테스트
 python -m nuitka TaskPin.py                  # standalone 빌드 -> build/TaskPin.dist/Task알림.exe
 iscc installer\TaskPin.iss                   # 설치본 -> dist/TaskPin-<버전>-setup.exe (Inno Setup 6)
+python tools/build_installer.py              # Nuitka 빌드 -> ISCC -> dist 확인까지 한 번에 (ISCC 경로 자동 탐색)
 ```
 
 - 빌드 옵션은 `TaskPin.py` 맨 위 `# nuitka-project:` 주석에 있다. 버전은 루트 `version.py`의 `VERSION` 한 곳에서만 고친다(`--product-version`은 `nuitka-project-set`으로 이 파일을 읽는다). 설치본 버전은 exe에서 읽는다.
-- 앱을 띄워 확인할 때 실제 데이터를 건드리지 않으려면 `APPDATA` 환경변수를 임시 폴더로 바꿔 실행한다(`os_win.user_data_dir()`가 이 값을 따른다). 이때 user site-packages(`%APPDATA%\Python`)도 함께 사라지므로 `PYTHONUSERBASE`를 원래 `%APPDATA%\Python`으로 지정한다(`anyio` 등 `pip --user` 패키지).
-- VS Code F5(`.vscode/launch.json`): "저장 시 재시작"은 `tools/dev_run.py`(watchfiles `run_process`)가 `.py` 저장마다 앱을 다시 띄운다. 두 구성 모두 `APPDATA=.debug_appdata`, `TASKPIN_DEBUG=1`(위젯 항상 위, 단일 인스턴스 ID 분리, 자동 실행 레지스트리 갱신·mutex 생략)로 실행한다.
+- **테스트는 항상 `.debug_appdata`에서만 한다.** 앱을 띄워 확인할 때(수동 테스트·스크린샷·`run` 스킬·동작 확인)는 반드시 `APPDATA=<repo>\.debug_appdata`, `TASKPIN_DEBUG=1`로 실행한다(`os_win.user_data_dir()`가 `APPDATA`를 따른다). 실제 `%APPDATA%\TaskPin`(config.json·taskpin.db)으로 앱을 띄우거나 그 파일을 읽고 쓰지 않는다. `.debug_appdata`는 `.gitignore`에 들어 있다.
+  - `APPDATA`를 바꾸면 user site-packages(`%APPDATA%\Python`)도 함께 사라지므로 `PYTHONUSERBASE`를 원래 `%APPDATA%\Python`으로 지정한다(`anyio` 등 `pip --user` 패키지). `APPDATA`를 바꾸기 **전에** 지정해야 한다.
+
+    ```powershell
+    $env:PYTHONUSERBASE="$env:APPDATA\Python"; $env:APPDATA="$PWD\.debug_appdata"; $env:TASKPIN_DEBUG="1"; python TaskPin.py
+    ```
+
+  - `pytest`는 Qt 없이 `tmp_path`만 쓴다(`conftest.temp_db`, `monkeypatch.setattr(paths, "data_path", …)`). 새 테스트도 이 방식으로 써서 실제 데이터 경로를 건드리지 않게 한다.
+- VS Code F5(`.vscode/launch.json`): "저장 시 재시작"은 `tools/dev_run.py`(watchfiles `run_process`)가 `.py` 저장마다 앱을 다시 띄운다. 두 구성 모두 위와 같은 환경변수(`APPDATA=.debug_appdata`, `PYTHONUSERBASE`, `TASKPIN_DEBUG=1`: 위젯 항상 위, 단일 인스턴스 ID 분리, 자동 실행 레지스트리 갱신·mutex 생략)로 실행한다.
 
 ## 구조
 
 - `TaskPin.py` — `TaskPinApp(TrayApp)`: 위젯 연결, 1초 tick(현재시간·남은시간·Task 종료 트레이 알림 1회), Task 등록·수정·완료·해제
 - `manager/` — Qt 없는 로직: `task_clock`(15분 단위·남은시간 계산), `task_store`/`todo_store`(SQLite), `todo_tree`(TODO 상위/하위), `todo_filter`(검색·날짜별 보기), `todo_export`(TODO → Markdown 체크리스트), `db`(연결 1개, `PRAGMA user_version` 마이그레이션), `widget_config`(config.json·단축키 기본값), `snippets`(`:트리거:` 치환), `paths`, `os_win`
-- `ui/` — `clock_widget`(좌측 Task 패널 + TODO 배치, "멍청한 뷰"), `task_picker`(등록/수정 팝업), `tag_dialog`(사용자 태그 추가), `color_dialog`(색 선택 창), `todo_panel`/`reminder_*`(참고 소스 이식), `settings_dialog`(설정창), `text_input`(이모지 패널 입력 보정·스니펫), `tray_app`, `theme`(런타임 테마: `current()`/`build()`)
+- `ui/` — `clock_widget`(좌측 Task 패널 + TODO 배치, "멍청한 뷰"), `task_picker`(등록/수정 팝업), `confirm_dialog`(완료/해제 확인 창), `tag_dialog`(사용자 태그 추가), `color_dialog`(색 선택 창), `todo_panel`/`reminder_*`(참고 소스 이식), `settings_dialog`(설정창), `text_input`(이모지 패널 입력 보정·스니펫), `tray_app`, `theme`(런타임 테마: `current()`/`build()`)
+- `tools/` — `dev_run`(F5 저장 시 재시작), `build_installer`(빌드부터 설치본까지 한 번에), `make_ico`(SVG → ico)
 
 ## 참고 소스: `C:\Users\kh.Cha\Documents\MyProject\Priv_WimsClockManager\`
 
@@ -103,3 +112,10 @@ iscc installer\TaskPin.iss                   # 설치본 -> dist/TaskPin-<버전
 ## Git
 
 - commit에 claude의 서명은 절대 넣지 않음
+
+## Versioning
+
+- Sementic 버저닝을 채택
+- 기능이 추가될 때마다 세번째 자리를 올린다.
+- 두번째 자리는 사용자가 요청할 때만 올린다.
+- 첫번째 자리는 사용자가 요청할 때만 올린다.
