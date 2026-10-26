@@ -98,3 +98,7 @@ iscc installer\TaskPin.iss                   # 설치본 -> dist/TaskPin-<버전
   - `AppId` GUID는 바꾸지 않는다.
 - Inno Setup 6.7 이상은 컴파일러가 "Non-commercial use only"로 표시된다. 상업적으로 배포하려면 라이선스를 확인해야 한다.
 - Nuitka는 교차 빌드를 지원하지 않는다. macOS 빌드는 macOS에서 해야 한다.
+
+## Git
+
+- commit에 claude의 서명은 절대 넣지 않음
