@@ -69,7 +69,7 @@ iscc installer\TaskPin.iss                   # 설치본 -> dist/TaskPin-<버전
 - 이모지
   - Qt 6.8은 `WM_IME_CHAR`/`WM_CHAR`의 서로게이트 쌍을 버린다. 그래서 Win+. 이모지 패널로 고른 🚀 같은 이모지가 들어가지 않는다. `ui/text_input.ImeCharFilter`(앱 전체 네이티브 이벤트 필터)가 이 메시지를 대신 받아 IME 확정 문자열로 넣는다.
   - `QLineEdit` 위치는 UTF-16 단위다. 파이썬 문자열 index와 섞을 때는 `text_input.py_cursor()`/`utf16_pos()`를 쓴다.
-  - 컬러 이모지가 뭉개지지 않도록 앱 폰트는 `PreferNoHinting`으로 둔다. TODO 행에서는 이모지를 14px로 그린다(`todo_store.to_html(text, emoji_style)`).
+  - 앱 폰트에 `PreferNoHinting`을 걸지 않는다. DirectWrite(Qt 6.8 기본)에서는 힌팅이 꺼져 한글이 흐려진다. 컬러 이모지는 TODO 행에서 14px로 키워 그린다(`todo_store.to_html(text, emoji_style)`).
 - 이미 실행 중일 때 다시 실행하면 경고 없이 기존 앱의 위젯을 띄운다(`TrayApp.on_second_instance`). 기존 앱은 백그라운드라 전경 잠금에 걸리므로, 두 번째 실행이 `os_win.allow_set_foreground()`로 권한을 넘기고 연결이 끊길 때까지 기다린다.
 - TODO 레벨: `todos.parent_id`(NULL이면 최상위)와 형제 사이 순서 `position`. 트리 규칙은 `manager/todo_tree.py`에 있다. 행 가운데에 놓으면 그 항목의 하위로, 행 위/아래 1/3에 놓으면 그 자리로 간다. "완료된 상위 ⇒ 하위도 모두 완료"를 유지하고, 상위를 삭제하면 하위는 한 단계 올린다. 들여쓰기는 3단계까지만 늘어난다.
 - TODO 하위 접기: `todos.collapsed`(스키마 v7, 1이면 하위를 숨김). 행 맨 앞 ▸/▾ 버튼(`TodoRow.btn_toggle`, `TOGGLE_SIZE`)으로 바꾸고, 하위가 없으면 버튼을 숨기되 자리는 남겨 체크박스 위치를 맞춘다. 숨기는 일은 `todo_tree.flatten(hide_collapsed=)`가 하고, 검색·날짜별 보기로 거르는 중에는 접힘을 무시한다(맞는 항목이 접힌 상위 아래에 숨지 않게). 접힌 상위 아래로 추가하거나 끌어 놓으면 `todo_tree.expand_ancestors`로 펼친다. 숨은 하위는 선택에서 빠진다.

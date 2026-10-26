@@ -270,7 +270,7 @@ class TaskPinApp(TrayApp):
         appearance = widget_config.appearance(self.widget_cfg)
         theme.set_current(theme.build(appearance, theme.system_dark()))
         self.tray_menu.setStyleSheet(theme.menu_style(theme.current()))
-        font = QFont(self._base_font)  # 힌팅 설정(PreferNoHinting)은 그대로
+        font = QFont(self._base_font)
         if appearance["font_family"]:
             font.setFamilies([appearance["font_family"], self._base_font.family()])
         QApplication.setFont(font)
@@ -338,10 +338,6 @@ if __name__ == "__main__":
     app.setApplicationName(APP_NAME)
     app.setApplicationVersion(VERSION)
 
-    # 컬러 이모지는 힌팅을 끄면 테두리가 덜 뭉개진다 (웹 브라우저도 힌팅 없이 그림)
-    font = app.font()
-    font.setHintingPreference(QFont.PreferNoHinting)
-    app.setFont(font)
     # Win+. 이모지 패널 입력 보정 (Qt 6.8 이 서로게이트 쌍을 버림 - ui/text_input 참고)
     ime_filter = ImeCharFilter()
     app.installNativeEventFilter(ime_filter)
