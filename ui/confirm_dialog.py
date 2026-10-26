@@ -44,7 +44,7 @@ class ConfirmDialog(QDialog):
         ----------
         value_caption / value : 크게 보여줄 값과 그 이름 (비우면 표시 안 함)
         note : 메시지 아래 흐린 보조 설명
-        danger : 확인 버튼을 경고색으로 (해제/삭제 같은 동작)
+        danger : 확인 버튼을 경고색으로 (삭제 같은 동작)
         """
         super().__init__(parent, Qt.Dialog | Qt.FramelessWindowHint)
         self.setAttribute(Qt.WA_TranslucentBackground, True)

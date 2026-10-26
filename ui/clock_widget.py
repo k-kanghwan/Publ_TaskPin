@@ -954,7 +954,7 @@ class ClockWidget(QWidget):
         menu.addAction("설정", self.settings_requested.emit)
         menu.addAction("위젯 숨기기", self.hide_widget)
         menu.addSeparator()
-        menu.addAction("종료", self.quit_requested.emit)
+        menu.addAction("프로그램 종료", self.quit_requested.emit)
 
         menu.exec(event.globalPos())
 

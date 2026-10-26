@@ -58,7 +58,7 @@ TABS = [
 # (동작, 이름, 보조설명) - 동작 키는 widget_config.DEFAULT_SHORTCUTS 와 같다
 SHORTCUT_ROWS = [
     ("task_register", "Task 등록", "Task 등록 창을 엽니다"),
-    ("task_clear", "Task 해제", "등록한 Task를 해제합니다"),
+    ("task_clear", "Task 완료", "등록한 Task를 완료합니다"),
     ("todo_focus", "할 일 추가", "할 일 입력칸으로 커서 이동"),
     ("settings", "설정 열기", "이 설정창을 엽니다"),
 ]

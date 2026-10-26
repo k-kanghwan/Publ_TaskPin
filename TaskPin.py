@@ -168,33 +168,31 @@ class TaskPinApp(TrayApp):
             return
         if not task_store.clear(task.id):
             self.tray.showMessage(
-                "Task 해제", "저장하지 못했습니다.", QSystemTrayIcon.Warning
+                "Task 완료", "저장하지 못했습니다.", QSystemTrayIcon.Warning
             )
             return
         self._task = None
         self.tick_widget()
 
     def _confirm_clear(self, task) -> bool:
-        """종료까지 시간이 남았으면 남은시간을 보여주고, 아니면 해제 여부만 묻는다."""
+        """종료까지 시간이 남았으면 남은시간을 보여주고, 아니면 완료 여부만 묻는다."""
         now = datetime.now().astimezone()
         if task_clock.remaining_seconds(task.end_at, now) > 0:
             remaining = task_clock.remaining_display(task.end_at, now)
             dialog = ConfirmDialog(
-                "Task 해제",
-                "아직 종료까지 시간이 남았습니다.\nTask를 해제할까요?",
-                confirm_text="해제",
+                "Task 완료",
+                "아직 종료까지 시간이 남았습니다.\nTask를 완료할까요?",
+                confirm_text="완료",
                 value_caption="남은시간",
                 value="1분 미만" if remaining == "00:00" else remaining,
-                note="해제하면 종료 알림을 받지 않습니다.",
-                danger=True,
+                note="완료하면 종료 알림을 받지 않습니다.",
                 parent=self.widget,
             )
         else:
             dialog = ConfirmDialog(
-                "Task 해제",
-                "Task를 해제할까요?",
-                confirm_text="해제",
-                danger=True,
+                "Task 완료",
+                "Task를 완료할까요?",
+                confirm_text="완료",
                 parent=self.widget,
             )
         return dialog.exec_over(self.widget)
