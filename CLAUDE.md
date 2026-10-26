@@ -58,10 +58,11 @@ iscc installer\TaskPin.iss                   # 설치본 -> dist/TaskPin-<버전
   - 등록 전에는 시작이 `--:--`. 종료 = 시작 + 소요 시간. 남은시간이 0을 지나면 초과 시간을 `+`로 표시한다.
 - 더블클릭으로 편집할 수 있는 곳은 사용자 이름 하나뿐이다.
 - 우클릭 메뉴는 패널마다 다르다. 좌패널(`ClockWidget.contextMenuEvent`): 가로/세로 모드·잠금·자동 실행·설정·위젯 숨기기·프로그램 종료. 우패널(`TodoPanel.contextMenuEvent`, 위로 올려 보내지 않음): 완료 항목 정리·TODO 내보내기·추가·삭제·태그. 내보내기는 cfg(`export_dir`)가 필요해 `TodoPanel.export_requested`로 위젯에 맡긴다.
-- 설정창(`ui/settings_dialog.py`)은 좌패널 우클릭 "설정"과 Ctrl+,로 연다(트레이 메뉴에는 넣지 않음). 탭은 Keyboard Shortcuts / Snippets / Appearance / Application이고, Application은 아직 "준비 중"이다. 확인 버튼 없이 바꾸는 즉시 저장한다.
+- 설정창(`ui/settings_dialog.py`)은 좌패널 우클릭 "설정"과 Ctrl+,로 연다(트레이 메뉴에는 넣지 않음). 탭은 Keyboard Shortcuts / Snippets / Appearance / Application이다. 확인 버튼 없이 바꾸는 즉시 저장한다.
   - 단축키(기본 E: Task 등록, C: Task 완료, A: 할 일 입력칸 포커스, Ctrl+,: 설정)는 `QShortcut(Qt.WindowShortcut)`이라 위젯 창이 활성일 때만 동작한다. 글자 키는 입력칸이 ShortcutOverride로 먼저 가져가므로 입력 중에는 글자로 들어간다.
   - Appearance: 테마(다크/라이트/시스템), 강조색, 배경색, 폰트, 좌·우패널 글자 배율(`widget_config.LEFT_SCALES`/`TODO_SCALES`), TODO 글자색, "글자도 함께 투명"(`fade_text`, 기본 끔: 투명도 슬라이더가 배경만 반투명하게 칠하고, 켜면 `setWindowOpacity`로 창 전체). 배경색을 고르면 글자색은 테마 대신 배경 밝기를 따른다. 설정창은 테마(다크/라이트)와 강조색만 따르고(`settings_dialog._settings_theme`), 제목줄도 `os_win.set_dark_title_bar(hwnd, dark)`로 맞춘다.
   - 테마 반영: `theme.build(appearance)` → `theme.set_current()` 후 `ClockWidget.apply_appearance()`(→ `TodoPanel.apply_appearance()`)로 다시 입힌다. 팝업은 만들 때 `theme.current()`를 읽는다. 스타일에 색을 쓸 때는 `ui.theme` 상수를 import하지 말고 `theme.current()`에서 읽고, 흰색 반투명은 `t.overlay(alpha)`로 쓴다(라이트에서는 검정).
+  - Application: 설정 내보내기(폴더를 고르면 cfg를 `TaskPin-config-YYYYMMDD.json`으로 그대로 저장, `widget_config.export_config`) / 가져오기(`widget_config.read_import`가 알려진 키만 기본값 위에 덮어씀 → 확인 창 → `config_imported`). 가져오면 `TaskPinApp.apply_imported_config`가 위젯·설정창이 함께 쓰는 cfg dict를 **제자리에서** 바꾸고(`clear()` + `update()`) 테마·단축키·`ClockWidget.reload_config()`(방향·크기·위치·잠금·투명도·이름·표시)·`SettingsDialog.reload_values()`로 다시 적용한다. TODO/Task 기록(DB)은 들어가지 않는다.
   - 스니펫은 TODO 입력/수정칸과 Task 업무명에서 `:트리거:`를 치면 문구로 바꾼다. textEdited 안에서 바로 고치면 Ctrl+Z가 듣지 않으므로 `QTimer.singleShot(0)`으로 미뤄서 바꾼다.
 - 이모지
   - Qt 6.8은 `WM_IME_CHAR`/`WM_CHAR`의 서로게이트 쌍을 버린다. 그래서 Win+. 이모지 패널로 고른 🚀 같은 이모지가 들어가지 않는다. `ui/text_input.ImeCharFilter`(앱 전체 네이티브 이벤트 필터)가 이 메시지를 대신 받아 IME 확정 문자열로 넣는다.
@@ -76,7 +77,7 @@ iscc installer\TaskPin.iss                   # 설치본 -> dist/TaskPin-<버전
 ## 데이터 저장 / 경로
 
 - 사용자 데이터 위치: `%APPDATA%\TaskPin\`
-  - `config.json` — 위젯 설정(위치·크기·투명도·모드 등), 사용자 이름, `shortcuts`(동작별 QKeySequence PortableText), `snippets`(`[[":idea:", "💡"], ...]`), `appearance`(`widget_config.appearance()`가 깨진 값을 기본값으로 채움), `export_dir`(TODO 내보내기 마지막 저장 폴더)
+  - `config.json` — 위젯 설정(위치·크기·투명도·모드 등), 사용자 이름, `shortcuts`(동작별 QKeySequence PortableText), `snippets`(`[[":idea:", "💡"], ...]`), `appearance`(`widget_config.appearance()`가 깨진 값을 기본값으로 채움), `export_dir`(TODO·설정 내보내기 마지막 폴더)
   - `taskpin.db` — SQLite: TODO(계층·태그 포함), 정리된 완료 항목, Task 등록 정보(업무명·상세 업무·시간)
 - "완료 항목 정리"(`TodoPanel.clear_done`)는 행을 지우지 않고 보관 상태로 바꾼다.
 - "TODO 내보내기"(우패널 우클릭 서브메뉴: 화면 목록 / 보관 항목 전체)는 Markdown 체크리스트(.md, UTF-8)로 저장한다. 하위는 2칸 들여쓰기, 보관 항목은 보관 날짜별 섹션. 텍스트를 그대로 써서 `(@...)` 리마인더 토큰이 Obsidian에서도 읽힌다.
