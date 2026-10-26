@@ -3,4 +3,4 @@
 TaskPin.py 의 Nuitka --product-version 과 앱 안의 VERSION 이 모두 여기서 온다.
 """
 
-VERSION = "0.1.7"
+VERSION = "0.1.8"
