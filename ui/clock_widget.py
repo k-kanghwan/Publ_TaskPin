@@ -16,7 +16,16 @@ Priv_dtcal/dtcal_poc.py 에서 검증된 기법을 이식:
 import os
 from datetime import datetime
 
-from PySide6.QtCore import QEvent, QStandardPaths, Qt, QPoint, QRectF, QTimer, Signal
+from PySide6.QtCore import (
+    QEvent,
+    QPoint,
+    QRectF,
+    QSize,
+    QStandardPaths,
+    Qt,
+    QTimer,
+    Signal,
+)
 from PySide6.QtGui import (
     QColor,
     QFontMetrics,
@@ -36,6 +45,7 @@ from PySide6.QtWidgets import (
     QMenu,
     QMessageBox,
     QPushButton,
+    QSizePolicy,
     QSlider,
     QVBoxLayout,
     QWidget,
@@ -52,10 +62,12 @@ from ui.todo_panel import TodoPanel
 WINDOW_OPACITY = 1.0  # 설정에 값이 없을 때의 불투명도 (= 투명도 0%)
 OPACITY_MIN = 0.2  # 이보다 낮으면 위젯이 사라져 조작 불가
 TRANSPARENCY_MAX = round((1 - OPACITY_MIN) * 100)  # 슬라이더 최대 투명도(%) = 80
-# 세로 모드: 좌우 고정 / 높이만 조절
+# 세로 모드: 폭 280 ~ 364(1.3배), 높이 최소 ~ 583
 WIDGET_WIDTH = 280
 WIDGET_MIN_HEIGHT = 324
 WIDGET_MAX_HEIGHT = int(WIDGET_MIN_HEIGHT * 1.5)  # 486
+VERTICAL_MAX_HEIGHT = int(WIDGET_MAX_HEIGHT * 1.2)  # 583
+VERTICAL_MAX_WIDTH = int(WIDGET_WIDTH * 1.3)  # 364
 # 가로 모드: 폭과 높이 모두 조절 - 좌 시간(280) + 우 TODO. 높이는 최소 높이의 1.5배까지
 WIDGET_MIN_WIDTH_HORIZONTAL = 540
 WIDGET_MAX_WIDTH_HORIZONTAL = int(WIDGET_MIN_WIDTH_HORIZONTAL * 1.5)  # 810
@@ -67,6 +79,9 @@ SCREEN_MARGIN = 24
 CONTENT_MARGIN_H = 16  # root 좌우 마진
 CONTENT_MARGIN_V = 14  # root 상하 마진
 COLUMN_SPACING = 12  # 가로 모드 좌/우 칼럼 사이 간격
+# 좌측 칼럼 폭: 가로 모드는 고정, 세로 모드는 위젯 폭을 따라 늘어난다
+LEFT_COL_WIDTH = WIDGET_WIDTH - CONTENT_MARGIN_H * 2
+QWIDGETSIZE_MAX = 16777215
 
 ORIENTATION_VERTICAL = "vertical"
 ORIENTATION_HORIZONTAL = "horizontal"
@@ -79,13 +94,13 @@ POPUP_GAP = 8
 TASK_DOT_COLOR = "#4caf50"  # Task 시간이 등록되어 있을 때 헤더의 점
 USER_NAME_MAX_LEN = 20
 TASK_BADGE_H_SPACE = 2 * 8 + 2 * 1  # 좌우 padding + border (말줄임 폭 계산용)
-TASK_DETAIL_MAX_LINES = 3  # 업무명 배지 위 상세업무 (넘치면 말줄임 + 툴팁)
+# 업무명 배지 위 상세업무 - 세로 모드 최대 줄 수 (가로 모드는 남는 높이만큼)
+TASK_DETAIL_MAX_LINES = 3
 # ========= ========= ========= ========= =========
 
 
-def _elide_lines(text: str, font, width: int, max_lines: int):
-    """text 를 width 에 맞춰 줄바꿈하고 max_lines 를 넘으면 마지막 줄을 "…" 로 줄인다.
-    Returns (표시할 문자열, 줄였는지)"""
+def _wrap_lines(text: str, font, width: int) -> list:
+    """text 를 width 에 맞춰 줄바꿈한 줄 목록"""
     lines = []
     for para in text.splitlines():
         units = para.encode("utf-16-le")  # QTextLine 위치는 UTF-16 단위
@@ -101,6 +116,13 @@ def _elide_lines(text: str, font, width: int, max_lines: int):
         layout.endLayout()
         if not para:
             lines.append("")
+    return lines
+
+
+def _elide_lines(text: str, font, width: int, max_lines: int):
+    """text 를 width 에 맞춰 줄바꿈하고 max_lines 를 넘으면 마지막 줄을 "…" 로 줄인다.
+    Returns (표시할 문자열, 줄였는지)"""
+    lines = _wrap_lines(text, font, width)
     if len(lines) <= max_lines:
         return "\n".join(lines), False
     fm = QFontMetrics(font)
@@ -110,8 +132,60 @@ def _elide_lines(text: str, font, width: int, max_lines: int):
     return "\n".join(lines[: max_lines - 1] + [last.rstrip() + "…"]), True
 
 
+class _DetailLabel(QLabel):
+    """업무명 배지 위 상세업무. 받은 높이에 들어가는 줄 수만큼 보여주고, 넘치면 마지막 줄을
+    "…" 로 줄인다(전체는 툴팁). max_lines 를 주면(세로 모드) 그 줄 수까지만 자리를 요청하고,
+    주지 않으면(가로 모드) 좌패널의 남는 높이를 모두 받는다 (ClockWidget._apply_orientation)."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setTextFormat(Qt.PlainText)
+        self._full = ""
+        self._max_lines = None
+
+    def set_full_text(self, text: str):
+        self._full = text
+        self.updateGeometry()
+        self._refit()
+
+    def set_max_lines(self, max_lines):
+        self._max_lines = max_lines
+        self.updateGeometry()
+        self._refit()
+
+    def _line_height(self) -> int:
+        self.ensurePolished()  # 스타일시트 글꼴로 재기 위해
+        return self.fontMetrics().lineSpacing()
+
+    def sizeHint(self) -> QSize:
+        # 폭은 좌측 칼럼을 따르므로 0 (긴 줄이 칼럼을 넓히지 않게)
+        lines = len(_wrap_lines(self._full, self.font(), max(1, self.width())))
+        if self._max_lines:
+            lines = min(lines, self._max_lines)
+        return QSize(0, max(1, lines) * self._line_height())
+
+    def minimumSizeHint(self) -> QSize:
+        return QSize(0, self._line_height())
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if event.size().width() != event.oldSize().width():
+            self.updateGeometry()  # 폭이 바뀌면 필요한 줄 수도 바뀐다
+        self._refit()
+
+    def _refit(self):
+        fits = max(1, self.height() // self._line_height())
+        if self._max_lines:
+            fits = min(fits, self._max_lines)
+        shown, elided = _elide_lines(
+            self._full, self.font(), max(1, self.width()), fits
+        )
+        self.setText(shown)
+        self.setToolTip(self._full if elided else "")
+
+
 class _ResizeGrip(QWidget):
-    """위젯 가장자리의 크기 조절 핸들 (하단: 높이 - 두 모드 모두 / 우측: 폭 - 가로 모드만)
+    """위젯 가장자리의 크기 조절 핸들 (하단: 높이 / 우측: 폭 - 두 모드 모두)
 
     부모 위젯의 mouseMoveEvent 로 커서를 바꾸면 자식 위젯 위에서 커서가
     원복되지 않으므로, 커서를 자체적으로 갖는 얇은 자식 위젯으로 분리한다.
@@ -264,7 +338,15 @@ class ClockWidget(QWidget):
             value = int(self._cfg.get("height") or min_height)
         except (TypeError, ValueError):
             value = min_height
-        return min(max(WIDGET_MAX_HEIGHT, min_height), max(min_height, value))
+        return min(max(VERTICAL_MAX_HEIGHT, min_height), max(min_height, value))
+
+    def _cfg_vertical_width(self) -> int:
+        """세로 모드 폭 (280 ~ 1.3배)"""
+        try:
+            value = int(self._cfg.get("vertical_width") or WIDGET_WIDTH)
+        except (TypeError, ValueError):
+            value = WIDGET_WIDTH
+        return min(VERTICAL_MAX_WIDTH, max(WIDGET_WIDTH, value))
 
     def _cfg_horizontal_height(self, min_height: int) -> int:
         """가로 모드 높이 (최소 높이 ~ 그 1.5배)"""
@@ -393,7 +475,9 @@ class ClockWidget(QWidget):
         # ---- 좌: Task 시간 정보 (세로 모드에서는 info 와 controls 사이에 TODO 가 들어감) ----
         # 세로 모드 폭에서 마진을 뺀 값으로 고정 - 가로 모드에서도 TODO 추가 전 위젯과 같은 폭
         self._left_col = QWidget()
-        self._left_col.setFixedWidth(WIDGET_WIDTH - CONTENT_MARGIN_H * 2)
+        self._left_col.setFixedWidth(
+            LEFT_COL_WIDTH
+        )  # 세로 모드에서는 _apply_orientation 이 풀어 준다
         self._left_layout = QVBoxLayout(self._left_col)
         self._left_layout.setContentsMargins(0, 0, 0, 0)
         self._left_layout.setSpacing(6)
@@ -464,11 +548,9 @@ class ClockWidget(QWidget):
         controls.setContentsMargins(0, 0, 0, 0)
         controls.setSpacing(6)
 
-        # ---- 상세업무: 업무명 배지 위 여유 공간 (비어 있으면 숨김) ----
-        self.task_detail_label = QLabel()
-        self.task_detail_label.setTextFormat(Qt.PlainText)
+        # ---- 상세업무: 업무명 배지 위 여유 공간 (비어 있으면 숨김 / 위치는 아래 _left_layout) ----
+        self.task_detail_label = _DetailLabel()
         self.task_detail_label.hide()
-        controls.addWidget(self.task_detail_label)
 
         # ---- 업무명 배지: 등록한 Task 강조 (비어 있으면 숨김 / 클릭 없음) ----
         self.task_title_label = QLabel()
@@ -517,6 +599,7 @@ class ClockWidget(QWidget):
         controls.addLayout(opacity_row)
 
         self._left_layout.addWidget(info_box)
+        self._left_layout.addWidget(self.task_detail_label)
         self._left_layout.addWidget(controls_box)
 
         # ---- 우: 가로 모드에서 TODO 가 들어가는 칼럼 ----
@@ -537,6 +620,8 @@ class ClockWidget(QWidget):
         )
         self.todo_panel.export_requested.connect(self._export_todos)
 
+        # 세로 모드에서 폭을 바꾸면 업무명 배지 말줄임을 다시 (자식을 다 만든 뒤에 건다)
+        self._left_col.installEventFilter(self)
         self.apply_task(None)
 
     def apply_appearance(self):
@@ -631,8 +716,9 @@ class ClockWidget(QWidget):
         return max(WIDGET_MIN_HEIGHT, needed)
 
     def _apply_orientation(self, orientation: str):
-        """세로: info / TODO / controls 를 한 줄로
-        가로: 좌측은 TODO 추가 전 위젯 그대로(info / 여백 / controls), 우측에 TODO"""
+        """세로: info / TODO / 상세업무 / controls 를 한 줄로
+        가로: 좌측은 info / 여백 / 상세업무 / controls, 우측에 TODO.
+        가로 모드의 남는 높이는 상세업무가 받는다(있을 때). 없으면 여백이 받는다."""
         if orientation == self._orientation:
             return
 
@@ -646,10 +732,27 @@ class ClockWidget(QWidget):
         horizontal = orientation == ORIENTATION_HORIZONTAL
         if horizontal:
             self._right_layout.addWidget(self.todo_panel)
-            self._left_layout.insertStretch(1, 1)
+            # 늘어나는 여백이지만 stretch 0 - 상세업무(stretch 1)가 보이면 남는 높이를 그쪽에 준다
+            self._left_layout.insertStretch(1, 0)
         else:
             self._left_layout.insertWidget(1, self.todo_panel, 1)
         self.todo_panel.show()  # 다른 부모로 옮기면 숨김 상태가 되므로
+
+        detail = self.task_detail_label
+        self._left_layout.setStretchFactor(detail, 1 if horizontal else 0)
+        detail.setSizePolicy(
+            QSizePolicy.Preferred,
+            QSizePolicy.Expanding if horizontal else QSizePolicy.Preferred,
+        )
+        detail.setAlignment(
+            Qt.AlignLeft | (Qt.AlignBottom if horizontal else Qt.AlignTop)
+        )
+        detail.set_max_lines(None if horizontal else TASK_DETAIL_MAX_LINES)
+        if horizontal:
+            self._left_col.setFixedWidth(LEFT_COL_WIDTH)
+        else:
+            self._left_col.setMinimumWidth(LEFT_COL_WIDTH)
+            self._left_col.setMaximumWidth(QWIDGETSIZE_MAX)
 
         # 숨긴 위젯은 레이아웃에서 자리/간격을 차지하지 않는다
         self._col_separator.setVisible(horizontal)
@@ -657,11 +760,10 @@ class ClockWidget(QWidget):
 
         self._orientation = orientation
         self._apply_size_limits()
-        self._grip_h.setVisible(horizontal)
         self._place_grip()
 
     def _apply_size_limits(self):
-        """세로: 폭 고정 / 높이 조절, 가로: 폭과 높이 조절 (높이는 최소 높이의 1.5배까지)"""
+        """세로: 폭 280 ~ 1.3배 / 높이 최소 ~ 583, 가로: 폭 540 ~ 810 / 높이 최소 ~ 1.5배"""
         min_height = self._min_height()
         # 이전 모드의 min/max 와 엇갈리지 않도록 범위를 먼저 풀고 다시 건다
         self.setMinimumSize(0, 0)
@@ -673,9 +775,11 @@ class ClockWidget(QWidget):
             self.setMinimumSize(WIDGET_MIN_WIDTH_HORIZONTAL, min_height)
             self.resize(self._cfg_width(), self._cfg_horizontal_height(min_height))
         else:
-            self.setMaximumSize(WIDGET_WIDTH, max(WIDGET_MAX_HEIGHT, min_height))
+            self.setMaximumSize(
+                VERTICAL_MAX_WIDTH, max(VERTICAL_MAX_HEIGHT, min_height)
+            )
             self.setMinimumSize(WIDGET_WIDTH, min_height)
-            self.resize(WIDGET_WIDTH, self._cfg_height())
+            self.resize(self._cfg_vertical_width(), self._cfg_height())
 
     def _separator(self, vertical: bool = False) -> QFrame:
         line = QFrame()
@@ -712,11 +816,12 @@ class ClockWidget(QWidget):
         widget_config.save_config(self._cfg)
 
     def save_size(self):
-        """조절한 크기 저장 - 세로 모드는 높이, 가로 모드는 폭과 높이 (세로 모드 높이와 따로)"""
+        """조절한 크기 저장 - 모드마다 폭과 높이를 따로 저장한다"""
         if self._orientation == ORIENTATION_HORIZONTAL:
             self._cfg["width"] = self.width()
             self._cfg["horizontal_height"] = self.height()
         else:
+            self._cfg["vertical_width"] = self.width()
             self._cfg["height"] = self.height()
         widget_config.save_config(self._cfg)
 
@@ -725,7 +830,7 @@ class ClockWidget(QWidget):
         self._place_grip()
 
     def _place_grip(self):
-        """하단(높이) 핸들은 두 모드 모두, 우측(폭) 핸들은 가로 모드만. 둥근 모서리 구간은 비워 둔다."""
+        """하단(높이) / 우측(폭) 핸들. 둥근 모서리 구간은 비워 둔다."""
         self._grip_v.setGeometry(
             CORNER_RADIUS,
             self.height() - RESIZE_MARGIN,
@@ -804,17 +909,12 @@ class ClockWidget(QWidget):
         label.setVisible(bool(title))
 
     def _set_task_detail(self, detail: str, resize: bool = True):
-        """상세업무는 최대 TASK_DETAIL_MAX_LINES 줄 - 넘치면 말줄임하고 전체는 툴팁으로.
-        줄 수가 바뀌면 좌패널 최소 높이(가로 모드 위젯 높이)를 다시 맞춘다."""
+        """상세업무 표시 (줄 수 / 말줄임은 _DetailLabel 이 받은 높이에 맞춘다).
+        보이고 숨는 것이 바뀌면 좌패널 최소 높이(위젯 최소 높이)를 다시 맞춘다."""
         self._task_detail = detail
         label = self.task_detail_label
-        label.ensurePolished()  # 스타일시트 글꼴로 줄바꿈을 재기 위해
-        shown, elided = _elide_lines(
-            detail, label.font(), self._left_col.width(), TASK_DETAIL_MAX_LINES
-        )
-        changed = shown != label.text() or label.isVisibleTo(self) != bool(detail)
-        label.setText(shown)
-        label.setToolTip(detail if elided else "")
+        changed = label.isVisibleTo(self) != bool(detail)
+        label.set_full_text(detail)
         label.setVisible(bool(detail))
         if changed and resize and self._orientation is not None:
             self._apply_size_limits()
@@ -837,6 +937,10 @@ class ClockWidget(QWidget):
         if obj is self.name_label and event.type() == QEvent.MouseButtonDblClick:
             self.start_name_edit()
             return True
+        if obj is self._left_col and event.type() == QEvent.Resize and self._task_title:
+            self._set_task_title(
+                self._task_title
+            )  # 세로 모드 폭을 바꾸면 배지 폭도 바뀐다
         return super().eventFilter(obj, event)
 
     def start_name_edit(self):

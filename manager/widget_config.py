@@ -47,7 +47,8 @@ DEFAULT_CONFIG = {
     "locked": False,  # 위치 잠금
     "visible": True,  # 위젯 표시 여부
     "opacity": 1.0,  # 위젯 불투명도 (0.2 ~ 1.0) - 슬라이더에는 투명도(1 - 값)로 표시
-    "height": None,  # 세로 모드 높이(px) / None 이면 최소 높이 (좌우는 고정)
+    "height": None,  # 세로 모드 높이(px) / None 이면 최소 높이
+    "vertical_width": None,  # 세로 모드 폭(px) / None 이면 280 (1.3배까지)
     "width": None,  # 가로 모드 폭(px) / None 이면 최소 폭
     "horizontal_height": None,  # 가로 모드 높이(px) / None 이면 최소 높이 (최소의 1.5배까지)
     "orientation": "vertical",  # "vertical": 세로 / "horizontal": 가로(좌 시간, 우 TODO)

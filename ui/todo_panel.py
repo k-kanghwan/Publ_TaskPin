@@ -6,6 +6,7 @@
 - 체크하면 취소선 + 목록 아래로, 우클릭 메뉴 "완료 항목 정리" 로 일괄 보관(DB 에는 남음)
 - 더블클릭으로 그 자리에서 수정 (Enter/포커스 이동: 저장, Esc: 취소)
 - 클릭으로 선택 (Ctrl: 하나씩 추가/빼기, Shift: 범위). 빈 곳 클릭 / Esc 로 해제.
+  선택 테두리는 목록(container)이 그린다 - 화면에서 이어진 선택 행끼리는 테두리 하나로 묶는다.
   선택한 채로 입력하면 마지막으로 클릭한 항목의 하위로 들어간다.
 - 드래그로 순서/레벨 변경: 행 가운데에 놓으면 그 항목의 하위로, 행 사이에 놓으면 그 자리로.
   선택한 행을 끌면 선택 항목이 모두 함께 옮겨진다.
@@ -49,7 +50,8 @@ from ui.theme import px
 TRIGGER = "(@"
 ROW_HOVER_ALPHA = 24  # 마우스를 올린 행 배경 (테마의 덧칠 색)
 ROW_RADIUS = 4
-SELECTED_BORDER = 2.0  # 선택한 행의 강조색 테두리 두께(px)
+SELECTED_BORDER = 2.0  # 선택한 행(이어진 행은 묶어서)의 강조색 테두리 두께(px)
+TAG_CHECKED_BORDER = 1  # 태그 메뉴: 선택 항목들의 지금 태그를 감싸는 강조색 테두리(px)
 DROP_BOX_BORDER = 2  # 드래그 중 하위로 들어갈 행 테두리(px)
 DROP_LINE_WIDTH = 3  # 드래그 중 행 사이에 놓일 자리 표시선(px)
 AUTO_SCROLL_MARGIN = (
@@ -251,7 +253,6 @@ class TodoRow(QWidget):
         self._tag_color = tag_color
         self._editing = False
         self._hover = False
-        self._selected = False
         self._press_pos = None  # 드래그 시작 판정용 누른 지점
         self._dragging = False
 
@@ -310,11 +311,6 @@ class TodoRow(QWidget):
     def indent(self) -> int:
         """레벨에 따른 왼쪽 들여쓰기(px)"""
         return _indent(self.depth)
-
-    def set_selected(self, selected: bool):
-        if selected != self._selected:
-            self._selected = selected
-            self.update()
 
     def render(self, now: datetime = None):
         now = now or datetime.now().astimezone()
@@ -436,22 +432,16 @@ class TodoRow(QWidget):
         super().leaveEvent(event)
 
     def paintEvent(self, event):
-        if not (self._hover or self._selected):
+        # 선택 테두리는 TodoPanel._paint_selection 이 목록 위에 그린다 (이어진 행을 묶기 위해)
+        if not self._hover:
             return
-        t = theme.current()
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        rect = QRectF(self.rect().adjusted(self.indent(), 0, 0, 0))
-        if self._hover:
-            path = QPainterPath()
-            path.addRoundedRect(rect, ROW_RADIUS, ROW_RADIUS)
-            painter.fillPath(path, t.overlay_color(ROW_HOVER_ALPHA))
-        if self._selected:
-            half = SELECTED_BORDER / 2
-            painter.setPen(QPen(QColor(t.accent), SELECTED_BORDER))
-            painter.drawRoundedRect(
-                rect.adjusted(half, half, -half, -half), ROW_RADIUS, ROW_RADIUS
-            )
+        path = QPainterPath()
+        path.addRoundedRect(
+            QRectF(self.rect().adjusted(self.indent(), 0, 0, 0)), ROW_RADIUS, ROW_RADIUS
+        )
+        painter.fillPath(path, theme.current().overlay_color(ROW_HOVER_ALPHA))
 
 
 class TodoPanel(QWidget):
@@ -752,12 +742,44 @@ class TodoPanel(QWidget):
             self._apply_selection()
 
     def _apply_selection(self):
-        for row in self._rows:
-            row.set_selected(row.item["id"] in self._selected)
+        self.container.update()  # 선택 테두리 (_paint_selection)
         # 선택한 채로 입력하면 하위로 들어간다는 것을 입력칸에 보여준다
         self.input.setPlaceholderText(
             PLACEHOLDER_CHILD if self._selected else PLACEHOLDER
         )
+
+    def _selection_blocks(self) -> list:
+        """화면에서 이어진 선택 행 묶음 [[row, ...], ...]"""
+        blocks, block = [], []
+        for row in self._rows:
+            if row.item["id"] in self._selected:
+                block.append(row)
+            elif block:
+                blocks.append(block)
+                block = []
+        if block:
+            blocks.append(block)
+        return blocks
+
+    def _paint_selection(self):
+        """선택 테두리: 이어진 선택 행 묶음마다 둥근 사각형 하나.
+        왼쪽 끝은 묶음에서 가장 얕은 레벨의 들여쓰기에 맞춘다. (container 의 Paint 이벤트에서 부름)"""
+        blocks = self._selection_blocks()
+        if not blocks:
+            return
+        painter = QPainter(self.container)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setPen(QPen(QColor(theme.current().accent), SELECTED_BORDER))
+        half = SELECTED_BORDER / 2
+        for block in blocks:
+            top = block[0].geometry().top()
+            bottom = block[-1].geometry().bottom() + 1
+            left = min(row.geometry().left() + row.indent() for row in block)
+            right = block[0].geometry().right() + 1
+            rect = QRectF(left, top, right - left, bottom - top)
+            painter.drawRoundedRect(
+                rect.adjusted(half, half, -half, -half), ROW_RADIUS, ROW_RADIUS
+            )
 
     # ==================================================
     # 우클릭 메뉴
@@ -797,31 +819,39 @@ class TodoPanel(QWidget):
         act_delete = menu.addAction("삭제", self.delete_selected)
         act_delete.setEnabled(bool(self._selected))
 
+        # 선택 항목들의 지금 태그는 메뉴 한 칸을 강조색 테두리로 감싼다 (checked 항목).
+        # 다른 칸도 같은 두께의 투명 테두리를 둬서 글자 위치가 어긋나지 않게 하고, 체크 표시는 숨긴다
         tag_menu = menu.addMenu("태그")
-        tag_menu.setStyleSheet(menu.styleSheet())
+        tag_menu.setStyleSheet(
+            menu.styleSheet()
+            + f"""
+            QMenu::item {{
+                border: {TAG_CHECKED_BORDER}px solid transparent;
+                border-radius: {ROW_RADIUS}px;
+            }}
+            QMenu::item:checked {{ border: {TAG_CHECKED_BORDER}px solid {t.accent}; }}
+            QMenu::indicator {{ width: 0px; height: 0px; }}
+            """
+        )
         tag_menu.setEnabled(bool(self._selected))
         tags = {item.get("tag") for item in self._items if item["id"] in self._selected}
-        current = (
-            tags.pop() if len(tags) == 1 else ""
-        )  # 선택 항목이 모두 같은 태그일 때만 표시
+        # 선택 항목이 모두 같은 태그일 때만 표시 ("태그 없음"은 표시하지 않음)
+        current = tags.pop() if len(tags) == 1 else None
+
+        def add_tag_action(icon, name, key):
+            action = tag_menu.addAction(icon, name, lambda _=False: self.set_tag(key))
+            if key is not None and key == current:
+                action.setCheckable(True)
+                action.setChecked(True)
+
         for key in todo_store.TAGS:
             name, color = TAG_COLORS[key]
-            tag_menu.addAction(
-                _tag_icon(color),
-                name + ("  ✓" if key == current else ""),
-                lambda _=False, k=key: self.set_tag(k),
-            )
+            add_tag_action(_tag_icon(color), name, key)
         tag_menu.addSeparator()
-        tag_menu.addAction(
-            _tag_icon("", t.menu_disabled), "태그 없음", lambda: self.set_tag(None)
-        )
+        add_tag_action(_tag_icon("", t.menu_disabled), "태그 없음", None)
         # 태그 없음 아래: 사용자가 추가한 태그 + 추가
         for tag in self._custom_tags_provider():
-            tag_menu.addAction(
-                _tag_icon(tag["color"]),
-                tag["name"] + ("  ✓" if tag["id"] == current else ""),
-                lambda _=False, k=tag["id"]: self.set_tag(k),
-            )
+            add_tag_action(_tag_icon(tag["color"]), tag["name"], tag["id"])
         tag_menu.addAction("+ 태그 추가…", self._create_tag)
 
         menu.exec(event.globalPos())
@@ -1021,7 +1051,11 @@ class TodoPanel(QWidget):
     # ==================================================
     def eventFilter(self, obj, event):
         if obj is self.container:
-            if (
+            if event.type() == QEvent.Paint:
+                self._paint_selection()  # 행(자식)보다 먼저, 목록 위에 그린다
+            elif event.type() == QEvent.LayoutRequest:
+                self.container.update()  # 행 높이가 바뀌면(수정 중 등) 테두리도 다시
+            elif (
                 event.type() == QEvent.MouseButtonPress
                 and event.button() == Qt.LeftButton
             ):
