@@ -90,7 +90,7 @@ class TagDialog(QDialog):
 
         self.name_edit = QLineEdit(name)
         self.name_edit.setMaxLength(widget_config.CUSTOM_TAG_NAME_MAX)
-        self.name_edit.setPlaceholderText("이름 (예: Home)")
+        self.name_edit.setPlaceholderText("이름 (예: Work)")
         self.name_edit.textChanged.connect(self._update_ok)
         root.addWidget(self.name_edit)
 
