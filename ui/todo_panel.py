@@ -960,8 +960,12 @@ class TodoPanel(QWidget):
     # ==================================================
     def eventFilter(self, obj, event):
         if obj is self.container:
-            if event.type() == QEvent.MouseButtonPress:
+            if (
+                event.type() == QEvent.MouseButtonPress
+                and event.button() == Qt.LeftButton
+            ):
                 # 목록 빈 곳 클릭: 선택 해제 (누름은 그대로 올려 보내 위젯 창 이동은 유지)
+                # 행에서 올라온 우클릭 누름까지 지우면 여러 개를 선택한 채 우클릭할 수 없다
                 self.clear_selection()
             elif event.type() == QEvent.KeyPress and event.key() == Qt.Key_Escape:
                 self.clear_selection()
