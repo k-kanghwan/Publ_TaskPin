@@ -22,6 +22,7 @@ DEFAULT_SHORTCUTS = {
     "task_edit": "R",  # Task 수정
     "task_clear": "C",  # Task 완료
     "todo_focus": "A",  # 할 일 입력칸으로 커서 이동
+    "todo_search": "Ctrl+F",  # 할 일 검색 / 날짜별 보기 줄 열기
     "settings": "Ctrl+,",  # 설정 열기
 }
 
@@ -30,6 +31,9 @@ THEMES = ("dark", "light", "system")
 # 좌패널은 폭이 고정이라 크게 키우지 않는다
 LEFT_SCALES = (90, 100, 115)
 TODO_SCALES = (90, 100, 115, 130)
+# 리마인더 알림 창 폭(px)과 글자 배율(%) - 높이는 내용에 맞춘다
+POPUP_WIDTHS = (220, 260, 320, 380)
+POPUP_SCALES = (90, 100, 115, 130)
 DEFAULT_APPEARANCE = {
     "theme": "dark",
     "accent": "#4a7bd0",  # 강조색 (버튼 / 체크박스 / Task 배지 / 선택 표시)
@@ -39,6 +43,8 @@ DEFAULT_APPEARANCE = {
     "todo_scale": 100,  # 우패널(TODO) 글자 배율(%)
     "todo_text_color": "",  # TODO 글자색
     "fade_text": False,  # 투명도 슬라이더가 글자까지 투명하게 할지 (False: 배경만)
+    "popup_width": 260,  # 리마인더 알림 창 폭(px)
+    "popup_scale": 100,  # 리마인더 알림 창 글자 배율(%)
 }
 _COLOR_RE = re.compile(r"#[0-9a-fA-F]{6}")
 
@@ -140,9 +146,9 @@ def _color(value, default: str) -> str:
     return default
 
 
-def _scale(value, steps: tuple) -> int:
+def _scale(value, steps: tuple, default: int = 100) -> int:
     # bool 은 int 의 하위 타입이고 100.0 == 100 이므로 정확히 int 만 받는다
-    return value if type(value) is int and value in steps else 100
+    return value if type(value) is int and value in steps else default
 
 
 def appearance(cfg: dict) -> dict:
@@ -162,6 +168,10 @@ def appearance(cfg: dict) -> dict:
         "todo_scale": _scale(saved.get("todo_scale"), TODO_SCALES),
         "todo_text_color": _color(saved.get("todo_text_color"), ""),
         "fade_text": saved.get("fade_text") is True,
+        "popup_width": _scale(
+            saved.get("popup_width"), POPUP_WIDTHS, default["popup_width"]
+        ),
+        "popup_scale": _scale(saved.get("popup_scale"), POPUP_SCALES),
     }
 
 

@@ -1,6 +1,8 @@
 """리마인더 알림 팝업 (obsidian-reminder 의 [Mark as Done] / [Remind Me Later] 와 동일한 역할)
 
 트레이 풍선 알림은 버튼을 달 수 없으므로 위젯 옆에 이 팝업을 함께 띄운다.
+폭과 글자 크기는 설정창 Appearance "알림 창"(theme.popup_width / popup_scale)을 따른다.
+설정창은 preview=True 로 같은 팝업을 실제 크기 그대로 예시로 넣는다.
 """
 
 from datetime import datetime, timedelta
@@ -17,10 +19,7 @@ from PySide6.QtWidgets import (
 )
 
 from ui import theme
-from ui.theme import CORNER_RADIUS
-
-
-POPUP_WIDTH = 260
+from ui.theme import CORNER_RADIUS, px
 
 
 def snooze_targets(now: datetime) -> list:
@@ -40,26 +39,42 @@ class ReminderPopup(QWidget):
     done_requested = Signal(str)  # item id
     snooze_requested = Signal(str, object)  # item id, datetime
 
-    def __init__(self, item_id: str, text: str, due: datetime):
-        super().__init__()
+    def __init__(
+        self,
+        item_id: str,
+        text: str,
+        due: datetime,
+        look: theme.Theme = None,
+        preview: bool = False,
+        parent=None,
+    ):
+        """look: 그릴 테마 (None 이면 theme.current())
+        preview: 설정창 예시 - 창이 아니라 parent 안의 자식으로, 눌러도 반응하지 않는다"""
+        super().__init__(parent)
         self.item_id = item_id
 
-        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Tool | Qt.WindowStaysOnTopHint)
-        self.setAttribute(Qt.WA_TranslucentBackground, True)
-        self.setAttribute(Qt.WA_ShowWithoutActivating, True)
-        self.setAttribute(Qt.WA_DeleteOnClose, True)
-        self.setFixedWidth(POPUP_WIDTH)
+        if preview:
+            self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        else:
+            self.setWindowFlags(
+                Qt.FramelessWindowHint | Qt.Tool | Qt.WindowStaysOnTopHint
+            )
+            self.setAttribute(Qt.WA_TranslucentBackground, True)
+            self.setAttribute(Qt.WA_ShowWithoutActivating, True)
+            self.setAttribute(Qt.WA_DeleteOnClose, True)
 
-        t = self._theme = theme.current()
+        t = self._theme = look or theme.current()
+        s = t.popup_scale
+        self.setFixedWidth(t.popup_width)
         self.setStyleSheet(
-            theme.button_style(t)
+            theme.button_style(t, px(12, s))
             + f"""
             QLabel {{
                 background: transparent;
                 color: {t.text_main};
                 font-family: {t.font_family};
             }}
-            QPushButton {{ padding: 5px 0px; }}
+            QPushButton {{ padding: {px(5, s)}px 0px; }}
             """
         )
 
@@ -70,10 +85,10 @@ class ReminderPopup(QWidget):
         header = QHBoxLayout()
         title = QLabel("⏰ 리마인더")
         title.setStyleSheet(
-            f"font-size: 12px; font-weight: bold; color: {t.text_warn};"
+            f"font-size: {px(12, s)}px; font-weight: bold; color: {t.text_warn};"
         )
         when = QLabel(due.strftime("%m/%d %H:%M"))
-        when.setStyleSheet(f"font-size: 11px; color: {t.text_sub};")
+        when.setStyleSheet(f"font-size: {px(11, s)}px; color: {t.text_sub};")
         header.addWidget(title)
         header.addStretch(1)
         header.addWidget(when)
@@ -82,7 +97,7 @@ class ReminderPopup(QWidget):
         body = QLabel(text or "(내용 없음)")
         body.setTextFormat(Qt.PlainText)
         body.setWordWrap(True)
-        body.setStyleSheet("font-size: 13px;")
+        body.setStyleSheet(f"font-size: {px(13, s)}px;")
         root.addWidget(body)
 
         buttons = QHBoxLayout()
@@ -98,7 +113,9 @@ class ReminderPopup(QWidget):
         btn_close.clicked.connect(self.close)
         root.addLayout(buttons)
 
-        self.adjustSize()
+        # 높이는 폭에 맞춰 줄바꿈한 내용 높이로 정한다. adjustSize() 는 줄바꿈 라벨의 높이를
+        # 넉넉하게 어림해 빈 줄이 생기고, 설정창 예시(레이아웃 안)와 크기가 달라진다
+        self.setFixedHeight(self.heightForWidth(t.popup_width))
 
     def _on_done(self):
         self.done_requested.emit(self.item_id)

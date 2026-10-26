@@ -1,6 +1,6 @@
 """입력칸 공통 보조: Win+. 이모지 패널 입력 보정, 스니펫 치환"""
 
-from PySide6.QtCore import QAbstractNativeEventFilter, Qt, QTimer
+from PySide6.QtCore import QAbstractNativeEventFilter, Qt, QTimer, Signal
 from PySide6.QtGui import QInputMethodEvent
 from PySide6.QtWidgets import QApplication, QLineEdit
 
@@ -49,6 +49,29 @@ def py_cursor(edit: QLineEdit) -> int:
 def utf16_pos(text: str, index: int) -> int:
     """파이썬 문자열 index -> QLineEdit 위치(UTF-16 단위)"""
     return len(text[:index].encode("utf-16-le")) // 2
+
+
+class PreeditLineEdit(QLineEdit):
+    """조합 중인 한글(preedit)을 기억하는 입력칸. full_text() 는 조합 중인 글자까지 합쳐 읽는다.
+    (조합 중인 마지막 글자는 확정되기 전까지 text() 에 빠진다)"""
+
+    preedit_changed = Signal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.preedit = ""
+
+    def inputMethodEvent(self, event):
+        self.preedit = event.preeditString()
+        super().inputMethodEvent(event)
+        self.preedit_changed.emit()
+
+    def full_text(self) -> str:
+        text = self.text()
+        if self.preedit:
+            pos = py_cursor(self)
+            text = text[:pos] + self.preedit + text[pos:]
+        return text
 
 
 def expand_snippet_later(edit: QLineEdit, snippets_provider):

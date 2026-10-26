@@ -41,6 +41,8 @@ class Theme:
     todo_scale: int = 100  # 우패널(TODO) 글자 배율(%)
     todo_text: str = ""  # TODO 글자색 ("" 이면 text_main)
     fade_text: bool = False  # 투명도 슬라이더가 글자까지 투명하게 (False: 배경만)
+    popup_width: int = 260  # 리마인더 알림 창 폭(px)
+    popup_scale: int = 100  # 리마인더 알림 창 글자 배율(%)
 
     def overlay(self, alpha: int) -> str:
         return f"rgba({self.overlay_rgb},{alpha})"
@@ -156,6 +158,8 @@ def build(appearance: dict, system_dark: bool = True) -> Theme:
         "todo_scale": appearance["todo_scale"],
         "todo_text": appearance["todo_text_color"],
         "fade_text": appearance["fade_text"],
+        "popup_width": appearance["popup_width"],
+        "popup_scale": appearance["popup_scale"],
     }
     family = appearance["font_family"].replace("'", "")
     if family:

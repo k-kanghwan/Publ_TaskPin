@@ -976,6 +976,7 @@ class ClockWidget(QWidget):
             "task_edit": self._on_edit_shortcut,
             "task_clear": self._on_clear_shortcut,
             "todo_focus": self.todo_panel.focus_input,
+            "todo_search": self.todo_panel.open_search,
             "settings": self.settings_requested.emit,
         }
         for action, keys in mapping.items():
@@ -1125,7 +1126,9 @@ class ClockWidget(QWidget):
         """우패널 "TODO 내보내기": TODO 를 Markdown 체크리스트 파일로 저장한다. 마지막 저장 폴더를 기억한다."""
         now = datetime.now()
         if archived:
-            text = todo_export.archived_to_markdown(todo_store.load_archived(), now)
+            text = todo_export.archived_to_markdown(
+                todo_store.load_archived(), now, self.todo_panel.items()
+            )
         else:
             text = todo_export.to_markdown(self.todo_panel.items(), now)
 
@@ -1245,7 +1248,7 @@ class ClockWidget(QWidget):
 
     def _popup_position(self, popup: QWidget) -> QPoint:
         """위젯 위치와 상관없이 주 모니터 우측 상단부터 아래로 쌓고,
-        아래 공간이 없으면 왼쪽 열로 넘어가 다시 위에서부터 쌓는다. (팝업 폭은 고정)"""
+        아래 공간이 없으면 왼쪽 열로 넘어가 다시 위에서부터 쌓는다. (팝업 폭은 설정의 알림 창 크기)"""
         area = QApplication.primaryScreen().availableGeometry()
         top = area.top() + SCREEN_MARGIN
         bottom = area.bottom() + 1 - SCREEN_MARGIN

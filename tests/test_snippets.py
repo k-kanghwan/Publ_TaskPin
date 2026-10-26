@@ -69,6 +69,7 @@ def test_shortcuts_fill_missing_and_broken():
         "task_edit": "R",
         "task_clear": "C",
         "todo_focus": "",  # 빈 문자열은 해제
+        "todo_search": "Ctrl+F",
         "settings": "Ctrl+,",
     }
     assert widget_config.shortcuts({"shortcuts": "깨짐"}) == (
@@ -82,6 +83,13 @@ def test_new_shortcut_default_yields_to_user_key():
     result = widget_config.shortcuts(cfg)
     assert result["todo_focus"] == "R"
     assert result["task_edit"] == ""
+
+
+def test_todo_search_default_yields_to_user_key():
+    # 할 일 검색(Ctrl+F) 도 사용자가 이미 다른 동작에 쓰는 키면 비워 둔다
+    result = widget_config.shortcuts({"shortcuts": {"settings": "Ctrl+F"}})
+    assert result["settings"] == "Ctrl+F"
+    assert result["todo_search"] == ""
 
 
 def test_load_config_does_not_share_defaults(tmp_path, monkeypatch):
