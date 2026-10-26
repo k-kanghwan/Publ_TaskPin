@@ -14,33 +14,41 @@ def test_no_task(temp_db):
 
 
 def test_register_returns_latest(temp_db):
-    task_store.register("first", dt("2026-10-23 09:00"), dt("2026-10-23 10:00"))
-    second = task_store.register("", dt("2026-10-23 10:00"), dt("2026-10-23 11:30"))
+    task_store.register("first", "", dt("2026-10-23 09:00"), dt("2026-10-23 10:00"))
+    second = task_store.register("", "", dt("2026-10-23 10:00"), dt("2026-10-23 11:30"))
 
     assert second is not None
     assert task_store.latest() == second
     assert task_store.latest().title == ""
 
 
+def test_detail_is_saved(temp_db):
+    task = task_store.register(
+        "회의", "자료 정리\n- 1안 비교", dt("2026-10-23 09:00"), dt("2026-10-23 10:00")
+    )
+    assert task.detail == "자료 정리\n- 1안 비교"
+    assert task_store.latest() == task
+
+
 def test_today_task_is_current_even_after_end(temp_db):
-    task = task_store.register("t", dt("2026-10-23 09:00"), dt("2026-10-23 10:00"))
+    task = task_store.register("t", "", dt("2026-10-23 09:00"), dt("2026-10-23 10:00"))
     assert task_store.current_task(dt("2026-10-23 09:30")) == task
     assert task_store.current_task(dt("2026-10-23 18:00")) == task  # +초과 시간 표시
 
 
 def test_task_ended_yesterday_is_not_current(temp_db):
-    task_store.register("t", dt("2026-10-22 09:00"), dt("2026-10-22 10:00"))
+    task_store.register("t", "", dt("2026-10-22 09:00"), dt("2026-10-22 10:00"))
     assert task_store.current_task(dt("2026-10-23 08:00")) is None
 
 
 def test_task_crossing_midnight_is_current_until_end(temp_db):
-    task = task_store.register("night", dt("2026-10-22 23:30"), dt("2026-10-23 01:00"))
+    task = task_store.register("night", "", dt("2026-10-22 23:30"), dt("2026-10-23 01:00"))
     assert task_store.current_task(dt("2026-10-23 00:30")) == task
     assert task_store.current_task(dt("2026-10-23 01:30")) is None
 
 
 def test_clear_hides_task_but_keeps_record(temp_db):
-    task = task_store.register("t", dt("2026-10-23 09:00"), dt("2026-10-23 10:00"))
+    task = task_store.register("t", "", dt("2026-10-23 09:00"), dt("2026-10-23 10:00"))
     assert task_store.clear(task.id)
 
     assert task_store.latest() is None
@@ -53,9 +61,9 @@ def test_clear_hides_task_but_keeps_record(temp_db):
 
 
 def test_register_after_clear_is_shown(temp_db):
-    first = task_store.register("a", dt("2026-10-23 09:00"), dt("2026-10-23 10:00"))
+    first = task_store.register("a", "", dt("2026-10-23 09:00"), dt("2026-10-23 10:00"))
     task_store.clear(first.id)
-    second = task_store.register("b", dt("2026-10-23 10:00"), dt("2026-10-23 11:00"))
+    second = task_store.register("b", "", dt("2026-10-23 10:00"), dt("2026-10-23 11:00"))
     assert task_store.latest() == second
 
 
@@ -73,5 +81,6 @@ def test_v1_db_is_migrated(tmp_path):
         latest = db._MIGRATIONS[-1][0]
         assert db.conn().execute("PRAGMA user_version").fetchone()[0] == latest
         assert task_store.latest().title == "old"
+        assert task_store.latest().detail == ""
     finally:
         db.close()

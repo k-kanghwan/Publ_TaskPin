@@ -1,7 +1,7 @@
 """Task 등록 기록 (SQLite tasks 테이블)
 
 등록할 때마다 새 행을 추가해 기록을 남기고, 위젯에는 가장 최근 행 하나만 표시한다.
-"Task 완료"는 행을 지우지 않고 cleared_at 을 기록한다. 가장 최근 행이 해제됐으면 표시할 Task 가 없다.
+"Task 완료"는 행을 지우지 않고 cleared_at 을 기록한다. 가장 최근 행이 완료됐으면 표시할 Task 가 없다.
 """
 
 import sqlite3
@@ -19,17 +19,20 @@ class Task:
     title: str
     start_at: datetime
     end_at: datetime
+    detail: str = ""  # 상세업무 (여러 줄)
 
 
-def register(title: str, start_at: datetime, end_at: datetime):
+def register(title: str, detail: str, start_at: datetime, end_at: datetime):
     """새 Task 를 기록하고 돌려준다. 저장에 실패하면 None"""
     c = db.conn()
     try:
         with c:
             cur = c.execute(
-                "INSERT INTO tasks (title, start_at, end_at, created_at) VALUES (?, ?, ?, ?)",
+                "INSERT INTO tasks (title, detail, start_at, end_at, created_at)"
+                " VALUES (?, ?, ?, ?, ?)",
                 (
                     title,
+                    detail,
                     start_at.strftime(DATETIME_FMT),
                     end_at.strftime(DATETIME_FMT),
                     datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S"),
@@ -38,11 +41,11 @@ def register(title: str, start_at: datetime, end_at: datetime):
     except sqlite3.Error as e:
         print(f"Task 저장 실패: {e}")
         return None
-    return Task(cur.lastrowid, title, start_at, end_at)
+    return Task(cur.lastrowid, title, start_at, end_at, detail)
 
 
 def clear(task_id: int) -> bool:
-    """ "Task 완료": 해제 시각을 기록한다. 성공 여부를 반환한다."""
+    """ "Task 완료": 완료 시각을 기록한다. 성공 여부를 반환한다."""
     c = db.conn()
     try:
         with c:
@@ -51,18 +54,18 @@ def clear(task_id: int) -> bool:
                 (datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S"), task_id),
             )
     except sqlite3.Error as e:
-        print(f"Task 해제 실패: {e}")
+        print(f"Task 완료 실패: {e}")
         return False
     return True
 
 
 def latest():
-    """가장 최근에 등록한 Task. 없거나, 해제됐거나, 읽지 못하면 None"""
+    """가장 최근에 등록한 Task. 없거나, 완료됐거나, 읽지 못하면 None"""
     try:
         row = (
             db.conn()
             .execute(
-                "SELECT id, title, start_at, end_at, cleared_at FROM tasks"
+                "SELECT id, title, detail, start_at, end_at, cleared_at FROM tasks"
                 " ORDER BY id DESC LIMIT 1"
             )
             .fetchone()
@@ -78,6 +81,7 @@ def latest():
             row["title"],
             datetime.strptime(row["start_at"], DATETIME_FMT).astimezone(),
             datetime.strptime(row["end_at"], DATETIME_FMT).astimezone(),
+            row["detail"],
         )
     except ValueError:
         return None

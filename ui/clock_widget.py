@@ -17,7 +17,15 @@ import os
 from datetime import datetime
 
 from PySide6.QtCore import QEvent, QStandardPaths, Qt, QPoint, QRectF, QTimer, Signal
-from PySide6.QtGui import QColor, QKeySequence, QPainter, QPainterPath, QShortcut
+from PySide6.QtGui import (
+    QColor,
+    QFontMetrics,
+    QKeySequence,
+    QPainter,
+    QPainterPath,
+    QShortcut,
+    QTextLayout,
+)
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -68,7 +76,35 @@ POPUP_GAP = 8
 TASK_DOT_COLOR = "#4caf50"  # Task 시간이 등록되어 있을 때 헤더의 점
 USER_NAME_MAX_LEN = 20
 TASK_BADGE_H_SPACE = 2 * 8 + 2 * 1  # 좌우 padding + border (말줄임 폭 계산용)
+TASK_DETAIL_MAX_LINES = 3  # 업무명 배지 위 상세업무 (넘치면 말줄임 + 툴팁)
 # ========= ========= ========= ========= =========
+
+
+def _elide_lines(text: str, font, width: int, max_lines: int):
+    """text 를 width 에 맞춰 줄바꿈하고 max_lines 를 넘으면 마지막 줄을 "…" 로 줄인다.
+    Returns (표시할 문자열, 줄였는지)"""
+    lines = []
+    for para in text.splitlines():
+        units = para.encode("utf-16-le")  # QTextLine 위치는 UTF-16 단위
+        layout = QTextLayout(para, font)
+        layout.beginLayout()
+        while True:
+            line = layout.createLine()
+            if not line.isValid():
+                break
+            line.setLineWidth(width)
+            start, length = line.textStart() * 2, line.textLength() * 2
+            lines.append(units[start : start + length].decode("utf-16-le").rstrip())
+        layout.endLayout()
+        if not para:
+            lines.append("")
+    if len(lines) <= max_lines:
+        return "\n".join(lines), False
+    fm = QFontMetrics(font)
+    last = lines[max_lines - 1]
+    while last and fm.horizontalAdvance(last + "…") > width:
+        last = last[:-1]
+    return "\n".join(lines[: max_lines - 1] + [last.rstrip() + "…"]), True
 
 
 class _ResizeGrip(QWidget):
@@ -179,6 +215,7 @@ class ClockWidget(QWidget):
         self._shortcuts = []
         self._separators = []  # 테마가 바뀌면 다시 칠할 구분선
         self._task_title = ""  # 업무명 배지 원문 (말줄임 전)
+        self._task_detail = ""  # 상세업무 원문 (말줄임 전)
         # 트레이 클릭으로 다른 앱보다 위에 꺼내 둔 상태
         self._front = False
         self._front_baseline = (
@@ -415,6 +452,12 @@ class ClockWidget(QWidget):
         controls.setContentsMargins(0, 0, 0, 0)
         controls.setSpacing(6)
 
+        # ---- 상세업무: 업무명 배지 위 여유 공간 (비어 있으면 숨김) ----
+        self.task_detail_label = QLabel()
+        self.task_detail_label.setTextFormat(Qt.PlainText)
+        self.task_detail_label.hide()
+        controls.addWidget(self.task_detail_label)
+
         # ---- 업무명 배지: 등록한 Task 강조 (비어 있으면 숨김 / 클릭 없음) ----
         self.task_title_label = QLabel()
         self.task_title_label.setTextFormat(Qt.PlainText)
@@ -537,6 +580,7 @@ class ClockWidget(QWidget):
             padding: 5px 8px;
             """
         )
+        self.task_detail_label.setStyleSheet(sub_style)
         self.opacity_caption.setStyleSheet(sub_style)
         self.opacity_value.setStyleSheet(sub_style)
         self.opacity_value.setFixedWidth(px(34, s))
@@ -549,6 +593,7 @@ class ClockWidget(QWidget):
         self._apply_task_dot(self.btn_task_clear.isEnabled())
         if self._task_title:
             self._set_task_title(self._task_title)
+        self._set_task_detail(self._task_detail, resize=False)
         if self._orientation is not None:  # 배율이 바뀌면 최소 높이도 바뀐다
             self._apply_size_limits()
             self._place_grip()
@@ -700,10 +745,12 @@ class ClockWidget(QWidget):
             self.out_label.setText("종료 --:--")
             self._task_title = ""
             self.task_title_label.hide()
+            self._set_task_detail("")
         else:
             self.in_label.setText(f"시작 {task.start_at:%H:%M}")
             self.out_label.setText(f"종료 {task.end_at:%H:%M}")
             self._set_task_title(task.title)
+            self._set_task_detail(task.detail)
         self.btn_task_clear.setEnabled(task is not None)
         self._apply_task_dot(task is not None)
 
@@ -717,6 +764,23 @@ class ClockWidget(QWidget):
         label.setText(shown)
         label.setToolTip(title if shown != title else "")
         label.setVisible(bool(title))
+
+    def _set_task_detail(self, detail: str, resize: bool = True):
+        """상세업무는 최대 TASK_DETAIL_MAX_LINES 줄 - 넘치면 말줄임하고 전체는 툴팁으로.
+        줄 수가 바뀌면 좌패널 최소 높이(가로 모드 위젯 높이)를 다시 맞춘다."""
+        self._task_detail = detail
+        label = self.task_detail_label
+        label.ensurePolished()  # 스타일시트 글꼴로 줄바꿈을 재기 위해
+        shown, elided = _elide_lines(
+            detail, label.font(), self._left_col.width(), TASK_DETAIL_MAX_LINES
+        )
+        changed = shown != label.text() or label.isVisibleTo(self) != bool(detail)
+        label.setText(shown)
+        label.setToolTip(detail if elided else "")
+        label.setVisible(bool(detail))
+        if changed and resize and self._orientation is not None:
+            self._apply_size_limits()
+            self._place_grip()
 
     def set_user_name(self, name: str):
         if name:

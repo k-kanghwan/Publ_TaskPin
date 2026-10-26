@@ -145,8 +145,10 @@ class TaskPinApp(TrayApp):
         picker.picked.connect(self.register_task)
         picker.popup_for(self.widget.btn_task)
 
-    def register_task(self, title: str, start_at: datetime, end_at: datetime):
-        task = task_store.register(title, start_at, end_at)
+    def register_task(
+        self, title: str, detail: str, start_at: datetime, end_at: datetime
+    ):
+        task = task_store.register(title, detail, start_at, end_at)
         if task is None:
             self.tray.showMessage(
                 "Task 등록", "저장하지 못했습니다.", QSystemTrayIcon.Warning

@@ -1,6 +1,7 @@
 """`Task 등록` 버튼으로 뜨는 Task 등록 창
 
-업무명(비워도 됨) / 시작 / 소요 / 종료
+왼쪽: 업무명(비워도 됨) / 시작 / 소요 / 종료, 오른쪽: 상세 업무(여러 줄, 비워도 됨)
+  - 상세 업무는 위젯의 업무명 배지 위에 표시된다.
   - 업무명에서도 `:idea:` 같은 스니펫 트리거를 문구로 바꾼다.
   - 시작은 오늘 00:00 ~ 23:45 (15분 단위), 기본값은 현재시간을 15분 단위로 올린 값
     (06:36 -> 06:45 / 23:45 를 넘으면 다음 날 00:00)
@@ -12,7 +13,8 @@ Qt.Popup 이 아니라 활성화되는 Tool 창이다. Windows 에서 Popup 은 
 IME 가 붙지 않으므로(한글 입력 불가) 대신 다른 창이 활성화되면 스스로 닫는다.
 
 키보드
-  - Enter : 확인, Esc / 바깥 클릭 : 취소
+  - Enter : 확인 (상세 업무 칸에서는 줄바꿈), Ctrl+Enter : 어디서든 확인
+  - Tab : 업무명 -> 상세 업무, Esc / 바깥 클릭 : 취소
 """
 
 from datetime import datetime, time
@@ -27,7 +29,9 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QPlainTextEdit,
     QPushButton,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -40,7 +44,8 @@ from ui.text_input import expand_snippet_later, py_cursor
 DURATIONS = list(
     range(task_clock.STEP_MIN, task_clock.MAX_DURATION_MIN + 1, task_clock.STEP_MIN)
 )
-PICKER_WIDTH = 230
+PICKER_WIDTH = 470
+FORM_WIDTH = 210  # 왼쪽 업무명 / 시간 칸 (나머지는 상세 업무)
 ANCHOR_GAP = 4
 
 
@@ -72,8 +77,39 @@ class _TitleEdit(QLineEdit):
         return text
 
 
+class _DetailEdit(QPlainTextEdit):
+    """상세 업무 칸. 조합 중인 한글(preedit)을 기억하고, Ctrl+Enter / Esc 는 등록 창으로 넘긴다."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.preedit = ""
+        self.setTabChangesFocus(True)
+
+    def inputMethodEvent(self, event):
+        self.preedit = event.preeditString()
+        super().inputMethodEvent(event)
+
+    def keyPressEvent(self, event):
+        ctrl_enter = event.key() in (Qt.Key_Return, Qt.Key_Enter) and (
+            event.modifiers() & Qt.ControlModifier
+        )
+        if ctrl_enter or event.key() == Qt.Key_Escape:
+            event.ignore()  # 부모(TaskPicker.keyPressEvent)가 확인 / 취소
+            return
+        super().keyPressEvent(event)
+
+    def full_text(self) -> str:
+        text = self.toPlainText()
+        if self.preedit:
+            # QTextCursor 위치는 UTF-16 단위
+            units = text.encode("utf-16-le")[: self.textCursor().position() * 2]
+            pos = len(units.decode("utf-16-le", "ignore"))
+            text = text[:pos] + self.preedit + text[pos:]
+        return text
+
+
 class TaskPicker(QFrame):
-    picked = Signal(str, object, object)  # 업무명, 시작 datetime, 종료 datetime
+    picked = Signal(str, str, object, object)  # 업무명, 상세, 시작 datetime, 종료 datetime
     closed = Signal()  # 확인/취소와 관계없이 닫힐 때
 
     def __init__(self, task, snippets_provider, parent=None):
@@ -92,15 +128,16 @@ class TaskPicker(QFrame):
         now = datetime.now().astimezone()
         self._day = now.date()
         if task is not None and task.start_at.date() == self._day:
-            title, start = task.title, task.start_at
+            title, detail, start = task.title, task.detail, task.start_at
             minutes = task_clock.minutes_between(task.start_at, task.end_at)
         else:
-            title, start = "", task_clock.ceil_slot(now)
+            title, detail, start = "", "", task_clock.ceil_slot(now)
             self._day = start.date()
             minutes = task_clock.DEFAULT_DURATION_MIN
 
         self._build_ui()
         self.title_edit.setText(title)
+        self.detail_edit.setPlainText(detail)
         self.start_combo.setCurrentIndex(
             (start.hour * 60 + start.minute) // task_clock.STEP_MIN
         )
@@ -143,6 +180,18 @@ class TaskPicker(QFrame):
                 border: 1px solid {t.accent};
             }}
             QPushButton#ok:hover {{ background: {t.accent_hover}; }}
+            QPlainTextEdit {{
+                background: {t.overlay(18)};
+                color: {t.text_main};
+                font-family: {t.font_family};
+                font-size: 12px;
+                border: 1px solid {t.overlay(40)};
+                border-radius: 6px;
+                padding: 2px 4px;
+                selection-background-color: {t.accent};
+                selection-color: {t.on_accent};
+            }}
+            QPlainTextEdit:focus {{ border: 1px solid {t.overlay(90)}; }}
             """
             + theme.popup_form_style(t)
         )
@@ -187,7 +236,22 @@ class TaskPicker(QFrame):
             form.addWidget(lb, row, 0)
             form.addWidget(field, row, 1)
         form.setColumnStretch(1, 1)
-        root.addLayout(form)
+        form_box = QWidget()
+        form_box.setFixedWidth(FORM_WIDTH)
+        form_box.setLayout(form)
+        form.setContentsMargins(0, 0, 0, 0)
+
+        # ---- 오른쪽: 상세 업무 (왼쪽 폼 높이에 맞춤) ----
+        self.detail_edit = _DetailEdit()
+        self.detail_edit.setPlaceholderText("상세 업무 (선택) · 업무명 배지 위에 표시")
+        # 기본 크기 힌트(약 190px)대로 창이 길어지지 않고 왼쪽 폼 높이를 따르도록
+        self.detail_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Ignored)
+
+        body = QHBoxLayout()
+        body.setSpacing(10)
+        body.addWidget(form_box, 0, Qt.AlignTop)
+        body.addWidget(self.detail_edit, 1)
+        root.addLayout(body)
 
         buttons = QHBoxLayout()
         buttons.setSpacing(6)
@@ -260,13 +324,18 @@ class TaskPicker(QFrame):
         QGuiApplication.inputMethod().commit()
         return self.title_edit.full_text().strip()
 
+    def entered_detail(self) -> str:
+        """상세 업무 (조합 중인 한글 포함)"""
+        QGuiApplication.inputMethod().commit()
+        return self.detail_edit.full_text().strip()
+
     def _accept(self):
         if self._accepted:
             return
         self._accepted = True
         start = self.selected_start()
         end = task_clock.end_from(start, self.selected_minutes())
-        self.picked.emit(self.entered_title(), start, end)
+        self.picked.emit(self.entered_title(), self.entered_detail(), start, end)
         self.close()
 
     def keyPressEvent(self, event):

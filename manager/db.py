@@ -50,7 +50,19 @@ ALTER TABLE todos ADD COLUMN tag TEXT;
 PRAGMA user_version = 4;
 """
 
-_MIGRATIONS = ((1, _SCHEMA_V1), (2, _SCHEMA_V2), (3, _SCHEMA_V3), (4, _SCHEMA_V4))
+# user_version 4 -> 5: Task 상세업무 (등록 창 오른쪽 칸 / 위젯 업무명 배지 위에 표시)
+_SCHEMA_V5 = """
+ALTER TABLE tasks ADD COLUMN detail TEXT NOT NULL DEFAULT '';
+PRAGMA user_version = 5;
+"""
+
+_MIGRATIONS = (
+    (1, _SCHEMA_V1),
+    (2, _SCHEMA_V2),
+    (3, _SCHEMA_V3),
+    (4, _SCHEMA_V4),
+    (5, _SCHEMA_V5),
+)
 
 _conn = None
 
