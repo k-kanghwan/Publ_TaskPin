@@ -18,6 +18,7 @@
 - Ctrl+F / 우클릭 "검색": 목록 위에 [전체][오늘][지연][예정] 칩 + 검색칸 줄이 열린다 (manager/todo_filter).
   맞는 항목의 상위는 흐리게 함께 보인다. 거르는 중에는 드래그하지 않고, 할 일을 추가하면 전체 보기로 돌아간다.
   Esc: 검색어를 지우고, 비어 있으면 줄을 닫는다 (닫으면 필터도 풀림)
+  검색어가 바뀔 때마다 맞는 글자를 노랗게 칠했다가 2초 뒤 서서히 지운다 (상위 문맥 행은 칠하지 않음)
 
 드래그는 QDrag(Windows OLE DoDragDrop)를 쓰지 않고 행의 마우스 grab 으로 직접 처리한다.
 OLE 드래그 루프 동안에는 휠이 오지 않고, 커서를 움직일 때만 자동 스크롤되기 때문이다.
@@ -25,7 +26,7 @@ OLE 드래그 루프 동안에는 휠이 오지 않고, 커서를 움직일 때�
 
 from datetime import UTC, datetime
 
-from PySide6.QtCore import QEvent, QPoint, QRectF, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QPoint, QRectF, Qt, QTimer, QVariantAnimation, Signal
 from PySide6.QtGui import QColor, QCursor, QIcon, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
@@ -87,6 +88,11 @@ EMPTY_TEXT = "할 일이 없습니다"
 EMPTY_FILTERED_TEXT = "일치하는 할 일이 없습니다"
 # 검색 줄의 날짜별 보기 칩 - 키는 todo_filter.VIEWS 와 같다
 VIEW_LABELS = {"all": "전체", "today": "오늘", "overdue": "지연", "upcoming": "예정"}
+# 검색 하이라이트: 검색어가 바뀌면 맞는 글자 배경을 칠해 두었다가 서서히 지운다
+HIGHLIGHT_COLOR = "#f5cc45"  # 태그 Yellow 와 같은 색
+HIGHLIGHT_ALPHA = 150  # 가장 진할 때의 불투명도 (0~255)
+HIGHLIGHT_HOLD_MS = 2000
+HIGHLIGHT_FADE_MS = 600
 
 
 def _indent(depth: int) -> int:
@@ -386,6 +392,8 @@ class TodoRow(QWidget):
         self.item = item
         self.depth = depth  # 레벨 (최상위 0)
         self.context = context
+        self.mark_query = ""  # 검색 하이라이트할 검색어 (TodoPanel 이 정함)
+        self.mark_level = 0.0  # 하이라이트 진하기 0~1 (0 이면 칠하지 않음)
         self._tag_color = tag_color
         self._editing = False
         self._hover = False
@@ -459,7 +467,18 @@ class TodoRow(QWidget):
             f" border-radius: {TAG_BAR_WIDTH // 2}px;"
         )
         emoji_style = f"font-size:{px(EMOJI_PX, s)}px;"
-        body = todo_store.to_html(self.item["text"], emoji_style) or "&nbsp;"
+        marks, mark_style = (), ""
+        if self.mark_level > 0 and not self.context:
+            marks = todo_filter.match_spans(
+                todo_store.strip_reminder(self.item["text"]), self.mark_query
+            )
+            mark = QColor(HIGHLIGHT_COLOR)
+            mark.setAlpha(round(HIGHLIGHT_ALPHA * self.mark_level))
+            mark_style = f"background-color:{mark.name(QColor.HexArgb)};"
+        body = (
+            todo_store.to_html(self.item["text"], emoji_style, marks, mark_style)
+            or "&nbsp;"
+        )
         color = t.text_sub if done or self.context else t.todo_color
         html = f'<span style="color:{color};">{body}</span>'
         if done:
@@ -615,12 +634,25 @@ class TodoPanel(QWidget):
         self._scroll_timer.setInterval(AUTO_SCROLL_MS)
         self._scroll_timer.timeout.connect(self._auto_scroll)
 
+        # 검색 하이라이트: 검색어가 바뀌면 진하게 -> HIGHLIGHT_HOLD_MS 유지 -> 서서히 지움
+        self._mark_query = ""
+        self._mark_level = 0.0
+        self._mark_hold = QTimer(self)
+        self._mark_hold.setSingleShot(True)
+        self._mark_hold.setInterval(HIGHLIGHT_HOLD_MS)
+        self._mark_fade = QVariantAnimation(self)
+        self._mark_fade.setStartValue(1.0)
+        self._mark_fade.setEndValue(0.0)
+        self._mark_fade.setDuration(HIGHLIGHT_FADE_MS)
+        self._mark_fade.valueChanged.connect(self._set_mark_level)
+        self._mark_hold.timeout.connect(self._mark_fade.start)
+
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(4)
 
         self.filter_bar = FilterBar()  # 검색 / 날짜별 보기 (Ctrl+F, 우클릭 "검색")
-        self.filter_bar.changed.connect(self._rebuild)
+        self.filter_bar.changed.connect(self._on_filter_changed)
         self.filter_bar.close_requested.connect(self.close_search)
         self.filter_bar.hide()
         root.addWidget(self.filter_bar)
@@ -719,6 +751,7 @@ class TodoPanel(QWidget):
         """선택한 항목이 있으면 그 하위 맨 뒤로 넣는다 (마지막으로 클릭한 항목 우선).
         거르는 중이면 새 항목이 숨지 않도록 전체 보기로 돌아간다 (검색 줄은 열어 둔다)."""
         self.filter_bar.reset()
+        self._stop_highlight()
         item = todo_store.new_item(text)
         self._items.append(item)
         parent_id = self._add_parent_id()
@@ -827,7 +860,33 @@ class TodoPanel(QWidget):
         self.filter_bar.edit.clearFocus()
         self.filter_bar.reset()
         self.filter_bar.hide()
+        self._stop_highlight()
         self._rebuild()
+
+    def _on_filter_changed(self):
+        """보기 / 검색어가 바뀜. 검색어가 바뀌었을 때만 하이라이트를 다시 시작한다 (칩만 바꾸면 그대로)."""
+        query = self.filter_bar.query()
+        if query != self._mark_query:
+            if query.strip():
+                self._mark_query = query
+                self._mark_fade.stop()
+                self._mark_level = 1.0
+                self._mark_hold.start()
+            else:
+                self._stop_highlight()
+        self._rebuild()
+
+    def _stop_highlight(self):
+        self._mark_hold.stop()
+        self._mark_fade.stop()
+        self._mark_query = ""
+        self._mark_level = 0.0
+
+    def _set_mark_level(self, level):
+        self._mark_level = level
+        for row in self._rows:
+            row.mark_level = level
+            row.render()
 
     def _filtering(self) -> bool:
         bar = self.filter_bar
@@ -883,6 +942,10 @@ class TodoPanel(QWidget):
                 self._tag_color,
                 context=item["id"] in context,
             )
+            if self._mark_level > 0:
+                row.mark_query = self._mark_query
+                row.mark_level = self._mark_level
+                row.render()
             row.toggled.connect(self.set_done)
             row.deleted.connect(self.delete_item)
             row.edited.connect(self.edit_item)

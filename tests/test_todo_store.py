@@ -149,3 +149,13 @@ def test_to_html_wraps_emoji_runs():
     )
     # 스타일을 주지 않으면 그대로
     assert todo_store.to_html("a 🚀") == "a 🚀"
+
+
+def test_to_html_marks_spans():
+    mark = '<span style="background-color:#80f5cc45">'
+    text = "a<b 🚀 c (@2026-10-23 09:00)"
+    html = todo_store.to_html(text, marks=[(1, 3)], mark_style="background-color:#80f5cc45")
+    assert html == f"a{mark}&lt;b</span> 🚀 c"
+    # 표시 구간 안의 이모지도 감싼다
+    html = todo_store.to_html(text, "x;", [(4, 5)], "m;")
+    assert html == 'a&lt;b <span style="m;"><span style="x;">🚀</span></span> c'

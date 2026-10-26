@@ -6,6 +6,7 @@
 - 조건에 맞는 항목의 상위는 트리 문맥으로 함께 보여준다 (조건에는 맞지 않는 "문맥" 항목).
 """
 
+import re
 from datetime import datetime
 
 from manager import todo_store, todo_tree
@@ -36,6 +37,23 @@ def matches(item: dict, query: str) -> bool:
     """검색어의 단어가 모두 본문(리마인더 토큰 제외)에 들어 있는지. 빈 검색어는 모두 맞다."""
     body = todo_store.strip_reminder(item.get("text", "")).casefold()
     return all(word in body for word in _words(query))
+
+
+def match_spans(body: str, query: str) -> list:
+    """본문(리마인더 토큰을 뺀 문자열)에서 검색어 단어가 나오는 구간 [(시작, 끝)] (하이라이트용).
+    겹치거나 붙은 구간은 하나로 합친다. 빈 검색어면 []"""
+    spans = sorted(
+        (m.start(), m.end())
+        for word in _words(query)
+        for m in re.finditer(re.escape(word), body, re.IGNORECASE)
+    )
+    merged = []
+    for start, end in spans:
+        if merged and start <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+        else:
+            merged.append((start, end))
+    return merged
 
 
 def is_active(view: str, query: str) -> bool:
