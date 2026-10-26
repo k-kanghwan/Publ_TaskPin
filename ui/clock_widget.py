@@ -56,10 +56,13 @@ TRANSPARENCY_MAX = round((1 - OPACITY_MIN) * 100)  # 슬라이더 최대 투명�
 WIDGET_WIDTH = 280
 WIDGET_MIN_HEIGHT = 324
 WIDGET_MAX_HEIGHT = int(WIDGET_MIN_HEIGHT * 1.5)  # 486
-# 가로 모드: 상하 고정(WIDGET_MIN_HEIGHT) / 폭만 조절 - 좌 시간(280) + 우 TODO
+# 가로 모드: 폭과 높이 모두 조절 - 좌 시간(280) + 우 TODO. 높이는 최소 높이의 1.5배까지
 WIDGET_MIN_WIDTH_HORIZONTAL = 540
 WIDGET_MAX_WIDTH_HORIZONTAL = int(WIDGET_MIN_WIDTH_HORIZONTAL * 1.5)  # 810
+HORIZONTAL_MAX_HEIGHT_RATIO = 1.5
 RESIZE_MARGIN = 6  # 하단/우측 크기 조절 영역(px) - root 마진(14/16px) 안쪽
+TASK_BUTTON_REGISTER = "등록"  # [등록/해제] 버튼: Task 가 없을 때
+TASK_BUTTON_RELEASE = "해제"  # [등록/해제] 버튼: Task 가 진행 중일 때
 SCREEN_MARGIN = 24
 CONTENT_MARGIN_H = 16  # root 좌우 마진
 CONTENT_MARGIN_V = 14  # root 상하 마진
@@ -108,22 +111,18 @@ def _elide_lines(text: str, font, width: int, max_lines: int):
 
 
 class _ResizeGrip(QWidget):
-    """위젯 가장자리의 크기 조절 핸들 (세로 모드: 하단 / 가로 모드: 우측)
+    """위젯 가장자리의 크기 조절 핸들 (하단: 높이 - 두 모드 모두 / 우측: 폭 - 가로 모드만)
 
     부모 위젯의 mouseMoveEvent 로 커서를 바꾸면 자식 위젯 위에서 커서가
     원복되지 않으므로, 커서를 자체적으로 갖는 얇은 자식 위젯으로 분리한다.
     """
 
-    def __init__(self, window: "ClockWidget"):
+    def __init__(self, window: "ClockWidget", vertical: bool):
         super().__init__(window)
         self._window = window
-        self._vertical = True  # True: 높이 조절 / False: 폭 조절
+        self._vertical = vertical  # True: 높이 조절 / False: 폭 조절
         self._origin = None  # (누른 지점의 global 좌표, 그때의 크기)
         self._hover = False
-
-    def set_vertical(self, vertical: bool):
-        self._vertical = vertical
-        self.set_enabled(self.isEnabled())
 
     def set_enabled(self, enabled: bool):
         resize_cursor = Qt.SizeVerCursor if self._vertical else Qt.SizeHorCursor
@@ -196,8 +195,10 @@ class _NameEdit(QLineEdit):
 class ClockWidget(QWidget):
     """바탕화면에 상주하는 Task 시간 + TODO 위젯"""
 
-    task_register_requested = Signal()
-    task_clear_requested = Signal()
+    task_register_requested = Signal()  # [등록/해제] - Task 가 없을 때
+    task_release_requested = Signal()  # [등록/해제] - Task 가 진행 중일 때
+    task_edit_requested = Signal()  # [수정]
+    task_clear_requested = Signal()  # [완료]
     settings_requested = Signal()
     quit_requested = Signal()
     visibility_changed = Signal(bool)
@@ -234,9 +235,10 @@ class ClockWidget(QWidget):
         # 투명도는 오직 투명도 슬라이더로만 정한다 (배경색 자체는 불투명) - apply_appearance 의 _apply_opacity
 
         self._build_ui()
-        self._grip = _ResizeGrip(self)
-        self._grip.set_enabled(not self._locked)
-        # 3) 크기 범위 / 조절 방향은 모드별로 (세로: 높이만, 가로: 폭만)
+        self._grip_v = _ResizeGrip(self, vertical=True)  # 하단: 높이
+        self._grip_h = _ResizeGrip(self, vertical=False)  # 우측: 폭 (가로 모드만)
+        self._set_grips_enabled(not self._locked)
+        # 3) 크기 범위 / 조절 방향은 모드별로 (세로: 높이만, 가로: 폭과 높이)
         self._orientation = None
         self._apply_orientation(self._cfg_orientation())
         self.apply_appearance()
@@ -263,6 +265,16 @@ class ClockWidget(QWidget):
         except (TypeError, ValueError):
             value = min_height
         return min(max(WIDGET_MAX_HEIGHT, min_height), max(min_height, value))
+
+    def _cfg_horizontal_height(self, min_height: int) -> int:
+        """가로 모드 높이 (최소 높이 ~ 그 1.5배)"""
+        try:
+            value = int(self._cfg.get("horizontal_height") or min_height)
+        except (TypeError, ValueError):
+            value = min_height
+        return min(
+            int(min_height * HORIZONTAL_MAX_HEIGHT_RATIO), max(min_height, value)
+        )
 
     def _cfg_width(self) -> int:
         """가로 모드 폭"""
@@ -465,15 +477,21 @@ class ClockWidget(QWidget):
         self.task_title_label.hide()
         controls.addWidget(self.task_title_label)
 
-        # ---- Task 등록 / 완료 버튼 ----
+        # ---- [등록/해제] [수정] [완료] 버튼 ----
         buttons = QHBoxLayout()
         buttons.setSpacing(8)
-        self.btn_task = QPushButton("Task 등록")
-        self.btn_task_clear = QPushButton("Task 완료")
-        for btn in (self.btn_task, self.btn_task_clear):
+        self.btn_task = QPushButton(TASK_BUTTON_REGISTER)
+        self.btn_task_edit = QPushButton("수정")
+        self.btn_task_edit.setToolTip("진행 중인 Task 수정")
+        self.btn_task_clear = QPushButton("완료")
+        self.btn_task_clear.setToolTip("진행 중인 Task 완료")
+        for btn in (self.btn_task, self.btn_task_edit, self.btn_task_clear):
             btn.setCursor(Qt.PointingHandCursor)
+            # 클릭으로 포커스를 받으면 글자 둘레에 점선 포커스 표시가 생긴다 (단축키는 창 단위라 상관없음)
+            btn.setFocusPolicy(Qt.NoFocus)
             buttons.addWidget(btn)
-        self.btn_task.clicked.connect(self.task_register_requested.emit)
+        self.btn_task.clicked.connect(self._on_task_button)
+        self.btn_task_edit.clicked.connect(self.task_edit_requested.emit)
         self.btn_task_clear.clicked.connect(self.task_clear_requested.emit)
         controls.addLayout(buttons)
 
@@ -512,7 +530,11 @@ class ClockWidget(QWidget):
         root.addWidget(self._right_col, 1)
 
         # ---- TODO 리스트 (높이를 늘리면 이 영역만 커짐 / 위치는 _apply_orientation) ----
-        self.todo_panel = TodoPanel(lambda: snippets.from_config(self._cfg))
+        self.todo_panel = TodoPanel(
+            lambda: snippets.from_config(self._cfg),
+            lambda: widget_config.custom_tags(self._cfg),
+            self._add_custom_tag,
+        )
         self.todo_panel.export_requested.connect(self._export_todos)
 
         self.apply_task(None)
@@ -524,8 +546,10 @@ class ClockWidget(QWidget):
         sub_style = f"font-size: {px(11, s)}px; color: {t.text_sub};"
         # WA_TranslucentBackground 사용 시 자식 위젯이 배경을 불투명하게 덮으므로
         # QLabel 배경을 반드시 transparent 로 강제해야 한다.
+        # menu_style 은 자식 입력칸의 기본 우클릭 메뉴(잘라내기 / 붙여넣기)까지 테마 메뉴로 칠한다
         self.setStyleSheet(
             theme.button_style(t, px(12, s))
+            + theme.menu_style(t)
             + f"""
             QLabel {{
                 background: transparent;
@@ -590,7 +614,7 @@ class ClockWidget(QWidget):
 
         self.set_user_name(self._cfg.get("user_name", ""))
         self._set_remaining_style(warn=self.remaining_label.text().startswith("+"))
-        self._apply_task_dot(self.btn_task_clear.isEnabled())
+        self._apply_task_dot(self._has_task())
         if self._task_title:
             self._set_task_title(self._task_title)
         self._set_task_detail(self._task_detail, resize=False)
@@ -633,18 +657,21 @@ class ClockWidget(QWidget):
 
         self._orientation = orientation
         self._apply_size_limits()
-        self._grip.set_vertical(not horizontal)
+        self._grip_h.setVisible(horizontal)
         self._place_grip()
 
     def _apply_size_limits(self):
-        """세로: 폭 고정 / 높이 조절, 가로: 높이 고정 / 폭 조절"""
+        """세로: 폭 고정 / 높이 조절, 가로: 폭과 높이 조절 (높이는 최소 높이의 1.5배까지)"""
         min_height = self._min_height()
         # 이전 모드의 min/max 와 엇갈리지 않도록 범위를 먼저 풀고 다시 건다
         self.setMinimumSize(0, 0)
         if self._orientation == ORIENTATION_HORIZONTAL:
-            self.setMaximumSize(WIDGET_MAX_WIDTH_HORIZONTAL, min_height)
+            self.setMaximumSize(
+                WIDGET_MAX_WIDTH_HORIZONTAL,
+                int(min_height * HORIZONTAL_MAX_HEIGHT_RATIO),
+            )
             self.setMinimumSize(WIDGET_MIN_WIDTH_HORIZONTAL, min_height)
-            self.resize(self._cfg_width(), min_height)
+            self.resize(self._cfg_width(), self._cfg_horizontal_height(min_height))
         else:
             self.setMaximumSize(WIDGET_WIDTH, max(WIDGET_MAX_HEIGHT, min_height))
             self.setMinimumSize(WIDGET_WIDTH, min_height)
@@ -685,9 +712,10 @@ class ClockWidget(QWidget):
         widget_config.save_config(self._cfg)
 
     def save_size(self):
-        """조절한 크기 저장 - 세로 모드는 높이, 가로 모드는 폭"""
+        """조절한 크기 저장 - 세로 모드는 높이, 가로 모드는 폭과 높이 (세로 모드 높이와 따로)"""
         if self._orientation == ORIENTATION_HORIZONTAL:
             self._cfg["width"] = self.width()
+            self._cfg["horizontal_height"] = self.height()
         else:
             self._cfg["height"] = self.height()
         widget_config.save_config(self._cfg)
@@ -697,21 +725,25 @@ class ClockWidget(QWidget):
         self._place_grip()
 
     def _place_grip(self):
-        if self._orientation == ORIENTATION_HORIZONTAL:
-            self._grip.setGeometry(
-                self.width() - RESIZE_MARGIN,
-                CORNER_RADIUS,
-                RESIZE_MARGIN,
-                self.height() - CORNER_RADIUS * 2,
-            )
-        else:
-            self._grip.setGeometry(
-                CORNER_RADIUS,
-                self.height() - RESIZE_MARGIN,
-                self.width() - CORNER_RADIUS * 2,
-                RESIZE_MARGIN,
-            )
-        self._grip.raise_()
+        """하단(높이) 핸들은 두 모드 모두, 우측(폭) 핸들은 가로 모드만. 둥근 모서리 구간은 비워 둔다."""
+        self._grip_v.setGeometry(
+            CORNER_RADIUS,
+            self.height() - RESIZE_MARGIN,
+            self.width() - CORNER_RADIUS * 2,
+            RESIZE_MARGIN,
+        )
+        self._grip_h.setGeometry(
+            self.width() - RESIZE_MARGIN,
+            CORNER_RADIUS,
+            RESIZE_MARGIN,
+            self.height() - CORNER_RADIUS * 2,
+        )
+        self._grip_v.raise_()
+        self._grip_h.raise_()
+
+    def _set_grips_enabled(self, enabled: bool):
+        for grip in (self._grip_v, self._grip_h):
+            grip.set_enabled(enabled)
 
     def _set_remaining_style(self, warn: bool):
         t = theme.current()
@@ -751,7 +783,13 @@ class ClockWidget(QWidget):
             self.out_label.setText(f"종료 {task.end_at:%H:%M}")
             self._set_task_title(task.title)
             self._set_task_detail(task.detail)
-        self.btn_task_clear.setEnabled(task is not None)
+        registered = task is not None
+        self.btn_task.setText(
+            TASK_BUTTON_RELEASE if registered else TASK_BUTTON_REGISTER
+        )
+        self.btn_task.setToolTip("진행 중인 Task 해제" if registered else "Task 등록")
+        self.btn_task_edit.setEnabled(registered)
+        self.btn_task_clear.setEnabled(registered)
         self._apply_task_dot(task is not None)
 
     def _set_task_title(self, title: str):
@@ -830,7 +868,8 @@ class ClockWidget(QWidget):
         self._shortcuts = []
 
         handlers = {
-            "task_register": self.task_register_requested.emit,
+            "task_register": self._on_task_button,
+            "task_edit": self._on_edit_shortcut,
             "task_clear": self._on_clear_shortcut,
             "todo_focus": self.todo_panel.focus_input,
             "settings": self.settings_requested.emit,
@@ -844,9 +883,29 @@ class ClockWidget(QWidget):
             shortcut.activated.connect(handlers[action])
             self._shortcuts.append(shortcut)
 
+    def _has_task(self) -> bool:
+        return self.btn_task_clear.isEnabled()
+
+    def _on_task_button(self):
+        """[등록/해제] 버튼 / 단축키: Task 가 없으면 등록, 진행 중이면 해제(확인 창은 TaskPinApp)"""
+        if self._has_task():
+            self.task_release_requested.emit()
+        else:
+            self.task_register_requested.emit()
+
+    def _on_edit_shortcut(self):
+        if self._has_task():
+            self.task_edit_requested.emit()
+
     def _on_clear_shortcut(self):
-        if self.btn_task_clear.isEnabled():
+        if self._has_task():
             self.task_clear_requested.emit()
+
+    def _add_custom_tag(self, name: str, color: str) -> str:
+        """우패널 태그 메뉴 "+ 태그 추가…": 사용자 태그를 config.json 에 저장하고 id 를 돌려준다."""
+        tag_id = widget_config.add_custom_tag(self._cfg, name, color)
+        widget_config.save_config(self._cfg)
+        return tag_id
 
     def set_clock(self, now_text: str, remaining_text: str):
         self.now_label.setText(f"현재시간  {now_text}")
@@ -983,14 +1042,16 @@ class ClockWidget(QWidget):
             with open(path, "w", encoding="utf-8") as f:
                 f.write(text)
         except OSError as e:
-            QMessageBox.warning(self, "TODO 내보내기", f"파일을 저장하지 못했습니다.\n{e}")
+            QMessageBox.warning(
+                self, "TODO 내보내기", f"파일을 저장하지 못했습니다.\n{e}"
+            )
             return
         self._cfg["export_dir"] = os.path.dirname(path)
         widget_config.save_config(self._cfg)
 
     def set_locked(self, locked: bool):
         self._locked = locked
-        self._grip.set_enabled(not locked)
+        self._set_grips_enabled(not locked)
         self._cfg["locked"] = locked
         widget_config.save_config(self._cfg)
 
@@ -1029,7 +1090,7 @@ class ClockWidget(QWidget):
         """설정 가져오기: 새 값으로 바뀐 cfg 를 위젯 배치 / 상태에 다시 적용한다.
         (테마 / 단축키는 TaskPinApp 이 apply_appearance / apply_shortcuts 로 따로 건다)"""
         self._locked = bool(self._cfg.get("locked", False))
-        self._grip.set_enabled(not self._locked)
+        self._set_grips_enabled(not self._locked)
 
         self.opacity_slider.blockSignals(True)  # 슬라이더 변경이 다시 저장하지 않도록
         self.opacity_slider.setValue(round((1 - self._cfg_opacity()) * 100))

@@ -7,6 +7,36 @@ NOW = datetime(2026, 10, 26, 9, 5, 7)
 
 
 # ==================================================
+# 사용자 태그
+# ==================================================
+def test_custom_tags_filter_broken_entries():
+    cfg = {
+        "custom_tags": [
+            {"id": "custom-aa", "name": " Home ", "color": "#3FA7A0"},
+            {"id": "custom-aa", "name": "중복", "color": "#000000"},
+            {"id": "red", "name": "기본 키", "color": "#ff0000"},
+            {"id": "custom-bb", "name": "", "color": "#112233"},
+            {"id": "custom-cc", "name": "색 없음", "color": "blue"},
+            "broken",
+        ]
+    }
+    assert widget_config.custom_tags(cfg) == [
+        {"id": "custom-aa", "name": "Home", "color": "#3fa7a0"},
+        {"id": "custom-bb", "name": "#112233", "color": "#112233"},  # 이름이 없으면 색
+    ]
+    assert widget_config.custom_tags({"custom_tags": "x"}) == []
+    assert widget_config.custom_tags({}) == []
+
+
+def test_add_custom_tag_appends_with_new_id():
+    cfg = {}
+    first = widget_config.add_custom_tag(cfg, "Home", "#3fa7a0")
+    second = widget_config.add_custom_tag(cfg, "Work", "#112233")
+    assert first != second and first.startswith(widget_config.CUSTOM_TAG_PREFIX)
+    assert [t["name"] for t in widget_config.custom_tags(cfg)] == ["Home", "Work"]
+
+
+# ==================================================
 # 설정 내보내기 / 가져오기
 # ==================================================
 def test_export_writes_config_as_is(tmp_path):

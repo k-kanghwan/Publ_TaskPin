@@ -56,12 +56,21 @@ ALTER TABLE tasks ADD COLUMN detail TEXT NOT NULL DEFAULT '';
 PRAGMA user_version = 5;
 """
 
+# user_version 5 -> 6: Task 를 내린 방식 ('completed' 완료 / 'released' 해제)
+# 이전에 내린 Task 는 모두 "Task 완료" 버튼으로 내린 것이다
+_SCHEMA_V6 = """
+ALTER TABLE tasks ADD COLUMN cleared_as TEXT;
+UPDATE tasks SET cleared_as = 'completed' WHERE cleared_at IS NOT NULL;
+PRAGMA user_version = 6;
+"""
+
 _MIGRATIONS = (
     (1, _SCHEMA_V1),
     (2, _SCHEMA_V2),
     (3, _SCHEMA_V3),
     (4, _SCHEMA_V4),
     (5, _SCHEMA_V5),
+    (6, _SCHEMA_V6),
 )
 
 _conn = None

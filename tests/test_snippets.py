@@ -66,6 +66,7 @@ def test_shortcuts_fill_missing_and_broken():
     cfg = {"shortcuts": {"task_register": "F2", "task_clear": None, "todo_focus": ""}}
     assert widget_config.shortcuts(cfg) == {
         "task_register": "F2",
+        "task_edit": "R",
         "task_clear": "C",
         "todo_focus": "",  # 빈 문자열은 해제
         "settings": "Ctrl+,",
@@ -73,6 +74,14 @@ def test_shortcuts_fill_missing_and_broken():
     assert widget_config.shortcuts({"shortcuts": "깨짐"}) == (
         widget_config.DEFAULT_SHORTCUTS
     )
+
+
+def test_new_shortcut_default_yields_to_user_key():
+    # v0.1.9 에 생긴 task_edit(R) 를 사용자가 이미 다른 동작에 쓰고 있으면 비워 둔다
+    cfg = {"shortcuts": {"todo_focus": "R"}}
+    result = widget_config.shortcuts(cfg)
+    assert result["todo_focus"] == "R"
+    assert result["task_edit"] == ""
 
 
 def test_load_config_does_not_share_defaults(tmp_path, monkeypatch):

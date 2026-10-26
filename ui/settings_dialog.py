@@ -3,7 +3,8 @@
 좌측 사이드바에서 탭을 고르고 우측 카드에서 바로 바꾼다 (확인 버튼 없이 즉시 config.json 에 저장).
   - Keyboard Shortcuts : 위젯 단축키. 다른 동작과 겹치면 저장하지 않고 경고
   - Snippets           : `:트리거:` -> 문구 목록. 빈 칸 / 중복 트리거는 저장하지 않고 표시만
-  - Appearance         : 테마 / 강조색 / 배경색 / 글자도 함께 투명 / 폰트, 좌·우패널 글자 크기, TODO 글자색.
+  - Appearance         : 테마 / 강조색 / 배경색 / 글자도 함께 투명 / 폰트, 좌·우패널 글자 크기, TODO 글자색,
+                         사용자 태그(이름 / 색 변경, 추가, 삭제 - config.json custom_tags).
                          바꾸면 appearance_changed 로 위젯에 바로 반영한다.
   - Application        : 설정 내보내기(폴더를 고르면 config.json 을 그대로 저장) / 가져오기(바로 적용)
 
@@ -20,7 +21,6 @@ from PySide6.QtCore import QSize, QStandardPaths, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QFontDatabase, QIcon, QKeySequence, QPixmap
 from PySide6.QtWidgets import (
     QButtonGroup,
-    QColorDialog,
     QComboBox,
     QFileDialog,
     QFrame,
@@ -37,7 +37,9 @@ from PySide6.QtWidgets import (
 
 from manager import os_win, snippets, widget_config
 from ui import theme
+from ui.color_dialog import pick_color
 from ui.confirm_dialog import ConfirmDialog
+from ui.tag_dialog import TagDialog
 
 
 WINDOW_TITLE = "Task알림 설정"
@@ -62,8 +64,9 @@ TABS = [
 
 # (동작, 이름, 보조설명) - 동작 키는 widget_config.DEFAULT_SHORTCUTS 와 같다
 SHORTCUT_ROWS = [
-    ("task_register", "Task 등록", "Task 등록 창을 엽니다"),
-    ("task_clear", "Task 완료", "등록한 Task를 완료합니다"),
+    ("task_register", "Task 등록/해제", "Task가 없으면 등록, 진행 중이면 해제합니다"),
+    ("task_edit", "Task 수정", "진행 중인 Task를 수정합니다"),
+    ("task_clear", "Task 완료", "진행 중인 Task를 완료합니다"),
     ("todo_focus", "할 일 추가", "할 일 입력칸으로 커서 이동"),
     ("settings", "설정 열기", "이 설정창을 엽니다"),
 ]
@@ -100,6 +103,7 @@ def _settings_style(t: theme.Theme) -> str:
     return (
         theme.button_style(t)
         + theme.popup_form_style(t)
+        + theme.menu_style(t)  # 입력칸 우클릭 메뉴
         + f"""
     QWidget#settings {{ background: {window_bg}; }}
     QLabel {{
@@ -245,17 +249,6 @@ class _SnippetRow(QWidget):
         layout.addWidget(btn_remove)
 
 
-def _pick_color(initial: str, title: str) -> str:
-    """색 선택 창. 취소하면 "".
-    설정창 스타일시트(밝은 글자)가 번지지 않도록 부모 없이 띄우고, 설정창(항상 위)보다 위에 둔다."""
-    dialog = QColorDialog(QColor(initial))
-    dialog.setWindowTitle(title)
-    dialog.setWindowFlag(Qt.WindowStaysOnTopHint, True)
-    if dialog.exec() != QColorDialog.Accepted:
-        return ""
-    return dialog.selectedColor().name()
-
-
 class _ColorButton(QPushButton):
     """색 칩 + 값(#rrggbb / 테마 따름). 누르면 색 선택 창을 띄워 picked 로 알린다."""
 
@@ -279,9 +272,51 @@ class _ColorButton(QPushButton):
         self.setText(value or "테마 따름")
 
     def _pick(self):
-        color = _pick_color(self._color, self._title)
+        color = pick_color(self._color, self._title)
         if color:
             self.picked.emit(color)
+
+
+class _TagRow(QWidget):
+    """사용자 태그 한 줄: [색] 이름 [✕]"""
+
+    changed = Signal(object)  # _TagRow - 이름 / 색을 바꿈
+    removed = Signal(object)  # _TagRow
+
+    def __init__(self, tag: dict, parent=None):
+        super().__init__(parent)
+        self.tag_id = tag["id"]
+        self.color = tag["color"]
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+
+        self.color_button = _ColorButton("태그 색")
+        self.color_button.set_color(self.color, "")
+        self.color_button.picked.connect(self._on_color)
+        self.name_edit = QLineEdit(tag["name"])
+        self.name_edit.setMaxLength(widget_config.CUSTOM_TAG_NAME_MAX)
+        self.name_edit.setPlaceholderText("이름")
+        self.name_edit.editingFinished.connect(lambda: self.changed.emit(self))
+
+        btn_remove = QPushButton("✕")
+        btn_remove.setObjectName("remove")
+        btn_remove.setFixedSize(20, 20)
+        btn_remove.setCursor(Qt.PointingHandCursor)
+        btn_remove.setToolTip("삭제 (이 태그를 붙인 할 일은 태그 없음으로 보입니다)")
+        btn_remove.clicked.connect(lambda: self.removed.emit(self))
+
+        layout.addWidget(self.color_button)
+        layout.addWidget(self.name_edit, 1)
+        layout.addWidget(btn_remove)
+
+    def _on_color(self, color: str):
+        self.color = color
+        self.color_button.set_color(color, "")
+        self.changed.emit(self)
+
+    def name(self) -> str:
+        return self.name_edit.text().strip()
 
 
 class SettingsDialog(QWidget):
@@ -645,6 +680,30 @@ class SettingsDialog(QWidget):
             self._todo_color_button,
             self._reset_button(lambda: self._set_appearance("todo_text_color", "")),
         )
+
+        # ---- 사용자 태그 (우패널 우클릭 "태그" 의 "태그 없음" 아래에 보인다) ----
+        card_layout = self._add_group(groups, "TODO 태그")
+        tags_box = QWidget()
+        self._tag_layout = QVBoxLayout(tags_box)
+        self._tag_layout.setContentsMargins(0, 10, 0, 10)
+        self._tag_layout.setSpacing(6)
+        self._tag_empty = QLabel(
+            "추가한 태그가 없습니다. 할 일 우클릭 → 태그 → '+ 태그 추가…'로도 추가할 수 있습니다."
+        )
+        self._tag_empty.setObjectName("sub")
+        self._tag_empty.setWordWrap(True)
+        self._tag_layout.addWidget(self._tag_empty)
+        btn_add_tag = QPushButton("+ 태그 추가")
+        btn_add_tag.setObjectName("small")
+        btn_add_tag.setCursor(Qt.PointingHandCursor)
+        btn_add_tag.clicked.connect(self._add_tag)
+        add_row = QHBoxLayout()
+        add_row.addWidget(btn_add_tag)
+        add_row.addStretch(1)
+        self._tag_layout.addLayout(add_row)
+        card_layout.addWidget(tags_box)
+        self._tag_rows = []
+        self._rebuild_tag_rows()
         groups.addStretch(1)
 
         btn_reset_all = QPushButton("전체 기본값으로")
@@ -660,6 +719,50 @@ class SettingsDialog(QWidget):
 
         self._refresh_appearance()
         return page
+
+    # ---- 사용자 태그 ----
+    def _rebuild_tag_rows(self):
+        for row in self._tag_rows:
+            self._tag_layout.removeWidget(row)
+            row.deleteLater()
+        self._tag_rows = []
+        tags = widget_config.custom_tags(self._cfg)
+        for idx, tag in enumerate(tags):
+            row = _TagRow(tag)
+            row.changed.connect(self._on_tag_changed)
+            row.removed.connect(self._remove_tag)
+            # 빈 안내 라벨 다음, "+ 태그 추가" 줄 앞
+            self._tag_layout.insertWidget(1 + idx, row)
+            self._tag_rows.append(row)
+        self._tag_empty.setVisible(not tags)
+
+    def _save_tags(self, tags: list):
+        """위젯 쪽("+ 태그 추가…")에서 그사이 추가한 태그를 지우지 않도록 cfg 의 목록을 고쳐서 넘긴다."""
+        self._cfg["custom_tags"] = widget_config.custom_tags({"custom_tags": tags})
+        widget_config.save_config(self._cfg)
+        self.appearance_changed.emit()  # 위젯이 태그 막대를 다시 그린다
+
+    def _on_tag_changed(self, row: _TagRow):
+        tags = widget_config.custom_tags(self._cfg)
+        for tag in tags:
+            if tag["id"] == row.tag_id:
+                tag["name"], tag["color"] = row.name() or row.color, row.color
+        if not row.name():
+            row.name_edit.setText(row.color)  # 이름을 비우면 색 코드로
+        self._save_tags(tags)
+
+    def _remove_tag(self, row: _TagRow):
+        self._save_tags(
+            [t for t in widget_config.custom_tags(self._cfg) if t["id"] != row.tag_id]
+        )
+        self._rebuild_tag_rows()
+
+    def _add_tag(self):
+        dialog = TagDialog(parent=self)
+        if dialog.exec_over(self):
+            widget_config.add_custom_tag(self._cfg, dialog.name(), dialog.color())
+            self._save_tags(self._cfg["custom_tags"])
+            self._rebuild_tag_rows()
 
     def _add_group(self, groups: QVBoxLayout, title: str) -> QVBoxLayout:
         """그룹 제목 + 카드. 카드 레이아웃을 돌려준다."""
@@ -734,7 +837,7 @@ class SettingsDialog(QWidget):
         )
 
     def _pick_accent(self):
-        color = _pick_color(widget_config.appearance(self._cfg)["accent"], "강조색")
+        color = pick_color(widget_config.appearance(self._cfg)["accent"], "강조색")
         if color:
             self._set_appearance("accent", color)
 
@@ -874,7 +977,9 @@ class SettingsDialog(QWidget):
         new = widget_config.read_import(path)
         if new is None:
             self._show_note(
-                self._import_note, "Task알림 설정 파일이 아니거나 읽지 못했습니다.", warn=True
+                self._import_note,
+                "Task알림 설정 파일이 아니거나 읽지 못했습니다.",
+                warn=True,
             )
             return
         dialog = ConfirmDialog(
@@ -901,6 +1006,7 @@ class SettingsDialog(QWidget):
         self._snippet_rows = []
         for trigger, text in snippets.from_config(self._cfg).items():
             self._append_snippet_row(trigger, text)
+        self._rebuild_tag_rows()
         self.apply_theme()
 
     # ==================================================
@@ -908,6 +1014,7 @@ class SettingsDialog(QWidget):
     # ==================================================
     def show_front(self):
         """띄우고(이미 떠 있으면 그대로) 앞으로 올린다."""
+        self._rebuild_tag_rows()  # 닫혀 있는 동안 위젯 태그 메뉴에서 추가했을 수 있다
         self.showNormal()
         os_win.set_dark_title_bar(int(self.winId()), self._look.dark)
         self.raise_()

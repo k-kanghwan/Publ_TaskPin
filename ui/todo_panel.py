@@ -11,6 +11,8 @@
   선택한 행을 끌면 선택 항목이 모두 함께 옮겨진다.
   (계층 규칙은 manager/todo_tree 참고 - 상위를 완료하면 하위도 완료, 상위를 지우면 하위는 한 단계 위로)
 - 우클릭 메뉴: 완료 항목 정리 / TODO 내보내기 / 추가 / 삭제 / 태그(체크박스 왼쪽 색 막대)
+  여러 개를 선택한 채 우클릭하면 선택 항목 전체에 적용된다.
+  태그는 기본 6색 + 사용자 태그(config.json custom_tags, "+ 태그 추가…" / 설정창에서 관리)
 - 형제끼리는 미완료 -> 완료 순, 리마인더 항목이 시각순으로 위에 고정되고 나머지는 사용자가 정한 순서
 
 드래그는 QDrag(Windows OLE DoDragDrop)를 쓰지 않고 행의 마우스 grab 으로 직접 처리한다.
@@ -39,6 +41,7 @@ from PySide6.QtWidgets import (
 from manager import todo_store, todo_tree
 from ui import theme
 from ui.reminder_picker import ReminderPicker
+from ui.tag_dialog import TagDialog
 from ui.text_input import expand_snippet_later, py_cursor, utf16_pos
 from ui.theme import px
 
@@ -46,8 +49,12 @@ from ui.theme import px
 TRIGGER = "(@"
 ROW_HOVER_ALPHA = 24  # 마우스를 올린 행 배경 (테마의 덧칠 색)
 ROW_RADIUS = 4
-SELECTED_BORDER = 1.5  # 선택한 행의 강조색 테두리 두께(px)
-AUTO_SCROLL_MARGIN = 24  # 드래그 중 목록 위/아래 끝(과 그 바깥)에서 자동 스크롤되는 영역(px)
+SELECTED_BORDER = 2.0  # 선택한 행의 강조색 테두리 두께(px)
+DROP_BOX_BORDER = 2  # 드래그 중 하위로 들어갈 행 테두리(px)
+DROP_LINE_WIDTH = 3  # 드래그 중 행 사이에 놓일 자리 표시선(px)
+AUTO_SCROLL_MARGIN = (
+    24  # 드래그 중 목록 위/아래 끝(과 그 바깥)에서 자동 스크롤되는 영역(px)
+)
 AUTO_SCROLL_MS = 30  # 자동 스크롤 주기 - 커서를 멈춰 두어도 계속 스크롤된다
 AUTO_SCROLL_MAX_STEP = 20  # 끝에서 멀리 벗어날수록 빠르게, 한 번에 최대 이만큼(px)
 DRAG_GHOST_OPACITY = 0.8  # 끌고 가는 행 그림
@@ -219,7 +226,9 @@ class TodoRow(QWidget):
     toggled = Signal(str, bool)
     deleted = Signal(str)
     edited = Signal(str, str)
-    clicked = Signal(object, object)  # TodoRow, Qt.KeyboardModifiers (드래그 없이 눌렀다 뗌)
+    clicked = Signal(
+        object, object
+    )  # TodoRow, Qt.KeyboardModifiers (드래그 없이 눌렀다 뗌)
     # 드래그: 시작 후의 이동 / 놓음 / Esc 취소는 이 행의 마우스 grab 으로 받아 패널에 넘긴다
     drag_started = Signal(object)  # TodoRow
     drag_moved = Signal()
@@ -227,11 +236,19 @@ class TodoRow(QWidget):
     drag_canceled = Signal()
 
     def __init__(
-        self, item: dict, depth: int, reminders_provider, snippets_provider, parent=None
+        self,
+        item: dict,
+        depth: int,
+        reminders_provider,
+        snippets_provider,
+        tag_color,
+        parent=None,
     ):
+        """tag_color: (태그 키) -> "#rrggbb" / None (태그 없음 또는 지워진 사용자 태그)"""
         super().__init__(parent)
         self.item = item
         self.depth = depth  # 레벨 (최상위 0)
+        self._tag_color = tag_color
         self._editing = False
         self._hover = False
         self._selected = False
@@ -304,9 +321,9 @@ class TodoRow(QWidget):
         t = theme.current()
         s = t.todo_scale
         done = self.item["done"]
-        tag = TAG_COLORS.get(self.item.get("tag"))
+        tag_color = self._tag_color(self.item.get("tag"))
         self.tag_bar.setStyleSheet(
-            f"background: {tag[1] if tag else 'transparent'}; border: none;"
+            f"background: {tag_color or 'transparent'}; border: none;"
             f" border-radius: {TAG_BAR_WIDTH // 2}px;"
         )
         emoji_style = f"font-size:{px(EMOJI_PX, s)}px;"
@@ -442,15 +459,23 @@ class TodoPanel(QWidget):
 
     export_requested = Signal(bool)  # 우클릭 "TODO 내보내기" - True 면 보관 항목 전체
 
-    def __init__(self, snippets_provider, parent=None):
-        """snippets_provider: () -> {트리거: 문구} (입력칸 스니펫 치환)"""
+    def __init__(
+        self, snippets_provider, custom_tags_provider, add_custom_tag, parent=None
+    ):
+        """snippets_provider: () -> {트리거: 문구} (입력칸 스니펫 치환)
+        custom_tags_provider: () -> [{"id", "name", "color"}] (사용자 태그, widget_config.custom_tags)
+        add_custom_tag: (이름, 색) -> 새 태그 id (cfg 에 추가하고 저장)"""
         super().__init__(parent)
         self._snippets_provider = snippets_provider
+        self._custom_tags_provider = custom_tags_provider
+        self._add_custom_tag = add_custom_tag
         self._items = todo_store.load_todos()
         todo_tree.detach_orphans(self._items)
         self._rows = []
         self._selected = set()  # 선택한 항목 id
-        self._anchor_id = None  # 마지막으로 클릭한 항목 (Shift 범위 기준 / 하위 추가 대상)
+        self._anchor_id = (
+            None  # 마지막으로 클릭한 항목 (Shift 범위 기준 / 하위 추가 대상)
+        )
 
         # 드래그 중 상태 (_begin_drag ~ _end_drag)
         self._drag_ids = None  # 옮길 항목 id (화면 순서) / None 이면 드래그 중 아님
@@ -511,7 +536,7 @@ class TodoPanel(QWidget):
         )
         self.drop_line.setStyleSheet(f"background: {t.accent}; border: none;")
         self.drop_box.setStyleSheet(
-            f"background: transparent; border: 1px solid {t.accent};"
+            f"background: transparent; border: {DROP_BOX_BORDER}px solid {t.accent};"
             f" border-radius: {ROW_RADIUS}px;"
         )
         self.refresh_rows()
@@ -538,9 +563,20 @@ class TodoPanel(QWidget):
     def _find(self, item_id: str):
         return next((item for item in self._items if item["id"] == item_id), None)
 
+    def _tag_color(self, key):
+        """태그 키의 색. 기본 태그 / 사용자 태그 순으로 찾고, 없으면 None"""
+        if key in TAG_COLORS:
+            return TAG_COLORS[key][1]
+        return next(
+            (tag["color"] for tag in self._custom_tags_provider() if tag["id"] == key),
+            None,
+        )
+
     def _selected_ids(self) -> list:
         """선택한 항목 id (화면 순서)"""
-        return [row.item["id"] for row in self._rows if row.item["id"] in self._selected]
+        return [
+            row.item["id"] for row in self._rows if row.item["id"] in self._selected
+        ]
 
     # ==================================================
     # 변경 (모두 저장까지 수행)
@@ -657,7 +693,9 @@ class TodoPanel(QWidget):
         # 리마인더 없는 항목은 그 뒤에 self._items 순서(= 드래그로 정한 순서) 그대로 (안정 정렬)
         ordered = todo_tree.flatten(self._items, self._sort_key)
         for idx, (item, depth) in enumerate(ordered):
-            row = TodoRow(item, depth, self.reminders, self._snippets_provider)
+            row = TodoRow(
+                item, depth, self.reminders, self._snippets_provider, self._tag_color
+            )
             row.toggled.connect(self.set_done)
             row.deleted.connect(self.delete_item)
             row.edited.connect(self.edit_item)
@@ -717,7 +755,9 @@ class TodoPanel(QWidget):
         for row in self._rows:
             row.set_selected(row.item["id"] in self._selected)
         # 선택한 채로 입력하면 하위로 들어간다는 것을 입력칸에 보여준다
-        self.input.setPlaceholderText(PLACEHOLDER_CHILD if self._selected else PLACEHOLDER)
+        self.input.setPlaceholderText(
+            PLACEHOLDER_CHILD if self._selected else PLACEHOLDER
+        )
 
     # ==================================================
     # 우클릭 메뉴
@@ -761,7 +801,9 @@ class TodoPanel(QWidget):
         tag_menu.setStyleSheet(menu.styleSheet())
         tag_menu.setEnabled(bool(self._selected))
         tags = {item.get("tag") for item in self._items if item["id"] in self._selected}
-        current = tags.pop() if len(tags) == 1 else ""  # 선택 항목이 모두 같은 태그일 때만 표시
+        current = (
+            tags.pop() if len(tags) == 1 else ""
+        )  # 선택 항목이 모두 같은 태그일 때만 표시
         for key in todo_store.TAGS:
             name, color = TAG_COLORS[key]
             tag_menu.addAction(
@@ -771,12 +813,24 @@ class TodoPanel(QWidget):
             )
         tag_menu.addSeparator()
         tag_menu.addAction(
-            _tag_icon("", t.text_sub),
-            "태그 없음" + ("  ✓" if current is None else ""),
-            lambda: self.set_tag(None),
+            _tag_icon("", t.menu_disabled), "태그 없음", lambda: self.set_tag(None)
         )
+        # 태그 없음 아래: 사용자가 추가한 태그 + 추가
+        for tag in self._custom_tags_provider():
+            tag_menu.addAction(
+                _tag_icon(tag["color"]),
+                tag["name"] + ("  ✓" if tag["id"] == current else ""),
+                lambda _=False, k=tag["id"]: self.set_tag(k),
+            )
+        tag_menu.addAction("+ 태그 추가…", self._create_tag)
 
         menu.exec(event.globalPos())
+
+    def _create_tag(self):
+        """태그 메뉴 "+ 태그 추가…": 이름 / 색을 골라 사용자 태그로 저장하고 선택 항목에 붙인다."""
+        dialog = TagDialog(parent=self)
+        if dialog.exec_over(self.window()):
+            self.set_tag(self._add_custom_tag(dialog.name(), dialog.color()))
 
     # ==================================================
     # 드래그로 순서 / 레벨 변경
@@ -919,7 +973,12 @@ class TodoPanel(QWidget):
         if mark is not None and mark[0] == "line":
             _, y, depth = mark
             x = _indent(depth)
-            self.drop_line.setGeometry(x, y - 1, self.container.width() - 4 - x, 2)
+            self.drop_line.setGeometry(
+                x,
+                y - DROP_LINE_WIDTH // 2,
+                self.container.width() - 4 - x,
+                DROP_LINE_WIDTH,
+            )
             self.drop_line.raise_()
             self.drop_line.show()
         else:
@@ -938,7 +997,9 @@ class TodoPanel(QWidget):
         끝에서 멀어질수록 빠르게. 스크롤되면 valueChanged 로 놓을 자리가 다시 계산된다."""
         viewport = self.scroll.viewport()
         pos = viewport.mapFromGlobal(QCursor.pos())
-        if not (-AUTO_SCROLL_MARGIN <= pos.x() <= viewport.width() + AUTO_SCROLL_MARGIN):
+        if not (
+            -AUTO_SCROLL_MARGIN <= pos.x() <= viewport.width() + AUTO_SCROLL_MARGIN
+        ):
             return
         if pos.y() < AUTO_SCROLL_MARGIN:
             depth = AUTO_SCROLL_MARGIN - pos.y()

@@ -1,7 +1,8 @@
 """Task 등록 기록 (SQLite tasks 테이블)
 
 등록할 때마다 새 행을 추가해 기록을 남기고, 위젯에는 가장 최근 행 하나만 표시한다.
-"Task 완료"는 행을 지우지 않고 cleared_at 을 기록한다. 가장 최근 행이 완료됐으면 표시할 Task 가 없다.
+"수정"은 그 행을 고친다. "완료" / "해제"는 행을 지우지 않고 cleared_at 과 cleared_as(내린 방식)를 기록한다.
+가장 최근 행이 내려졌으면 표시할 Task 가 없다.
 """
 
 import sqlite3
@@ -11,6 +12,9 @@ from datetime import datetime
 from manager import db
 
 DATETIME_FMT = "%Y-%m-%d %H:%M"
+# cleared_as: Task 를 내린 방식
+COMPLETED = "completed"  # "완료" 버튼
+RELEASED = "released"  # "해제" 버튼 (진행 중에 그만둠)
 
 
 @dataclass(frozen=True)
@@ -44,23 +48,49 @@ def register(title: str, detail: str, start_at: datetime, end_at: datetime):
     return Task(cur.lastrowid, title, start_at, end_at, detail)
 
 
-def clear(task_id: int) -> bool:
-    """ "Task 완료": 완료 시각을 기록한다. 성공 여부를 반환한다."""
+def update(task_id: int, title: str, detail: str, start_at: datetime, end_at: datetime):
+    """ "수정": 그 Task 행을 고치고 고친 Task 를 돌려준다. 저장에 실패하면 None"""
     c = db.conn()
     try:
         with c:
             c.execute(
-                "UPDATE tasks SET cleared_at = ? WHERE id = ?",
-                (datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S"), task_id),
+                "UPDATE tasks SET title = ?, detail = ?, start_at = ?, end_at = ?"
+                " WHERE id = ?",
+                (
+                    title,
+                    detail,
+                    start_at.strftime(DATETIME_FMT),
+                    end_at.strftime(DATETIME_FMT),
+                    task_id,
+                ),
             )
     except sqlite3.Error as e:
-        print(f"Task 완료 실패: {e}")
+        print(f"Task 수정 실패: {e}")
+        return None
+    return Task(task_id, title, start_at, end_at, detail)
+
+
+def clear(task_id: int, kind: str) -> bool:
+    """ "완료" / "해제": 내린 시각과 방식(COMPLETED / RELEASED)을 기록한다. 성공 여부를 반환한다."""
+    c = db.conn()
+    try:
+        with c:
+            c.execute(
+                "UPDATE tasks SET cleared_at = ?, cleared_as = ? WHERE id = ?",
+                (
+                    datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S"),
+                    kind,
+                    task_id,
+                ),
+            )
+    except sqlite3.Error as e:
+        print(f"Task 내리기 실패: {e}")
         return False
     return True
 
 
 def latest():
-    """가장 최근에 등록한 Task. 없거나, 완료됐거나, 읽지 못하면 None"""
+    """가장 최근에 등록한 Task. 없거나, 완료/해제됐거나, 읽지 못하면 None"""
     try:
         row = (
             db.conn()

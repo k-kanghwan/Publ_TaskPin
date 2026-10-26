@@ -8,6 +8,7 @@ import copy
 import json
 import os
 import re
+import uuid
 from datetime import datetime
 
 from manager import paths, snippets
@@ -17,7 +18,8 @@ EXPORT_PREFIX = "TaskPin-config"  # 설정 내보내기 파일 이름
 
 # 위젯 단축키 (위젯 창이 활성일 때만 동작). 값은 QKeySequence PortableText, "" 이면 해제
 DEFAULT_SHORTCUTS = {
-    "task_register": "E",  # Task 등록
+    "task_register": "E",  # Task 등록 / 진행 중이면 해제 (좌패널 [등록/해제] 버튼)
+    "task_edit": "R",  # Task 수정
     "task_clear": "C",  # Task 완료
     "todo_focus": "A",  # 할 일 입력칸으로 커서 이동
     "settings": "Ctrl+,",  # 설정 열기
@@ -25,7 +27,7 @@ DEFAULT_SHORTCUTS = {
 
 # 설정창 Appearance 탭. 색은 "#rrggbb", "" 이면 테마를 따른다
 THEMES = ("dark", "light", "system")
-# 좌패널은 폭 / 가로 모드 높이가 고정이라 크게 키우지 않는다
+# 좌패널은 폭이 고정이라 크게 키우지 않는다
 LEFT_SCALES = (90, 100, 115)
 TODO_SCALES = (90, 100, 115, 130)
 DEFAULT_APPEARANCE = {
@@ -46,14 +48,20 @@ DEFAULT_CONFIG = {
     "visible": True,  # 위젯 표시 여부
     "opacity": 1.0,  # 위젯 불투명도 (0.2 ~ 1.0) - 슬라이더에는 투명도(1 - 값)로 표시
     "height": None,  # 세로 모드 높이(px) / None 이면 최소 높이 (좌우는 고정)
-    "width": None,  # 가로 모드 폭(px) / None 이면 최소 폭 (상하는 고정)
+    "width": None,  # 가로 모드 폭(px) / None 이면 최소 폭
+    "horizontal_height": None,  # 가로 모드 높이(px) / None 이면 최소 높이 (최소의 1.5배까지)
     "orientation": "vertical",  # "vertical": 세로 / "horizontal": 가로(좌 시간, 우 TODO)
     "always_on_top": False,  # True: 항상 위 / False: 항상 아래(바탕화면)
     "user_name": "",  # 위젯 헤더에 표시할 사용자 이름 (더블클릭으로 편집)
     "shortcuts": DEFAULT_SHORTCUTS,  # 설정창 Keyboard Shortcuts 탭
     "snippets": snippets.DEFAULT_SNIPPETS,  # 설정창 Snippets 탭 [[":idea:", "💡"], ...]
     "appearance": DEFAULT_APPEARANCE,  # 설정창 Appearance 탭
+    # 사용자가 추가한 TODO 태그 [{"id": "custom-…", "name": "Home", "color": "#rrggbb"}]
+    # (우패널 태그 메뉴 "+ 태그 추가…" / 설정창 Appearance 에서 이름·색 변경, 삭제)
+    "custom_tags": [],
 }
+CUSTOM_TAG_PREFIX = "custom-"  # 사용자 태그 id (todos.tag 에 저장되는 값)
+CUSTOM_TAG_NAME_MAX = 20
 # 기본값은 없지만 저장될 수 있는 키 (설정 가져오기에서도 받는다)
 EXTRA_KEYS = ("export_dir",)  # TODO / 설정 내보내기 마지막 폴더
 
@@ -81,7 +89,48 @@ def shortcuts(cfg: dict) -> dict:
     for action, default in DEFAULT_SHORTCUTS.items():
         value = saved.get(action, default)
         result[action] = value if isinstance(value, str) else default
+    # 새로 생긴 동작의 기본 키가 사용자가 이미 다른 동작에 쓰는 키면 비워 둔다 (겹치지 않게)
+    for action in DEFAULT_SHORTCUTS:
+        if action not in saved and any(
+            other != action and other in saved and result[other] == result[action]
+            for other in result
+        ):
+            result[action] = ""
     return result
+
+
+def custom_tags(cfg: dict) -> list:
+    """사용자 태그 [{"id", "name", "color"}]. 깨진 항목 / 중복 id 는 뺀다."""
+    saved = cfg.get("custom_tags")
+    if not isinstance(saved, list):
+        return []
+    result, seen = [], set()
+    for tag in saved:
+        if not isinstance(tag, dict):
+            continue
+        tag_id, name = tag.get("id"), tag.get("name")
+        color = _color(tag.get("color"), "")
+        if (
+            isinstance(tag_id, str)
+            and tag_id.startswith(CUSTOM_TAG_PREFIX)
+            and tag_id not in seen
+            and color
+        ):
+            seen.add(tag_id)
+            name = name.strip()[:CUSTOM_TAG_NAME_MAX] if isinstance(name, str) else ""
+            result.append({"id": tag_id, "name": name or color, "color": color})
+    return result
+
+
+def add_custom_tag(cfg: dict, name: str, color: str) -> str:
+    """사용자 태그를 cfg 에 추가하고 id 를 돌려준다. (저장은 부르는 쪽에서)"""
+    tags = custom_tags(cfg)
+    tag_id = f"{CUSTOM_TAG_PREFIX}{uuid.uuid4().hex[:8]}"
+    tags.append(
+        {"id": tag_id, "name": name.strip()[:CUSTOM_TAG_NAME_MAX], "color": color}
+    )
+    cfg["custom_tags"] = custom_tags({"custom_tags": tags})
+    return tag_id
 
 
 def _color(value, default: str) -> str:

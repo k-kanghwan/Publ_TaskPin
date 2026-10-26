@@ -97,15 +97,21 @@ def test_migrate_v2_adds_parent_id(tmp_path):
 
 
 def test_tag_is_saved_and_invalid_tag_dropped(temp_db):
-    items = _items("a", "b")
+    items = _items("a", "b", "c")
     items[0]["tag"] = "blue"
+    items[1]["tag"] = "custom-1a2b3c4d"  # 사용자 태그 키도 그대로
     todo_store.save_todos(items)
-    assert [item["tag"] for item in todo_store.load_todos()] == ["blue", None]
+    assert [item["tag"] for item in todo_store.load_todos()] == [
+        "blue",
+        "custom-1a2b3c4d",
+        None,
+    ]
 
     with sqlite3.connect(temp_db) as c:
-        c.execute("UPDATE todos SET tag = 'purple-ish' WHERE id = ?", (items[0]["id"],))
+        c.execute("UPDATE todos SET tag = ? WHERE id = ?", ("x" * 65, items[0]["id"]))
+        c.execute("UPDATE todos SET tag = '' WHERE id = ?", (items[1]["id"],))
     c.close()
-    assert todo_store.load_todos()[0]["tag"] is None
+    assert [item["tag"] for item in todo_store.load_todos()] == [None, None, None]
 
 
 def test_migrate_v3_adds_tag(tmp_path):

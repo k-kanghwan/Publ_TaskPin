@@ -1,10 +1,10 @@
-"""`Task 등록` 버튼으로 뜨는 Task 등록 창
+"""좌패널 [등록] / [수정] 버튼으로 뜨는 Task 등록 / 수정 창
 
 왼쪽: 업무명(비워도 됨) / 시작 / 소요 / 종료, 오른쪽: 상세 업무(여러 줄, 비워도 됨)
   - 상세 업무는 위젯의 업무명 배지 위에 표시된다.
   - 업무명에서도 `:idea:` 같은 스니펫 트리거를 문구로 바꾼다.
-  - 시작은 오늘 00:00 ~ 23:45 (15분 단위), 기본값은 현재시간을 15분 단위로 올린 값
-    (06:36 -> 06:45 / 23:45 를 넘으면 다음 날 00:00)
+  - 시작은 그날 00:00 ~ 23:45 (15분 단위). 등록 기본값은 현재시간을 15분 단위로 올린 값
+    (06:36 -> 06:45 / 23:45 를 넘으면 다음 날 00:00), 수정은 그 Task 의 값
   - 소요를 바꾸면 종료를, 종료를 바꾸면 소요를 다시 계산한다.
   - 시작을 바꾸면 소요는 그대로 두고 종료 목록을 다시 만든다.
 소요와 종료 목록은 같은 간격(시작 + 0:15 ~ 12:00)이라 두 콤보의 index 가 항상 같다.
@@ -109,11 +109,13 @@ class _DetailEdit(QPlainTextEdit):
 
 
 class TaskPicker(QFrame):
-    picked = Signal(str, str, object, object)  # 업무명, 상세, 시작 datetime, 종료 datetime
+    picked = Signal(
+        str, str, object, object
+    )  # 업무명, 상세, 시작 datetime, 종료 datetime
     closed = Signal()  # 확인/취소와 관계없이 닫힐 때
 
     def __init__(self, task, snippets_provider, parent=None):
-        """task: 오늘 시작한 Task 가 있으면 그 값으로 채운다 (None 이면 기본값)
+        """task: None 이면 새 등록(기본값), 있으면 그 Task 를 수정 (값을 채우고 제목이 "Task 수정")
         snippets_provider: () -> {트리거: 문구} (업무명 스니펫 치환)"""
         super().__init__(parent, Qt.Tool | Qt.FramelessWindowHint)
         self.setAttribute(Qt.WA_DeleteOnClose, True)
@@ -124,16 +126,16 @@ class TaskPicker(QFrame):
         self._accepted = False
         self._snippets_provider = snippets_provider
         self._theme = theme.current()
+        self._editing = task is not None
 
-        now = datetime.now().astimezone()
-        self._day = now.date()
-        if task is not None and task.start_at.date() == self._day:
+        if self._editing:
             title, detail, start = task.title, task.detail, task.start_at
             minutes = task_clock.minutes_between(task.start_at, task.end_at)
         else:
-            title, detail, start = "", "", task_clock.ceil_slot(now)
-            self._day = start.date()
+            title, detail = "", ""
+            start = task_clock.ceil_slot(datetime.now().astimezone())
             minutes = task_clock.DEFAULT_DURATION_MIN
+        self._day = start.date()
 
         self._build_ui()
         self.title_edit.setText(title)
@@ -194,13 +196,14 @@ class TaskPicker(QFrame):
             QPlainTextEdit:focus {{ border: 1px solid {t.overlay(90)}; }}
             """
             + theme.popup_form_style(t)
+            + theme.menu_style(t)  # 입력칸 우클릭 메뉴
         )
 
         root = QVBoxLayout(self)
         root.setContentsMargins(12, 10, 12, 10)
         root.setSpacing(8)
 
-        header = QLabel("Task 등록")
+        header = QLabel("Task 수정" if self._editing else "Task 등록")
         header.setStyleSheet("font-size: 13px; font-weight: bold;")
         root.addWidget(header)
 

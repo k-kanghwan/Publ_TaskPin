@@ -6,7 +6,7 @@ obsidian-reminder 와 같이 텍스트 안의 `(@YYYY-MM-DD HH:mm)` 토큰을
 TodoPanel 은 메모리 목록을 통째로 save_todos() 에 넘긴다. 저장은 화면 목록(활성 행)만
 맞추고, "완료 항목 정리"로 보관한(archived_at) 행은 건드리지 않는다.
 상위/하위 계층은 parent_id 로, 형제 사이 순서는 position 으로 저장한다.
-색 태그는 tag (TAGS 중 하나 / None) 로 저장한다. 색 값은 UI(todo_panel)가 정한다.
+색 태그는 tag (TAGS 중 하나 / 사용자 태그 키 / None) 로 저장한다. 색 값은 UI(todo_panel)와 config 가 정한다.
 """
 
 import html
@@ -28,8 +28,9 @@ REMINDER_RE = re.compile(r"\(@(\d{4}-\d{2}-\d{2})(?:\s+(\d{1,2}:\d{2}))?\)")
 _EMOJI_CHARS = "\U0001f000-\U0001faff⌀-⏿☀-➿⬀-⯿"
 EMOJI_RE = re.compile(f"[{_EMOJI_CHARS}][️‍{_EMOJI_CHARS}]*")
 
-# 우패널 우클릭 "태그" 의 색 (표시 순서)
+# 우패널 우클릭 "태그" 의 기본 색 (표시 순서). 사용자가 추가한 태그는 config.json custom_tags
 TAGS = ("red", "orange", "yellow", "green", "blue", "gray")
+TAG_MAX_LEN = 64
 
 _COLUMNS = (
     "id",
@@ -153,7 +154,9 @@ def _normalize(item: dict) -> dict:
     base = new_item(str(item.get("text", "")))
     base.update(item)
     base["done"] = bool(base["done"])
-    if base["tag"] not in TAGS:
+    # 기본 태그(TAGS) 또는 사용자 태그 키(widget_config.custom_tags). 지워진 사용자 태그는 표시만 안 된다
+    tag = base["tag"]
+    if not (isinstance(tag, str) and 0 < len(tag) <= TAG_MAX_LEN):
         base["tag"] = None
     return base
 

@@ -3,7 +3,8 @@
 설정창 Appearance 탭의 값(config.json "appearance")으로 build() 한 Theme 을 set_current() 로 걸어 두고,
 각 화면은 스타일을 만들 때 current() 를 읽는다. 위젯은 apply_appearance() 로 다시 입히고,
 팝업은 띄울 때마다 새로 만들므로 그때의 테마를 따른다.
-설정창은 테마를 따르지 않고 DARK 로 고정한다.
+설정창은 테마(다크 / 라이트)와 강조색만 따른다 (settings_dialog._settings_theme).
+우클릭 메뉴는 배경색을 골라도 테마 설정(다크 / 라이트)을 따른다.
 """
 
 from dataclasses import dataclass, replace
@@ -22,8 +23,12 @@ class Theme:
     bg: str  # 위젯 배경 (paintEvent)
     popup_bg: str  # Task 등록 창 / 리마인더 피커 / 리마인더 팝업 배경
     dialog_bg: str  # 확인 창 배경 - 위젯 위에 떠 보이도록 위젯과 조금 다르게
+    # 우클릭 메뉴는 배경색과 관계없이 테마(다크 / 라이트) 설정을 따른다 - build() 의 MENU_FIELDS
     menu_bg: str
     menu_border: str
+    menu_text: str
+    menu_hover: str
+    menu_disabled: str
     text_main: str
     text_sub: str
     text_dim: str
@@ -73,6 +78,9 @@ DARK = Theme(
     dialog_bg="#242426",
     menu_bg="#2b2b2b",
     menu_border="#4a4a4a",
+    menu_text="#f0f0f0",
+    menu_hover="rgba(255,255,255,40)",
+    menu_disabled="#6d6d6d",
     text_main="#f0f0f0",
     text_sub="#9e9e9e",
     text_dim="#5f5f5f",
@@ -89,6 +97,9 @@ LIGHT = Theme(
     dialog_bg="#ffffff",
     menu_bg="#ffffff",
     menu_border="#cfcfd4",
+    menu_text="#1e1e1e",
+    menu_hover="rgba(0,0,0,40)",
+    menu_disabled="#a0a0a0",
     text_main="#1e1e1e",
     text_sub="#6a6a6a",
     text_dim="#a9a9a9",
@@ -97,6 +108,8 @@ LIGHT = Theme(
     accent="#4a7bd0",
     overlay_rgb="0,0,0",
 )
+
+MENU_FIELDS = ("menu_bg", "menu_border", "menu_text", "menu_hover", "menu_disabled")
 
 _current = DARK
 
@@ -129,12 +142,15 @@ def _mix(color: str, rgb: str, ratio: float) -> str:
 def build(appearance: dict, system_dark: bool = True) -> Theme:
     """appearance: widget_config.appearance(cfg) 결과 / system_dark: "system" 테마일 때 OS 가 다크인지"""
     name = appearance["theme"]
-    base = DARK if name == "dark" or (name == "system" and system_dark) else LIGHT
+    named = DARK if name == "dark" or (name == "system" and system_dark) else LIGHT
+    base = named
     bg = appearance["background"]
     if bg:
         # 배경색을 고르면 글자 / 덧칠 색은 테마 대신 배경 밝기를 따른다 (어두운 배경에 어두운 글자가 되지 않게)
         base = DARK if QColor(bg).lightnessF() < 0.5 else LIGHT
     changes = {
+        # 우클릭 메뉴는 위젯 밖에 뜨므로 배경색이 아니라 테마 설정을 따른다 (다크면 늘 어둡게)
+        **{field: getattr(named, field) for field in MENU_FIELDS},
         "accent": appearance["accent"],
         "left_scale": appearance["left_scale"],
         "todo_scale": appearance["todo_scale"],
@@ -157,19 +173,20 @@ def px(base: int, scale: int) -> int:
     return round(base * scale / 100)
 
 
-# 위젯 밖에 뜨는 팝업(QMenu 등)의 공통 스타일
+# 위젯 밖에 뜨는 팝업(QMenu 등)의 공통 스타일.
+# 위젯 / 설정창 스타일시트에도 넣어 두면 입력칸의 기본 우클릭 메뉴(잘라내기 / 붙여넣기)까지 적용된다.
 def menu_style(t: Theme) -> str:
     return f"""
     QMenu {{
         background-color: {t.menu_bg};
-        color: {t.text_main};
+        color: {t.menu_text};
         font-family: {t.font_family};
         border: 1px solid {t.menu_border};
         padding: 4px;
     }}
-    QMenu::item {{ padding: 6px 24px 6px 20px; }}
-    QMenu::item:selected {{ background-color: {t.overlay(40)}; }}
-    QMenu::item:disabled {{ color: {t.text_disabled}; }}
+    QMenu::item {{ padding: 6px 24px 6px 20px; background: transparent; }}
+    QMenu::item:selected {{ background-color: {t.menu_hover}; }}
+    QMenu::item:disabled {{ color: {t.menu_disabled}; }}
     QMenu::separator {{
         height: 1px;
         background: {t.menu_border};
@@ -189,6 +206,7 @@ def button_style(t: Theme, font_px: int = 12) -> str:
         border-radius: 6px;
         padding: 7px 0px;
     }}
+    QPushButton:focus {{ outline: none; }}
     QPushButton:hover {{ background: {t.overlay(46)}; }}
     QPushButton:pressed {{ background: {t.overlay(66)}; }}
     QPushButton:disabled {{
@@ -217,7 +235,7 @@ def popup_form_style(t: Theme) -> str:
     QComboBox::drop-down {{ border: none; width: 0px; }}
     QComboBox QAbstractItemView {{
         background: {t.menu_bg};
-        color: {t.text_main};
+        color: {t.menu_text};
         font-family: {t.font_family};
         font-size: 12px;
         selection-background-color: {t.accent};

@@ -46,6 +46,8 @@ from version import VERSION
 # VS Code 디버그 실행(.vscode/launch.json): 위젯 항상 위, 실제 앱과 분리
 # (데이터는 launch.json 이 APPDATA 를 .debug_appdata 로 바꿔 분리한다)
 DEBUG = os.environ.get("TASKPIN_DEBUG") == "1"
+# Task 를 내리는 방식별 화면 문구 (task_store.COMPLETED / RELEASED)
+FINISH_VERBS = {task_store.COMPLETED: "완료", task_store.RELEASED: "해제"}
 
 
 class TaskPinApp(TrayApp):
@@ -78,7 +80,13 @@ class TaskPinApp(TrayApp):
         self._settings = None  # 열려 있는 설정창 (한 번에 하나)
 
         self.widget.task_register_requested.connect(self.open_task_picker)
-        self.widget.task_clear_requested.connect(self.clear_task)
+        self.widget.task_edit_requested.connect(self.open_task_editor)
+        self.widget.task_release_requested.connect(
+            lambda: self.finish_task(task_store.RELEASED)
+        )
+        self.widget.task_clear_requested.connect(
+            lambda: self.finish_task(task_store.COMPLETED)
+        )
         self.widget.settings_requested.connect(self.open_settings)
         self.widget.quit_requested.connect(self.app_close)
         self.widget.visibility_changed.connect(self.sync_widget_toggle_action)
@@ -138,12 +146,23 @@ class TaskPinApp(TrayApp):
             )
 
     def open_task_picker(self):
-        """위젯의 'Task 등록' 버튼: 등록 창을 버튼 위에 띄운다."""
+        """위젯의 [등록] 버튼(Task 가 없을 때): 등록 창을 버튼 위에 띄운다."""
         picker = TaskPicker(
-            self._shown_task, lambda: snippets.from_config(self.widget_cfg), self.widget
+            None, lambda: snippets.from_config(self.widget_cfg), self.widget
         )
         picker.picked.connect(self.register_task)
         picker.popup_for(self.widget.btn_task)
+
+    def open_task_editor(self):
+        """위젯의 [수정] 버튼: 진행 중인 Task 값으로 채운 창을 띄우고, 확인하면 그 행을 고친다."""
+        task = self._shown_task
+        if task is None:
+            return
+        picker = TaskPicker(
+            task, lambda: snippets.from_config(self.widget_cfg), self.widget
+        )
+        picker.picked.connect(lambda *values: self.update_task(task.id, *values))
+        picker.popup_for(self.widget.btn_task_edit)
 
     def register_task(
         self, title: str, detail: str, start_at: datetime, end_at: datetime
@@ -161,38 +180,74 @@ class TaskPinApp(TrayApp):
         self._task = task
         self.tick_widget()
 
-    def clear_task(self):
-        """위젯의 'Task 완료' 버튼: 확인 후 기록은 남기고 위젯에서 내린다 (종료 알림도 보내지 않음)"""
-        task = self._shown_task
-        if task is None or not self._confirm_clear(task):
-            return
-        if not task_store.clear(task.id):
+    def update_task(
+        self,
+        task_id: int,
+        title: str,
+        detail: str,
+        start_at: datetime,
+        end_at: datetime,
+    ):
+        """[수정] 확인: 같은 행을 고친다. 종료를 미래로 바꾸면 종료 알림을 다시 받는다."""
+        task = task_store.update(task_id, title, detail, start_at, end_at)
+        if task is None:
             self.tray.showMessage(
-                "Task 완료", "저장하지 못했습니다.", QSystemTrayIcon.Warning
+                "Task 수정", "저장하지 못했습니다.", QSystemTrayIcon.Warning
+            )
+            return
+        if task.end_at <= datetime.now().astimezone():
+            self._notified_task_ids.add(task.id)
+        else:
+            self._notified_task_ids.discard(task.id)
+        self._task = task
+        self.tick_widget()
+
+    def finish_task(self, kind: str):
+        """[완료] / [해제](진행 중일 때의 [등록/해제]): 확인 후 기록은 남기고(내린 방식 포함)
+        위젯에서 내린다. 종료 알림도 보내지 않는다."""
+        task = self._shown_task
+        if task is None or not self._confirm_finish(task, kind):
+            return
+        if not task_store.clear(task.id, kind):
+            self.tray.showMessage(
+                f"Task {FINISH_VERBS[kind]}",
+                "저장하지 못했습니다.",
+                QSystemTrayIcon.Warning,
             )
             return
         self._task = None
         self.tick_widget()
 
-    def _confirm_clear(self, task) -> bool:
-        """종료까지 시간이 남았으면 남은시간을 보여주고, 아니면 완료 여부만 묻는다."""
+    def _confirm_finish(self, task, kind: str) -> bool:
+        """종료까지 시간이 남았으면 남은시간을 보여주고, 아니면 완료 / 해제 여부만 묻는다.
+        해제는 완료로 기록되지 않는 동작이라 경고색 버튼으로 한 번 더 확인한다."""
+        verb = FINISH_VERBS[kind]
+        released = kind == task_store.RELEASED
+        note = (
+            "해제는 완료가 아닌 해제로 기록되고, 종료 알림도 받지 않습니다."
+            if released
+            else "완료하면 종료 알림을 받지 않습니다."
+        )
         now = datetime.now().astimezone()
         if task_clock.remaining_seconds(task.end_at, now) > 0:
             remaining = task_clock.remaining_display(task.end_at, now)
             dialog = ConfirmDialog(
-                "Task 완료",
-                "아직 종료까지 시간이 남았습니다.\nTask를 완료할까요?",
-                confirm_text="완료",
+                f"Task {verb}",
+                f"아직 종료까지 시간이 남았습니다.\nTask를 {verb}할까요?",
+                confirm_text=verb,
                 value_caption="남은시간",
                 value="1분 미만" if remaining == "00:00" else remaining,
-                note="완료하면 종료 알림을 받지 않습니다.",
+                note=note,
+                danger=released,
                 parent=self.widget,
             )
         else:
             dialog = ConfirmDialog(
-                "Task 완료",
-                "Task를 완료할까요?",
-                confirm_text="완료",
+                f"Task {verb}",
+                f"Task를 {verb}할까요?",
+                confirm_text=verb,
+                note=note if released else "",
+                danger=released,
                 parent=self.widget,
             )
         return dialog.exec_over(self.widget)
@@ -214,6 +269,7 @@ class TaskPinApp(TrayApp):
         """설정의 Appearance 값으로 현재 테마와 앱 기본 글꼴(툴팁 등)을 건다."""
         appearance = widget_config.appearance(self.widget_cfg)
         theme.set_current(theme.build(appearance, theme.system_dark()))
+        self.tray_menu.setStyleSheet(theme.menu_style(theme.current()))
         font = QFont(self._base_font)  # 힌팅 설정(PreferNoHinting)은 그대로
         if appearance["font_family"]:
             font.setFamilies([appearance["font_family"], self._base_font.family()])
