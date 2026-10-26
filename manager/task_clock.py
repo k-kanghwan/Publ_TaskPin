@@ -18,6 +18,12 @@ def floor_slot(dt: datetime) -> datetime:
     return dt.replace(minute=dt.minute - dt.minute % STEP_MIN, second=0, microsecond=0)
 
 
+def ceil_slot(dt: datetime) -> datetime:
+    """15분 단위로 올림 (09:37 -> 09:45, 09:45:00 -> 09:45). 자정을 넘으면 다음 날 00:00"""
+    slot = floor_slot(dt)
+    return slot if slot == dt else slot + timedelta(minutes=STEP_MIN)
+
+
 def end_from(start: datetime, minutes: int) -> datetime:
     return start + timedelta(minutes=minutes)
 

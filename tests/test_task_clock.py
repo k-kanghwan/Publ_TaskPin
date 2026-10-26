@@ -23,6 +23,19 @@ def test_floor_slot(now, expected):
     assert task_clock.floor_slot(dt(now)) == dt(expected)
 
 
+@pytest.mark.parametrize(
+    "now, expected",
+    [
+        ("2026-10-23 06:36:00", "2026-10-23 06:45:00"),
+        ("2026-10-23 06:45:00", "2026-10-23 06:45:00"),
+        ("2026-10-23 06:45:20", "2026-10-23 07:00:00"),
+        ("2026-10-23 23:50:00", "2026-10-24 00:00:00"),
+    ],
+)
+def test_ceil_slot(now, expected):
+    assert task_clock.ceil_slot(dt(now)) == dt(expected)
+
+
 def test_end_from_duration():
     start = dt("2026-10-23 09:30:00")
     assert task_clock.end_from(start, 90) == dt("2026-10-23 11:00:00")

@@ -2,7 +2,8 @@
 
 업무명(비워도 됨) / 시작 / 소요 / 종료
   - 업무명에서도 `:idea:` 같은 스니펫 트리거를 문구로 바꾼다.
-  - 시작은 오늘 00:00 ~ 23:45 (15분 단위), 기본값은 현재시간을 15분 단위로 내린 값
+  - 시작은 오늘 00:00 ~ 23:45 (15분 단위), 기본값은 현재시간을 15분 단위로 올린 값
+    (06:36 -> 06:45 / 23:45 를 넘으면 다음 날 00:00)
   - 소요를 바꾸면 종료를, 종료를 바꾸면 소요를 다시 계산한다.
   - 시작을 바꾸면 소요는 그대로 두고 종료 목록을 다시 만든다.
 소요와 종료 목록은 같은 간격(시작 + 0:15 ~ 12:00)이라 두 콤보의 index 가 항상 같다.
@@ -94,7 +95,8 @@ class TaskPicker(QFrame):
             title, start = task.title, task.start_at
             minutes = task_clock.minutes_between(task.start_at, task.end_at)
         else:
-            title, start = "", task_clock.floor_slot(now)
+            title, start = "", task_clock.ceil_slot(now)
+            self._day = start.date()
             minutes = task_clock.DEFAULT_DURATION_MIN
 
         self._build_ui()
