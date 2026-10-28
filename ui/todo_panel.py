@@ -15,7 +15,8 @@
 - 드래그로 순서/레벨 변경: 행 가운데에 놓으면 그 항목의 하위로, 행 사이에 놓으면 그 자리로.
   선택한 행을 끌면 선택 항목이 모두 함께 옮겨진다.
   (계층 규칙은 manager/todo_tree 참고 - 상위를 완료 / 해제하면 하위도 함께, 상위를 지우면 하위는 한 단계 위로)
-- 우클릭 메뉴: 검색 / 모두 접기·펼치기 / 완료 항목 정리 / 내보내기 / 추가 / 삭제 / 삭제 이력 / 태그(체크박스 왼쪽 색 막대)
+- 우클릭 메뉴(구분선으로 묶음): 검색·페이지로 이동 / 모두 접기·펼치기 / 추가·삭제·삭제 이력 /
+  태그(체크박스 왼쪽 색 막대) / 완료 항목 정리·내보내기
   삭제는 되돌릴 수 있게 삭제 이력에 남는다 (manager/todo_trash). ✕ / 우클릭 "삭제" 는 지우기 전에 묻는다(설정).
   여러 개를 선택한 채 우클릭하면 선택 항목 전체에 적용된다.
   태그는 기본 6색 + 사용자 태그(config.json custom_tags, "+ 태그 추가…" / 설정창에서 관리)
@@ -1503,7 +1504,11 @@ class TodoPanel(QWidget):
         menu = QMenu(self)
         menu.setStyleSheet(theme.menu_style(t))
 
+        # 연관된 것끼리 묶는다: 찾기·이동 / 접기 / 추가·삭제 / 태그 / 정리·내보내기
         menu.addAction("검색", self.open_search)
+        self._add_move_page_menu(menu)
+        menu.addSeparator()
+
         page_items = self._page_items()
         parents = {item.get("parent_id") for item in page_items}
         folds = [
@@ -1516,9 +1521,20 @@ class TodoPanel(QWidget):
         )
         act_unfold.setEnabled(any(folds))
         menu.addSeparator()
+
+        menu.addAction("추가", self.focus_input)
+        act_delete = menu.addAction("삭제", self.delete_selected)
+        act_delete.setEnabled(bool(self._selected))
+        self._add_history_menu(menu)
+        menu.addSeparator()
+
+        self._add_tag_menu(menu, t)
+        menu.addSeparator()
+
         act_clear = menu.addAction("완료 항목 정리", self.clear_done)
         act_clear.setEnabled(self.has_done())
-        export_menu = menu.addMenu("내보내기")
+        export_menu = QMenu("내보내기", menu)  # 부모를 준다 - _add_history_menu 참고
+        menu.addMenu(export_menu)
         export_menu.setStyleSheet(menu.styleSheet())
         act_active = export_menu.addAction(
             "화면 목록…", lambda: self.export_requested.emit(False)
@@ -1528,17 +1544,15 @@ class TodoPanel(QWidget):
             "보관 항목 전체…", lambda: self.export_requested.emit(True)
         )
         act_archived.setEnabled(bool(todo_store.load_archived()))
-        menu.addSeparator()
 
-        menu.addAction("추가", self.focus_input)
-        act_delete = menu.addAction("삭제", self.delete_selected)
-        act_delete.setEnabled(bool(self._selected))
-        self._add_history_menu(menu)
-        self._add_move_page_menu(menu)
+        menu.exec(event.globalPos())
 
+    def _add_tag_menu(self, menu: QMenu, t: theme.Theme):
+        """우클릭 "태그" 서브메뉴: 기본 6색 -> 태그 없음 -> 사용자 태그 -> + 태그 추가"""
         # 선택 항목들의 지금 태그는 메뉴 한 칸을 강조색 테두리로 감싼다 (checked 항목).
         # 다른 칸도 같은 두께의 투명 테두리를 둬서 글자 위치가 어긋나지 않게 하고, 체크 표시는 숨긴다
-        tag_menu = menu.addMenu("태그")
+        tag_menu = QMenu("태그", menu)  # 부모를 준다 - _add_history_menu 참고
+        menu.addMenu(tag_menu)
         tag_menu.setStyleSheet(
             menu.styleSheet()
             + f"""
@@ -1570,8 +1584,6 @@ class TodoPanel(QWidget):
         for tag in self._custom_tags_provider():
             add_tag_action(_tag_icon(tag["color"]), tag["name"], tag["id"])
         tag_menu.addAction("+ 태그 추가…", self._create_tag)
-
-        menu.exec(event.globalPos())
 
     def _add_history_menu(self, menu: QMenu):
         """우클릭 "삭제 이력" 서브메뉴: 최근 n번의 삭제 중 되돌리지 않은 묶음 (최신 순).
