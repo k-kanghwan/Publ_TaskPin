@@ -62,6 +62,8 @@ from ui.todo_panel import TodoPanel
 WINDOW_OPACITY = 1.0  # 설정에 값이 없을 때의 불투명도 (= 투명도 0%)
 OPACITY_MIN = 0.2  # 이보다 낮으면 위젯이 사라져 조작 불가
 TRANSPARENCY_MAX = round((1 - OPACITY_MIN) * 100)  # 슬라이더 최대 투명도(%) = 80
+SLIDER_HANDLE = 12  # 투명도 슬라이더 핸들 지름(px) - 홈(4px)보다 크다
+SLIDER_HEIGHT = SLIDER_HANDLE + 4  # 핸들이 잘리지 않는 슬라이더 높이
 # 세로 모드: 폭 280 ~ 364(1.3배), 높이 최소 ~ 583
 WIDGET_WIDTH = 280
 WIDGET_MIN_HEIGHT = 324
@@ -641,6 +643,10 @@ class ClockWidget(QWidget):
                 color: {t.text_main};
                 font-family: {t.font_family};
             }}
+            QSlider:horizontal {{
+                /* 기본 높이는 화면 배율이 클수록 줄어(175% 에서 13px) 핸들 위아래가 잘린다 */
+                min-height: {SLIDER_HEIGHT}px;
+            }}
             QSlider::groove:horizontal {{
                 height: 4px;
                 background: {t.overlay(50)};
@@ -651,10 +657,11 @@ class ClockWidget(QWidget):
                 border-radius: 2px;
             }}
             QSlider::handle:horizontal {{
-                width: 12px;
-                margin: -5px 0;
+                width: {SLIDER_HANDLE}px;
+                height: {SLIDER_HANDLE}px;
+                margin: -{(SLIDER_HANDLE - 4) // 2}px 0;
                 background: {t.text_main};
-                border-radius: 6px;
+                border-radius: {SLIDER_HANDLE // 2}px;
             }}
             """
         )
@@ -1123,7 +1130,7 @@ class ClockWidget(QWidget):
         menu.exec(event.globalPos())
 
     def _export_todos(self, archived: bool):
-        """우패널 "TODO 내보내기": TODO 를 Markdown 체크리스트 파일로 저장한다. 마지막 저장 폴더를 기억한다."""
+        """우패널 "내보내기": TODO 를 Markdown 체크리스트 파일로 저장한다. 마지막 저장 폴더를 기억한다."""
         now = datetime.now()
         if archived:
             text = todo_export.archived_to_markdown(
