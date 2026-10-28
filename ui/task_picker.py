@@ -10,16 +10,19 @@
 소요와 종료 목록은 같은 간격(시작 + 0:15 ~ 12:00)이라 두 콤보의 index 가 항상 같다.
 
 Qt.Popup 이 아니라 활성화되는 Tool 창이다. Windows 에서 Popup 은 전경 창이 되지 않아
-IME 가 붙지 않으므로(한글 입력 불가) 대신 다른 창이 활성화되면 스스로 닫는다.
+IME 가 붙지 않는다(한글 입력 불가). 다른 창을 눌러 포커스가 옮겨져도 닫히지 않고
+취소 / Esc / 확인으로만 닫힌다 (적던 내용을 잃지 않게).
+등록 창을 확인 없이 닫으면 canceled 로 적던 업무명 / 상세 업무를 알린다 - TaskPinApp 이 임시저장해
+다음 등록 때 draft 로 다시 채운다.
 
 키보드
   - Enter : 확인 (상세 업무 칸에서는 줄바꿈), Ctrl+Enter : 어디서든 확인
-  - Tab : 업무명 -> 상세 업무, Esc / 바깥 클릭 : 취소
+  - Tab : 업무명 -> 상세 업무, Esc : 취소
 """
 
 from datetime import datetime, time
 
-from PySide6.QtCore import QEvent, QPoint, QRectF, Qt, QTimer, Signal
+from PySide6.QtCore import QPoint, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QGuiApplication, QPainter, QPainterPath
 from PySide6.QtWidgets import (
     QApplication,
@@ -100,10 +103,12 @@ class TaskPicker(QFrame):
         str, str, object, object
     )  # 업무명, 상세, 시작 datetime, 종료 datetime
     closed = Signal()  # 확인/취소와 관계없이 닫힐 때
+    canceled = Signal(str, str)  # 확인 없이 닫힘 - 적던 업무명, 상세 업무 (임시저장용)
 
-    def __init__(self, task, snippets_provider, parent=None):
+    def __init__(self, task, snippets_provider, parent=None, draft=("", "")):
         """task: None 이면 새 등록(기본값), 있으면 그 Task 를 수정 (값을 채우고 제목이 "Task 수정")
-        snippets_provider: () -> {트리거: 문구} (업무명 스니펫 치환)"""
+        snippets_provider: () -> {트리거: 문구} (업무명 스니펫 치환)
+        draft: 새 등록일 때 미리 채울 (업무명, 상세 업무) - 지난번에 취소한 내용"""
         super().__init__(parent, Qt.Tool | Qt.FramelessWindowHint)
         self.setAttribute(Qt.WA_DeleteOnClose, True)
         # 둥근 모서리 바깥을 투명하게 (배경은 paintEvent 가 그림)
@@ -119,7 +124,7 @@ class TaskPicker(QFrame):
             title, detail, start = task.title, task.detail, task.start_at
             minutes = task_clock.minutes_between(task.start_at, task.end_at)
         else:
-            title, detail = "", ""
+            title, detail = draft
             start = task_clock.ceil_slot(datetime.now().astimezone())
             minutes = task_clock.DEFAULT_DURATION_MIN
         self._day = start.date()
@@ -336,18 +341,14 @@ class TaskPicker(QFrame):
         else:
             super().keyPressEvent(event)
 
-    def changeEvent(self, event):
-        super().changeEvent(event)
-        # 바깥을 클릭해 다른 창이 활성화되면 닫는다 (Popup 과 같은 동작)
-        if event.type() == QEvent.ActivationChange and not self.isActiveWindow():
-            QTimer.singleShot(0, self, self._close_if_inactive)
-
-    def _close_if_inactive(self):
-        # 콤보 목록(Popup)이 열린 동안은 이 창이 비활성으로 보일 수 있다
-        if not self.isActiveWindow() and QApplication.activePopupWidget() is None:
-            self.close()
+    @property
+    def editing(self) -> bool:
+        """진행 중인 Task 를 고치는 창인지 (아니면 새 등록)"""
+        return self._editing
 
     def closeEvent(self, event):
+        if not self._accepted:
+            self.canceled.emit(self.entered_title(), self.entered_detail())
         self.closed.emit()
         super().closeEvent(event)
 

@@ -78,6 +78,9 @@ class TaskPinApp(TrayApp):
         self._apply_theme()
         self.widget = ClockWidget(self.widget_cfg, force_on_top=DEBUG)
         self._settings = None  # 열려 있는 설정창 (한 번에 하나)
+        self._picker = None  # 열려 있는 Task 등록 / 수정 창 (한 번에 하나)
+        # 등록 창을 확인 없이 닫을 때 적던 (업무명, 상세 업무) - 다음 등록 때 다시 채운다 (실행 중에만)
+        self._task_draft = ("", "")
 
         self.widget.task_register_requested.connect(self.open_task_picker)
         self.widget.task_edit_requested.connect(self.open_task_editor)
@@ -146,23 +149,50 @@ class TaskPinApp(TrayApp):
             )
 
     def open_task_picker(self):
-        """위젯의 [등록] 버튼(Task 가 없을 때): 등록 창을 버튼 위에 띄운다."""
+        """위젯의 [등록] 버튼(Task 가 없을 때): 등록 창을 버튼 위에 띄운다.
+        지난번에 확인 없이 닫은 업무명 / 상세 업무가 있으면 채워 둔다."""
+        if self._raise_picker():
+            return
         picker = TaskPicker(
-            None, lambda: snippets.from_config(self.widget_cfg), self.widget
+            None,
+            lambda: snippets.from_config(self.widget_cfg),
+            self.widget,
+            draft=self._task_draft,
         )
         picker.picked.connect(self.register_task)
-        picker.popup_for(self.widget.btn_task)
+        picker.canceled.connect(self._keep_task_draft)
+        self._show_picker(picker, self.widget.btn_task)
 
     def open_task_editor(self):
         """위젯의 [수정] 버튼: 진행 중인 Task 값으로 채운 창을 띄우고, 확인하면 그 행을 고친다."""
         task = self._shown_task
-        if task is None:
+        if task is None or self._raise_picker():
             return
         picker = TaskPicker(
             task, lambda: snippets.from_config(self.widget_cfg), self.widget
         )
         picker.picked.connect(lambda *values: self.update_task(task.id, *values))
-        picker.popup_for(self.widget.btn_task_edit)
+        self._show_picker(picker, self.widget.btn_task_edit)
+
+    def _raise_picker(self) -> bool:
+        """등록 / 수정 창은 하나만 - 이미 떠 있으면 앞으로 올리고 True"""
+        if self._picker is None:
+            return False
+        self._picker.raise_()
+        self._picker.activateWindow()
+        return True
+
+    def _show_picker(self, picker: TaskPicker, anchor):
+        self._picker = picker
+        picker.closed.connect(self._on_picker_closed)
+        picker.popup_for(anchor)
+
+    def _on_picker_closed(self):
+        self._picker = None
+
+    def _keep_task_draft(self, title: str, detail: str):
+        """등록 창을 확인 없이 닫음: 적던 내용을 다음 등록 때까지 남긴다 (둘 다 비었으면 비운다)."""
+        self._task_draft = (title, detail)
 
     def register_task(
         self, title: str, detail: str, start_at: datetime, end_at: datetime
@@ -177,6 +207,7 @@ class TaskPinApp(TrayApp):
             self._notified_task_ids.add(
                 task.id
             )  # 이미 끝난 시간으로 등록하면 알리지 않는다
+        self._task_draft = ("", "")  # 등록했으니 임시저장은 비운다
         self._task = task
         self.tick_widget()
 
@@ -208,6 +239,8 @@ class TaskPinApp(TrayApp):
         task = self._shown_task
         if task is None or not self._confirm_finish(task, kind):
             return
+        if self._picker is not None and self._picker.editing:
+            self._picker.close()  # 내린 Task 를 고치던 창은 닫는다
         if not task_store.clear(task.id, kind):
             self.tray.showMessage(
                 f"Task {FINISH_VERBS[kind]}",
