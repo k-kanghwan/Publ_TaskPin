@@ -14,7 +14,8 @@
 - 드래그로 순서/레벨 변경: 행 가운데에 놓으면 그 항목의 하위로, 행 사이에 놓으면 그 자리로.
   선택한 행을 끌면 선택 항목이 모두 함께 옮겨진다.
   (계층 규칙은 manager/todo_tree 참고 - 상위를 완료하면 하위도 완료, 상위를 지우면 하위는 한 단계 위로)
-- 우클릭 메뉴: 검색 / 모두 접기·펼치기 / 완료 항목 정리 / 내보내기 / 추가 / 삭제 / 태그(체크박스 왼쪽 색 막대)
+- 우클릭 메뉴: 검색 / 모두 접기·펼치기 / 완료 항목 정리 / 내보내기 / 추가 / 삭제 / 삭제 이력 / 태그(체크박스 왼쪽 색 막대)
+  삭제는 되돌릴 수 있게 삭제 이력에 남는다 (manager/todo_trash). 행의 ✕ 는 지우기 전에 묻는다(설정).
   여러 개를 선택한 채 우클릭하면 선택 항목 전체에 적용된다.
   태그는 기본 6색 + 사용자 태그(config.json custom_tags, "+ 태그 추가…" / 설정창에서 관리)
 - 형제끼리는 미완료 -> 완료 순, 리마인더 항목이 시각순으로 위에 고정되고 나머지는 사용자가 정한 순서
@@ -56,7 +57,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from manager import todo_filter, todo_store, todo_tree
+from manager import todo_filter, todo_store, todo_trash, todo_tree
 from ui import theme
 from ui.reminder_picker import ReminderPicker
 from ui.tag_dialog import TagDialog
@@ -115,6 +116,7 @@ NAV_BLOCKING_MODIFIERS = (
     Qt.ShiftModifier | Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier
 )
 NAV_SCROLL_MARGIN = 8  # 키보드로 옮긴 행 위아래로 남길 여유(px)
+HISTORY_TEXT_PX = 180  # 우클릭 "삭제 이력" 항목의 본문 폭 (넘치면 말줄임)
 
 
 def _indent(depth: int) -> int:
@@ -684,15 +686,25 @@ class TodoPanel(QWidget):
     export_requested = Signal(bool)  # 우클릭 "내보내기" - True 면 보관 항목 전체
 
     def __init__(
-        self, snippets_provider, custom_tags_provider, add_custom_tag, parent=None
+        self,
+        snippets_provider,
+        custom_tags_provider,
+        add_custom_tag,
+        undo_limit_provider,
+        confirm_delete,
+        parent=None,
     ):
         """snippets_provider: () -> {트리거: 문구} (입력칸 스니펫 치환)
         custom_tags_provider: () -> [{"id", "name", "color"}] (사용자 태그, widget_config.custom_tags)
-        add_custom_tag: (이름, 색) -> 새 태그 id (cfg 에 추가하고 저장)"""
+        add_custom_tag: (이름, 색) -> 새 태그 id (cfg 에 추가하고 저장)
+        undo_limit_provider: () -> 되돌릴 수 있는 최근 삭제 수 (widget_config.undo_limit)
+        confirm_delete: () -> bool. 행의 ✕ 로 지우기 전에 묻는다 (설정에 따라 묻지 않고 True)"""
         super().__init__(parent)
         self._snippets_provider = snippets_provider
         self._custom_tags_provider = custom_tags_provider
         self._add_custom_tag = add_custom_tag
+        self._undo_limit_provider = undo_limit_provider
+        self._confirm_delete = confirm_delete
         self._items = todo_store.load_todos()
         todo_tree.detach_orphans(self._items)
         self._rows = []
@@ -881,17 +893,57 @@ class TodoPanel(QWidget):
         self._save_and_rebuild()
 
     def delete_item(self, item_id: str):
-        """항목만 지운다. 하위 항목은 한 단계 위로 올라간다."""
-        if todo_tree.remove_promote(self._items, item_id):
-            self._save_and_rebuild()
+        """행의 ✕: 확인(설정에 따라 생략)한 뒤 그 항목만 지운다. 하위 항목은 한 단계 위로 올라간다."""
+        if self._find(item_id) is not None and self._confirm_delete():
+            self._delete([item_id])
 
     def delete_selected(self):
         """우클릭 "삭제": 선택 항목을 완료 처리 없이 지운다. 하위는 한 단계씩 위로 올라간다."""
-        changed = False
-        for item_id in self._selected_ids():
-            changed = todo_tree.remove_promote(self._items, item_id) or changed
-        if changed:
-            self._save_and_rebuild()
+        self._delete(self._selected_ids())
+
+    def _delete(self, ids: list) -> bool:
+        """ids 를 차례로 지운다(하위는 한 단계씩 위로). 되돌릴 수 있도록 지울 때의 항목과 자리를
+        한 묶음으로 삭제 이력에 남긴다 (manager/todo_trash). 지웠으면 True"""
+        entries = []
+        for item_id in ids:
+            info = todo_tree.removal(self._items, item_id)
+            if info is None:
+                continue
+            entries.append({"item": dict(self._find(item_id)), **info})
+            todo_tree.remove_promote(self._items, item_id)
+        if not entries:
+            return False
+        todo_trash.record(entries)
+        self._save_and_rebuild()
+        return True
+
+    def restore_deleted(self, batch: dict):
+        """우클릭 "삭제 이력": 그 묶음을 지운 순서의 반대로 되돌린다 (함께 지운 하위가 다시 상위 아래로).
+        거르는 중이면 되돌린 항목이 숨지 않도록 전체 보기로 돌아가고, 되돌린 항목을 선택해 보여준다."""
+        restored = []
+        for entry in reversed(batch["entries"]):
+            item = todo_store.normalize(entry["item"])
+            if todo_tree.restore(
+                self._items,
+                item,
+                entry["parent_id"],
+                entry["before_id"],
+                entry["child_ids"],
+            ):
+                todo_tree.expand_ancestors(self._items, item["id"])
+                restored.append(item["id"])
+        todo_trash.mark_restored(batch["batch"])
+        if not restored:
+            return
+        self.filter_bar.reset()
+        self._stop_highlight()
+        self._save_and_rebuild()
+        self._selected = set(restored)
+        self._anchor_id = restored[-1]  # 되돌린 묶음의 첫 항목 (거꾸로 넣었으므로)
+        self._apply_selection()
+        row = self._current_row()
+        if row is not None:
+            self._reveal(row)
 
     def set_tag(self, tag):
         """우클릭 "태그": 선택 항목 모두에 태그(todo_store.TAGS 중 하나 / None)를 붙인다."""
@@ -1265,6 +1317,7 @@ class TodoPanel(QWidget):
         menu.addAction("추가", self.focus_input)
         act_delete = menu.addAction("삭제", self.delete_selected)
         act_delete.setEnabled(bool(self._selected))
+        self._add_history_menu(menu)
 
         # 선택 항목들의 지금 태그는 메뉴 한 칸을 강조색 테두리로 감싼다 (checked 항목).
         # 다른 칸도 같은 두께의 투명 테두리를 둬서 글자 위치가 어긋나지 않게 하고, 체크 표시는 숨긴다
@@ -1302,6 +1355,31 @@ class TodoPanel(QWidget):
         tag_menu.addAction("+ 태그 추가…", self._create_tag)
 
         menu.exec(event.globalPos())
+
+    def _add_history_menu(self, menu: QMenu):
+        """"삭제 이력" 서브메뉴: 최근 n번의 삭제 중 되돌리지 않은 묶음 (최신 순). 누르면 되돌린다."""
+        # menu.addMenu("제목") 으로 만든 서브메뉴는 이 함수가 끝나면 PySide 가 지워 버린다
+        # (addAction(글자, 함수) 를 넣었을 때) - 부모를 준 QMenu 로 만들어 붙인다
+        history = QMenu("삭제 이력", menu)
+        menu.addMenu(history)
+        history.setStyleSheet(menu.styleSheet())
+        batches = todo_trash.recent(self._undo_limit_provider())
+        history.setEnabled(bool(batches))
+        metrics = history.fontMetrics()
+        for batch in batches:
+            texts = [
+                todo_store.strip_reminder(entry["item"]["text"]) or "(빈 할 일)"
+                for entry in batch["entries"]
+            ]
+            more = f" 외 {len(texts) - 1}개" if len(texts) > 1 else ""
+            first = metrics.elidedText(texts[0], Qt.ElideRight, HISTORY_TEXT_PX)
+            # "YYYY-MM-DD HH:MM:SS" -> "MM/DD HH:MM"
+            stamp = batch["deleted_at"]
+            when = f"{stamp[5:7]}/{stamp[8:10]} {stamp[11:16]}"
+            history.addAction(
+                f"{first}{more}  ·  {when}",
+                lambda _=False, b=batch: self.restore_deleted(b),
+            )
 
     def _create_tag(self):
         """태그 메뉴 "+ 태그 추가…": 이름 / 색을 골라 사용자 태그로 저장하고 선택 항목에 붙인다."""

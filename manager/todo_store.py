@@ -62,7 +62,7 @@ def load_todos() -> list:
     except sqlite3.Error as e:
         print(f"TODO 불러오기 실패: {e}")
         return []
-    return [_normalize(dict(row)) for row in rows]
+    return [normalize(dict(row)) for row in rows]
 
 
 def load_archived() -> list:
@@ -79,7 +79,7 @@ def load_archived() -> list:
     except sqlite3.Error as e:
         print(f"보관 TODO 불러오기 실패: {e}")
         return []
-    return [_normalize(dict(row)) for row in rows]
+    return [normalize(dict(row)) for row in rows]
 
 
 def save_todos(items: list) -> None:
@@ -153,8 +153,8 @@ def new_item(text: str) -> dict:
     }
 
 
-def _normalize(item: dict) -> dict:
-    """손으로 고친 파일 등 누락된 키를 기본값으로 채운다."""
+def normalize(item: dict) -> dict:
+    """손으로 고친 파일 / 예전 삭제 이력 스냅샷 등 누락된 키를 기본값으로 채운다."""
     base = new_item(str(item.get("text", "")))
     base.update(item)
     base["done"] = bool(base["done"])

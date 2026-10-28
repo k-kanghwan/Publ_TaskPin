@@ -8,7 +8,8 @@
                          리마인더 알림 창 폭 / 글자 크기(실제 크기 예시 포함),
                          사용자 태그(이름 / 색 변경, 추가, 삭제 - config.json custom_tags).
                          바꾸면 appearance_changed 로 위젯에 바로 반영한다.
-  - Application        : 설정 내보내기(폴더를 고르면 config.json 을 그대로 저장) / 가져오기(바로 적용)
+  - Application        : TODO(✕ 버튼 삭제 확인, 되돌릴 수 있는 삭제 수) /
+                         설정 내보내기(폴더를 고르면 config.json 을 그대로 저장) / 가져오기(바로 적용)
 
 설정창 자체는 테마(다크 / 라이트)와 강조색만 따른다. 배경색 / 폰트 / 글자 크기는 위젯에만 적용한다.
 
@@ -983,13 +984,46 @@ class SettingsDialog(QWidget):
         self._popup_preview_layout.addWidget(self._popup_preview, 0, Qt.AlignLeft)
 
     # ==================================================
-    # Application: 설정 내보내기 / 가져오기
+    # Application: TODO 동작 / 설정 내보내기 / 가져오기
     # ==================================================
     def _build_application_page(self) -> QWidget:
-        page, _card, card_layout = self._page(
-            "Application",
-            "위젯 설정(config.json)을 파일로 내보내거나 가져옵니다. TODO / Task 기록은 들어가지 않습니다.",
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(0, 4, 0, 0)
+        layout.setSpacing(8)
+        section = QLabel("Application")
+        section.setObjectName("section")
+        layout.addWidget(section)
+
+        # ---- TODO: 삭제 확인 / 되돌릴 수 있는 삭제 수 ----
+        card_layout = self._add_group(layout, "TODO")
+        box, self._confirm_delete_group = self._segmented(
+            ON_OFF_OPTIONS, self._set_confirm_delete
         )
+        self._add_row(
+            card_layout,
+            "✕ 버튼 삭제 확인",
+            "할 일 행의 ✕로 지울 때 확인 창을 띄웁니다 ('다시 묻지 않음'으로 끈 것도 여기서 다시 켭니다)",
+            box,
+        ).setWordWrap(True)
+        box, self._undo_limit_group = self._segmented(
+            [(n, f"{n}개") for n in widget_config.UNDO_LIMITS], self._set_undo_limit
+        )
+        self._add_row(
+            card_layout,
+            "되돌릴 수 있는 삭제",
+            "우클릭 → 삭제 이력에 보이는 최근 삭제 수 (이력은 DB에 계속 남습니다)",
+            box,
+        ).setWordWrap(True)
+
+        # ---- 설정 파일 ----
+        card_layout = self._add_group(layout, "설정 파일")
+        hint = QLabel(
+            "위젯 설정(config.json)을 파일로 내보내거나 가져옵니다. TODO / Task 기록은 들어가지 않습니다."
+        )
+        hint.setObjectName("sub")
+        hint.setWordWrap(True)
+        layout.insertWidget(layout.count() - 1, hint)  # 그룹 제목과 카드 사이
         btn_export = QPushButton("내보내기…")
         btn_export.clicked.connect(self._export_config)
         btn_import = QPushButton("가져오기…")
@@ -1011,8 +1045,26 @@ class SettingsDialog(QWidget):
         )
         for note in (self._export_note, self._import_note):
             note.setWordWrap(True)
-        page.layout().addStretch(1)
+        layout.addStretch(1)
+        self._refresh_application()
         return page
+
+    def _set_confirm_delete(self, on: bool):
+        self._cfg["confirm_delete"] = on
+        widget_config.save_config(self._cfg)
+
+    def _set_undo_limit(self, limit: int):
+        self._cfg["undo_limit"] = limit
+        widget_config.save_config(self._cfg)
+
+    def _refresh_application(self):
+        """저장된 값으로 Application 탭 표시를 맞춘다 (위젯의 확인 창에서 "다시 묻지 않음"을 켰을 수 있다)."""
+        self._confirm_delete_group.button(
+            int(widget_config.confirm_delete(self._cfg))
+        ).setChecked(True)
+        self._undo_limit_group.button(
+            widget_config.UNDO_LIMITS.index(widget_config.undo_limit(self._cfg))
+        ).setChecked(True)
 
     def _start_folder(self) -> str:
         return self._cfg.get("export_dir") or QStandardPaths.writableLocation(
@@ -1077,6 +1129,7 @@ class SettingsDialog(QWidget):
         for trigger, text in snippets.from_config(self._cfg).items():
             self._append_snippet_row(trigger, text)
         self._rebuild_tag_rows()
+        self._refresh_application()
         self.apply_theme()
 
     # ==================================================
@@ -1085,6 +1138,7 @@ class SettingsDialog(QWidget):
     def show_front(self):
         """띄우고(이미 떠 있으면 그대로) 앞으로 올린다."""
         self._rebuild_tag_rows()  # 닫혀 있는 동안 위젯 태그 메뉴에서 추가했을 수 있다
+        self._refresh_application()  # 위젯의 삭제 확인 창에서 "다시 묻지 않음"을 켰을 수 있다
         self.showNormal()
         os_win.set_dark_title_bar(int(self.winId()), self._look.dark)
         self.raise_()

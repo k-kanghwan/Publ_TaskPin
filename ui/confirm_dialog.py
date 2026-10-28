@@ -11,6 +11,7 @@ from PySide6.QtCore import QPoint, QRectF, Qt
 from PySide6.QtGui import QColor, QPainter, QPainterPath
 from PySide6.QtWidgets import (
     QApplication,
+    QCheckBox,
     QDialog,
     QHBoxLayout,
     QLabel,
@@ -37,6 +38,7 @@ class ConfirmDialog(QDialog):
         value: str = "",
         note: str = "",
         danger: bool = False,
+        remember_text: str = "",
         parent=None,
     ):
         """
@@ -45,6 +47,7 @@ class ConfirmDialog(QDialog):
         value_caption / value : 크게 보여줄 값과 그 이름 (비우면 표시 안 함)
         note : 메시지 아래 흐린 보조 설명
         danger : 확인 버튼을 경고색으로 (삭제 같은 동작)
+        remember_text : 버튼 위 체크박스 (예: "다시 묻지 않음") - 확인했을 때 remembered() 로 읽는다
         """
         super().__init__(parent, Qt.Dialog | Qt.FramelessWindowHint)
         self.setAttribute(Qt.WA_TranslucentBackground, True)
@@ -72,6 +75,25 @@ class ConfirmDialog(QDialog):
             QPushButton#confirm:hover {{
                 background: {confirm_hover};
                 border: 1px solid {confirm_hover};
+            }}
+            QCheckBox {{
+                background: transparent;
+                color: {t.text_sub};
+                font-family: {t.font_family};
+                font-size: 12px;
+                spacing: 6px;
+            }}
+            QCheckBox::indicator {{
+                width: 12px;
+                height: 12px;
+                border: 1px solid {t.overlay(130)};
+                border-radius: 3px;
+                background: transparent;
+            }}
+            QCheckBox::indicator:hover {{ border: 1px solid {t.text_main}; }}
+            QCheckBox::indicator:checked {{
+                background: {t.accent};
+                border: 1px solid {t.accent};
             }}
             """
         )
@@ -110,6 +132,12 @@ class ConfirmDialog(QDialog):
             note_label.setStyleSheet(f"font-size: 11px; color: {t.text_sub};")
             root.addWidget(note_label)
 
+        self._remember = None
+        if remember_text:
+            self._remember = QCheckBox(remember_text)
+            self._remember.setCursor(Qt.PointingHandCursor)
+            root.addWidget(self._remember)
+
         buttons = QHBoxLayout()
         buttons.setSpacing(8)
         self.btn_cancel = QPushButton("취소")
@@ -123,6 +151,10 @@ class ConfirmDialog(QDialog):
         self.btn_confirm.clicked.connect(self.accept)
         root.addSpacing(2)
         root.addLayout(buttons)
+
+    def remembered(self) -> bool:
+        """remember_text 체크박스를 켰는지"""
+        return self._remember is not None and self._remember.isChecked()
 
     def paintEvent(self, event):
         # 반투명 최상위 창은 스타일시트 배경이 그려지지 않으므로 직접 그린다

@@ -53,6 +53,7 @@ from PySide6.QtWidgets import (
 
 from manager import os_win, snippets, todo_export, todo_store, widget_config
 from ui import theme
+from ui.confirm_dialog import ConfirmDialog
 from ui.reminder_popup import ReminderPopup
 from ui.theme import CORNER_RADIUS, px
 from ui.todo_panel import NAV_BLOCKING_MODIFIERS, TodoPanel
@@ -619,6 +620,8 @@ class ClockWidget(QWidget):
             lambda: snippets.from_config(self._cfg),
             lambda: widget_config.custom_tags(self._cfg),
             self._add_custom_tag,
+            lambda: widget_config.undo_limit(self._cfg),
+            self._confirm_todo_delete,
         )
         self.todo_panel.export_requested.connect(self._export_todos)
 
@@ -1019,6 +1022,27 @@ class ClockWidget(QWidget):
         tag_id = widget_config.add_custom_tag(self._cfg, name, color)
         widget_config.save_config(self._cfg)
         return tag_id
+
+    def _confirm_todo_delete(self) -> bool:
+        """행의 ✕: 지우기 전에 묻는다. "다시 묻지 않음"을 켜고 삭제하면 설정에 남겨 다음부터 묻지 않는다
+        (설정창 Application 에서 다시 켤 수 있다)."""
+        if not widget_config.confirm_delete(self._cfg):
+            return True
+        dialog = ConfirmDialog(
+            "할 일 삭제",
+            "선택된 항목을 삭제하시겠습니까?",
+            confirm_text="삭제",
+            note="우클릭 → 삭제 이력에서 되돌릴 수 있습니다.",
+            danger=True,
+            remember_text="다시 묻지 않음",
+            parent=self,
+        )
+        if not dialog.exec_over(self):
+            return False
+        if dialog.remembered():
+            self._cfg["confirm_delete"] = False
+            widget_config.save_config(self._cfg)
+        return True
 
     def set_clock(self, now_text: str, remaining_text: str):
         self.now_label.setText(f"현재시간  {now_text}")

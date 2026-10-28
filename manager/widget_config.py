@@ -50,6 +50,9 @@ DEFAULT_APPEARANCE = {
     "popup_scale": 100,  # 리마인더 알림 창 글자 배율(%)
 }
 _COLOR_RE = re.compile(r"#[0-9a-fA-F]{6}")
+# 우패널 "삭제 이력"으로 되돌릴 수 있는 최근 삭제 수 (설정창 Application)
+UNDO_LIMITS = (5, 10, 20, 50)
+DEFAULT_UNDO_LIMIT = 10
 
 DEFAULT_CONFIG = {
     "pos": None,  # [x, y] / None 이면 우측 상단 배치
@@ -69,6 +72,9 @@ DEFAULT_CONFIG = {
     # 사용자가 추가한 TODO 태그 [{"id": "custom-…", "name": "Home", "color": "#rrggbb"}]
     # (우패널 태그 메뉴 "+ 태그 추가…" / 설정창 Appearance 에서 이름·색 변경, 삭제)
     "custom_tags": [],
+    # 행의 ✕ 로 할 일을 지울 때 확인 창 (확인 창의 "다시 묻지 않음" -> False, 설정창 Application)
+    "confirm_delete": True,
+    "undo_limit": DEFAULT_UNDO_LIMIT,  # 되돌릴 수 있는 최근 삭제 수 (UNDO_LIMITS 중 하나)
 }
 CUSTOM_TAG_PREFIX = "custom-"  # 사용자 태그 id (todos.tag 에 저장되는 값)
 CUSTOM_TAG_NAME_MAX = 20
@@ -107,6 +113,16 @@ def shortcuts(cfg: dict) -> dict:
         ):
             result[action] = ""
     return result
+
+
+def confirm_delete(cfg: dict) -> bool:
+    """행의 ✕ 로 지울 때 확인 창을 띄울지 (False 로 저장했을 때만 묻지 않는다)"""
+    return cfg.get("confirm_delete") is not False
+
+
+def undo_limit(cfg: dict) -> int:
+    """되돌릴 수 있는 최근 삭제 수. 정해진 값이 아니면 기본값"""
+    return _scale(cfg.get("undo_limit"), UNDO_LIMITS, DEFAULT_UNDO_LIMIT)
 
 
 def custom_tags(cfg: dict) -> list:

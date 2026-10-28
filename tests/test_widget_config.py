@@ -88,6 +88,20 @@ def test_import_rejects_non_config(tmp_path):
 # ==================================================
 # Appearance
 # ==================================================
+def test_confirm_delete_and_undo_limit():
+    assert widget_config.confirm_delete({}) is True
+    assert widget_config.confirm_delete({"confirm_delete": "no"}) is True
+    assert widget_config.confirm_delete({"confirm_delete": False}) is False
+    assert widget_config.undo_limit({}) == widget_config.DEFAULT_UNDO_LIMIT
+    assert widget_config.undo_limit({"undo_limit": 20}) == 20
+    assert (
+        widget_config.undo_limit({"undo_limit": 7}) == widget_config.DEFAULT_UNDO_LIMIT
+    )
+    assert widget_config.undo_limit({"undo_limit": True}) == (
+        widget_config.DEFAULT_UNDO_LIMIT
+    )
+
+
 def test_appearance_defaults():
     assert widget_config.appearance({}) == widget_config.DEFAULT_APPEARANCE
     assert widget_config.appearance({"appearance": "broken"}) == (

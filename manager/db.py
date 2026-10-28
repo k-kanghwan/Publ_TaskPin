@@ -70,6 +70,24 @@ ALTER TABLE todos ADD COLUMN collapsed INTEGER NOT NULL DEFAULT 0;
 PRAGMA user_version = 7;
 """
 
+# user_version 7 -> 8: 지운 TODO 이력 (우패널 우클릭 "삭제 이력"으로 되돌림 - manager/todo_trash)
+# 되돌려도 행은 지우지 않고 restored_at 만 남긴다
+_SCHEMA_V8 = """
+CREATE TABLE todo_deletions (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    batch       INTEGER NOT NULL,  -- 한 번에 지운 묶음 = 되돌리기 단위
+    deleted_at  TEXT NOT NULL,
+    todo_id     TEXT NOT NULL,
+    text        TEXT NOT NULL,
+    snapshot    TEXT NOT NULL,     -- 지울 때의 항목 전체 (JSON)
+    parent_id   TEXT,              -- 지울 때의 상위
+    before_id   TEXT,              -- 지울 때 바로 뒤 형제 (NULL: 형제 맨 뒤)
+    child_ids   TEXT NOT NULL,     -- 한 단계 위로 올라간 하위 id (JSON 목록)
+    restored_at TEXT               -- 되돌린 시각 / NULL 이면 아직 지운 상태
+);
+PRAGMA user_version = 8;
+"""
+
 _MIGRATIONS = (
     (1, _SCHEMA_V1),
     (2, _SCHEMA_V2),
@@ -78,6 +96,7 @@ _MIGRATIONS = (
     (5, _SCHEMA_V5),
     (6, _SCHEMA_V6),
     (7, _SCHEMA_V7),
+    (8, _SCHEMA_V8),
 )
 
 _conn = None
