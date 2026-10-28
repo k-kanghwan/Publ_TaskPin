@@ -8,7 +8,7 @@
                          리마인더 알림 창 폭 / 글자 크기(실제 크기 예시 포함),
                          사용자 태그(이름 / 색 변경, 추가, 삭제 - config.json custom_tags).
                          바꾸면 appearance_changed 로 위젯에 바로 반영한다.
-  - Application        : TODO(✕ 버튼 삭제 확인, 되돌릴 수 있는 삭제 수) /
+  - Application        : TODO(할 일 삭제 확인, 되돌릴 수 있는 삭제 수) /
                          설정 내보내기(폴더를 고르면 config.json 을 그대로 저장) / 가져오기(바로 적용)
 
 설정창 자체는 테마(다크 / 라이트)와 강조색만 따른다. 배경색 / 폰트 / 글자 크기는 위젯에만 적용한다.
@@ -18,6 +18,7 @@
 """
 
 import os
+from dataclasses import replace
 from datetime import datetime
 
 from PySide6.QtCore import QSize, QStandardPaths, Qt, Signal
@@ -39,12 +40,11 @@ from PySide6.QtWidgets import (
 )
 
 from manager import os_win, snippets, widget_config
-from ui import theme
+from ui import painted, theme
 from ui.color_dialog import pick_color
 from ui.confirm_dialog import ConfirmDialog
 from ui.reminder_popup import ReminderPopup
 from ui.tag_dialog import TagDialog
-
 
 WINDOW_TITLE = "Task알림 설정"
 WINDOW_SIZE = (720, 560)  # Appearance 탭이 스크롤 없이 거의 다 보이도록
@@ -116,7 +116,7 @@ def _settings_theme(cfg: dict) -> theme.Theme:
 
 
 def _settings_style(t: theme.Theme) -> str:
-    window_bg, card_bg = SURFACES[t.dark]
+    window_bg = SURFACES[t.dark][0]
     return (
         theme.button_style(t)
         + theme.popup_form_style(t)
@@ -135,36 +135,24 @@ def _settings_style(t: theme.Theme) -> str:
     QLabel#version {{
         color: {t.text_sub};
         font-weight: bold;
-        border: 1px solid {t.overlay(40)};
-        border-radius: 14px;
+        border: 1px solid transparent;
         padding: 6px;
     }}
     QFrame#card, QFrame#sidebar {{
-        background: {card_bg};
-        border: 1px solid {t.overlay(22)};
-        border-radius: 14px;
+        background: transparent;
+        border: 1px solid transparent;
     }}
     QFrame#line {{ background: {t.line}; border: none; }}
     QPushButton#nav {{
         text-align: left;
         padding: 9px 12px;
         border: none;
-        border-radius: 8px;
         background: transparent;
         font-size: 13px;
     }}
-    QPushButton#nav:hover {{ background: {t.overlay(14)}; }}
-    QPushButton#nav:checked {{
-        background: {t.overlay(22)};
-        border-right: 3px solid {t.accent};
-    }}
     QPushButton#small {{ padding: 4px 10px; }}
     QPushButton#segment {{ padding: 4px 12px; }}
-    QPushButton#segment:checked {{
-        background: {t.accent};
-        color: {t.on_accent};
-        border: 1px solid {t.accent};
-    }}
+    QPushButton#segment:checked {{ color: {t.on_accent}; }}
     QLabel#group {{ color: {t.text_sub}; font-size: 12px; font-weight: bold; }}
     QPushButton#remove {{
         background: transparent;
@@ -173,7 +161,6 @@ def _settings_style(t: theme.Theme) -> str:
         padding: 0px;
     }}
     QPushButton#remove:hover {{ color: {t.text_warn}; }}
-    QLineEdit[invalid="true"] {{ border: 1px solid {t.text_warn}; }}
     QScrollArea, QScrollArea > QWidget > QWidget {{ background: transparent; border: none; }}
     QScrollBar:vertical {{ background: transparent; width: 6px; margin: 0px; }}
     QScrollBar::handle:vertical {{
@@ -187,6 +174,39 @@ def _settings_style(t: theme.Theme) -> str:
     )
 
 
+def _settings_boxes(t: theme.Theme) -> list:
+    """설정창의 둥근 배경 / 테두리 (ui/painted 가 그림 - 스타일시트는 같은 두께의 투명 테두리만)"""
+    _window_bg, card_bg = SURFACES[t.dark]
+    card = painted.box(14, card_bg, t.overlay_color(22))
+    return [
+        (
+            QPushButton,
+            "nav",
+            painted.box(
+                8,
+                hover_bg=t.overlay_color(14),
+                checked_bg=t.overlay_color(22),
+                checked_bar=t.accent,
+            ),
+        ),
+        (
+            QPushButton,
+            "segment",
+            replace(
+                painted.button_box(t),
+                checked_bg=QColor(t.accent),
+                checked_border=QColor(t.accent),
+            ),
+        ),
+        (QPushButton, "remove", None),
+        (QLabel, "version", painted.box(14, None, t.overlay_color(40))),
+        (QFrame, "card", card),
+        (QFrame, "sidebar", card),
+        *painted.form_rules(t),
+        (QPushButton, None, painted.button_box(t)),
+    ]
+
+
 def _line() -> QFrame:
     line = QFrame()
     line.setObjectName("line")
@@ -198,8 +218,7 @@ def _set_invalid(edit: QLineEdit, invalid: bool):
     """스타일시트의 [invalid="true"] 테두리를 켜고 끈다."""
     if edit.property("invalid") != invalid:
         edit.setProperty("invalid", invalid)
-        edit.style().unpolish(edit)
-        edit.style().polish(edit)
+        edit.update()  # 테두리는 ui/painted 가 property("invalid") 를 보고 그린다
 
 
 class _ShortcutEdit(QKeySequenceEdit):
@@ -360,6 +379,7 @@ class SettingsDialog(QWidget):
         self.resize(*WINDOW_SIZE)
         self.setMinimumSize(560, 360)
         self.setStyleSheet(_settings_style(self._look))
+        painted.set_boxes(self, _settings_boxes(self._look))
 
         root = QHBoxLayout(self)
         root.setContentsMargins(12, 12, 16, 12)
@@ -477,7 +497,7 @@ class SettingsDialog(QWidget):
         page, _card, card_layout = self._page(
             "Keyboard Shortcuts",
             "위젯을 클릭해 활성화한 상태에서 동작합니다. 입력칸에 커서가 있으면 글자 키는 글자로 입력됩니다.\n"
-            "할 일 목록(고정): ↑↓ 선택 · ←→ 접기/펴기 · Home/End 처음/끝 · Esc 선택 해제",
+            "할 일 목록(고정): ↑↓ 선택 · ←→ 접기/펴기 · Home/End 처음/끝 · Delete 삭제 · Esc 선택 해제",
         )
         current = widget_config.shortcuts(self._cfg)
         for action, title, subtitle in SHORTCUT_ROWS:
@@ -895,9 +915,14 @@ class SettingsDialog(QWidget):
     def _paint_swatch(self, btn: QPushButton, fill: str, ring: str, text: str = ""):
         btn.setText(text)
         btn.setStyleSheet(
-            f"QPushButton {{ background: {fill}; color: {self._look.text_sub};"
-            f" border: 2px solid {ring}; border-radius: {SWATCH_SIZE // 2}px;"
-            " padding: 0px; font-size: 12px; }"
+            f"QPushButton {{ background: transparent; color: {self._look.text_sub};"
+            " border: 2px solid transparent; padding: 0px; font-size: 12px; }"
+        )
+        painted.set_box(
+            btn,
+            painted.box(
+                SWATCH_SIZE / 2, None if fill == "transparent" else fill, ring, width=2
+            ),
         )
 
     def _pick_accent(self):
@@ -941,6 +966,7 @@ class SettingsDialog(QWidget):
         "시스템" 테마에서 Windows 앱 모드가 바뀔 때 TaskPinApp 도 부른다."""
         self._look = _settings_theme(self._cfg)
         self.setStyleSheet(_settings_style(self._look))
+        painted.set_boxes(self, _settings_boxes(self._look))
         if self.isVisible():
             os_win.set_dark_title_bar(int(self.winId()), self._look.dark)
         self._refresh_appearance()
@@ -1024,8 +1050,8 @@ class SettingsDialog(QWidget):
         )
         self._add_row(
             card_layout,
-            "✕ 버튼 삭제 확인",
-            "할 일 행의 ✕로 지울 때 확인 창을 띄웁니다 ('다시 묻지 않음'으로 끈 것도 여기서 다시 켭니다)",
+            "할 일 삭제 확인",
+            "행의 ✕나 우클릭 '삭제'로 지울 때 확인 창을 띄웁니다 ('다시 묻지 않음'으로 끈 것도 여기서 다시 켭니다)",
             box,
         ).setWordWrap(True)
         box, self._undo_limit_group = self._segmented(

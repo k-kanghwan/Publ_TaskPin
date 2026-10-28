@@ -22,12 +22,14 @@ from PySide6.QtWidgets import (
 )
 
 from manager import widget_config
-from ui import theme
+from ui import painted, theme
 from ui.color_dialog import pick_color
 from ui.theme import CORNER_RADIUS
 
 DIALOG_WIDTH = 280
 SWATCH_SIZE = 20
+# 색 칸: 동그라미 / 테두리는 ui/painted 가 그린다 (같은 두께의 투명 테두리로 자리만)
+_SWATCH_STYLE = "QPushButton { background: transparent; border: 2px solid transparent; padding: 0px; }"
 # 기본 태그(Red ~ Gray)와 겹치지 않는 색 위주
 PRESET_COLORS = [
     "#a77bd8",  # 보라
@@ -69,19 +71,17 @@ class TagDialog(QDialog):
                 font-family: {t.font_family};
             }}
             QPushButton {{ padding: 6px 0px; }}
-            QPushButton#ok {{
-                background: {t.accent};
-                color: {t.on_accent};
-                font-weight: bold;
-                border: 1px solid {t.accent};
-            }}
-            QPushButton#ok:hover {{ background: {t.accent_hover}; }}
-            QPushButton#ok:disabled {{
-                background: {t.overlay(10)};
-                color: {t.text_disabled};
-                border: 1px solid {t.overlay(18)};
-            }}
+            QPushButton#ok {{ color: {t.on_accent}; font-weight: bold; }}
+            QPushButton#ok:disabled {{ color: {t.text_disabled}; }}
             """
+        )
+        painted.set_boxes(
+            self,
+            [
+                (QPushButton, "ok", painted.accent_box(t)),
+                *painted.form_rules(t),
+                (QPushButton, None, painted.button_box(t)),
+            ],
         )
 
         root = QVBoxLayout(self)
@@ -148,17 +148,17 @@ class TagDialog(QDialog):
         radius = SWATCH_SIZE // 2
         for color, btn in self._swatches:
             ring = t.text_main if color == self._color else color
-            btn.setStyleSheet(
-                f"QPushButton {{ background: {color}; border: 2px solid {ring};"
-                f" border-radius: {radius}px; padding: 0px; }}"
-            )
+            btn.setStyleSheet(_SWATCH_STYLE)
+            painted.set_box(btn, painted.box(radius, color, ring, width=2))
         custom = self._color not in PRESET_COLORS
         self._custom.setText("" if custom else "+")
-        fill = self._color if custom else "transparent"
+        fill = self._color
         ring = t.text_main if custom else t.text_sub
         self._custom.setStyleSheet(
-            f"QPushButton {{ background: {fill}; color: {t.text_sub}; border: 2px solid {ring};"
-            f" border-radius: {radius}px; padding: 0px; font-size: 12px; }}"
+            _SWATCH_STYLE + f" QPushButton {{ color: {t.text_sub}; font-size: 12px; }}"
+        )
+        painted.set_box(
+            self._custom, painted.box(radius, fill if custom else None, ring, width=2)
         )
 
     def _set_color(self, color: str):

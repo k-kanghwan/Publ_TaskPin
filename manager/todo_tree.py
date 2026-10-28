@@ -149,7 +149,7 @@ def ancestors(items: list, item_id) -> list:
 
 
 def set_done(items: list, item_id, done: bool) -> bool:
-    """완료하면 하위도 모두 완료, 해제하면 상위도 모두 해제한다.
+    """완료하면 하위도 모두 완료, 해제하면 상위와 하위를 모두 해제한다.
 
     Returns
     -------
@@ -158,7 +158,9 @@ def set_done(items: list, item_id, done: bool) -> bool:
     item = _find(items, item_id)
     if item is None:
         return False
-    related = descendants(items, item_id) if done else ancestors(items, item_id)
+    related = descendants(items, item_id)
+    if not done:
+        related += ancestors(items, item_id)
     changed = False
     for target in [item] + related:
         if target["done"] != done:

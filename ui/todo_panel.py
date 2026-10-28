@@ -4,18 +4,19 @@
 - 입력 중 `(@` 를 치면 리마인더 피커가 떠서 `(@YYYY-MM-DD HH:mm)` 토큰을 넣는다
 - 입력 중 `:idea:` 같은 스니펫 트리거를 치면 설정한 문구(💡)로 바뀐다 (설정창 Snippets 탭)
 - 체크하면 목록 아래로 (취소선은 Appearance 설정), 우클릭 메뉴 "완료 항목 정리" 로 일괄 보관(DB 에는 남음)
+- ▸ 로 펼치면 펼친 하위 마지막 행까지 보이게 스크롤한다 (하위가 화면보다 길면 상위를 맨 위에 둔다)
 - 더블클릭으로 그 자리에서 수정 (Enter/포커스 이동: 저장, Esc: 취소)
 - 클릭으로 선택 (Ctrl: 하나씩 추가/빼기, Shift: 범위). 빈 곳 클릭 / Esc 로 해제.
   선택 테두리는 목록(container)이 그린다 - 화면에서 이어진 선택 행끼리는 테두리 하나로 묶는다.
   하위 레벨 가이드 선(강조색)과 행 구분선(설정)도 목록이 그린다.
   선택한 채로 입력하면 마지막으로 클릭한 항목의 하위로 들어간다.
 - 키보드: ↑↓ 선택 이동(선택이 없으면 보이는 영역 가운데부터) / Home·End 처음·끝 /
-  ← 접기·상위로 / → 펴기·첫 하위로 / F2(설정 단축키) 수정. 목록의 화살표 스크롤 대신 선택을 옮긴다.
+  ← 접기·상위로 / → 펴기·첫 하위로 / Delete 삭제 / F2(설정 단축키) 수정. 목록의 화살표 스크롤 대신 선택을 옮긴다.
 - 드래그로 순서/레벨 변경: 행 가운데에 놓으면 그 항목의 하위로, 행 사이에 놓으면 그 자리로.
   선택한 행을 끌면 선택 항목이 모두 함께 옮겨진다.
-  (계층 규칙은 manager/todo_tree 참고 - 상위를 완료하면 하위도 완료, 상위를 지우면 하위는 한 단계 위로)
+  (계층 규칙은 manager/todo_tree 참고 - 상위를 완료 / 해제하면 하위도 함께, 상위를 지우면 하위는 한 단계 위로)
 - 우클릭 메뉴: 검색 / 모두 접기·펼치기 / 완료 항목 정리 / 내보내기 / 추가 / 삭제 / 삭제 이력 / 태그(체크박스 왼쪽 색 막대)
-  삭제는 되돌릴 수 있게 삭제 이력에 남는다 (manager/todo_trash). 행의 ✕ 는 지우기 전에 묻는다(설정).
+  삭제는 되돌릴 수 있게 삭제 이력에 남는다 (manager/todo_trash). ✕ / 우클릭 "삭제" 는 지우기 전에 묻는다(설정).
   여러 개를 선택한 채 우클릭하면 선택 항목 전체에 적용된다.
   태그는 기본 6색 + 사용자 태그(config.json custom_tags, "+ 태그 추가…" / 설정창에서 관리)
 - 페이지(엑셀 시트처럼 독립된 목록, manager/todo_pages): 위 / 아래 / 왼쪽 / 오른쪽의 페이지 표시(ui/page_bar)와
@@ -47,7 +48,6 @@ from PySide6.QtGui import QColor, QCursor, QIcon, QPainter, QPainterPath, QPen, 
 from PySide6.QtWidgets import (
     QApplication,
     QButtonGroup,
-    QCheckBox,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -61,14 +61,14 @@ from PySide6.QtWidgets import (
 )
 
 from manager import todo_filter, todo_pages, todo_store, todo_trash, todo_tree
-from ui import theme
+from ui import painted, theme
 from ui.confirm_dialog import ConfirmDialog
 from ui.page_bar import PageBar
+from ui.painted import CheckBox
 from ui.reminder_picker import ReminderPicker
 from ui.tag_dialog import TagDialog
 from ui.text_input import PreeditLineEdit, expand_snippet_later, py_cursor, utf16_pos
 from ui.theme import px
-
 
 TRIGGER = "(@"
 ROW_HOVER_ALPHA = 24  # 마우스를 올린 행 배경 (테마의 덧칠 색)
@@ -83,8 +83,7 @@ AUTO_SCROLL_MARGIN = (
 AUTO_SCROLL_MS = 30  # 자동 스크롤 주기 - 커서를 멈춰 두어도 계속 스크롤된다
 AUTO_SCROLL_MAX_STEP = 20  # 끝에서 멀리 벗어날수록 빠르게, 한 번에 최대 이만큼(px)
 DRAG_GHOST_OPACITY = 0.8  # 끌고 가는 행 그림
-INDENT_STEP = 16  # 레벨 하나당 들여쓰기(px) - 체크박스 + 간격
-MAX_INDENT_DEPTH = 3  # 위젯 폭이 좁으므로 이보다 깊은 레벨은 같은 들여쓰기로 표시
+INDENT_STEP = 16  # 레벨 하나당 들여쓰기(px) - 체크박스 + 간격 (레벨 수 제한 없음)
 # 본문(12px) 크기의 컬러 이모지는 테두리가 뭉개지므로 행에서는 조금 크게 그린다
 EMOJI_PX = 14
 TAG_BAR_WIDTH = 3  # 체크박스 왼쪽 태그 막대 (태그가 없어도 자리는 둔다)
@@ -125,7 +124,7 @@ HISTORY_TEXT_PX = 180  # 우클릭 "삭제 이력" 항목의 본문 폭 (넘치�
 
 
 def _indent(depth: int) -> int:
-    return min(depth, MAX_INDENT_DEPTH) * INDENT_STEP
+    return depth * INDENT_STEP
 
 
 def _tag_icon(color: str, outline: str = "") -> QIcon:
@@ -165,29 +164,14 @@ def _panel_style(t: theme.Theme) -> str:
     QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0px; }}
     QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: none; }}
     QLineEdit {{
-        background: {t.overlay(18)};
+        background: transparent;
         color: {t.todo_color};
         font-family: {t.font_family};
         font-size: {px(12, s)}px;
-        border: 1px solid {t.overlay(30)};
-        border-radius: 6px;
+        border: 1px solid transparent;
         padding: 3px 6px;
         selection-background-color: {t.accent};
         selection-color: {t.on_accent};
-    }}
-    QLineEdit:focus {{ border: 1px solid {t.overlay(90)}; }}
-    QCheckBox {{ background: transparent; spacing: 0px; }}
-    QCheckBox::indicator {{
-        width: {px(12, s)}px;
-        height: {px(12, s)}px;
-        border: 1px solid {t.overlay(130)};
-        border-radius: 3px;
-        background: transparent;
-    }}
-    QCheckBox::indicator:hover {{ border: 1px solid {t.text_main}; }}
-    QCheckBox::indicator:checked {{
-        background: {t.accent};
-        border: 1px solid {t.accent};
     }}
     QPushButton#delete {{
         background: transparent;
@@ -467,7 +451,8 @@ class TodoRow(QWidget):
         lead = QHBoxLayout()
         lead.setSpacing(TAG_BAR_GAP)
 
-        self.check = QCheckBox(self)
+        # 둥근 네모를 직접 그린다 (스타일시트 indicator 는 모서리가 계단처럼 깨짐)
+        self.check = CheckBox(parent=self)
         self.check.setCursor(Qt.PointingHandCursor)
         self.check.setFocusPolicy(Qt.NoFocus)
         self.check.toggled.connect(lambda on: self.toggled.emit(self.item["id"], on))
@@ -529,6 +514,7 @@ class TodoRow(QWidget):
         done = self.item["done"]
         tag_color = self._tag_color(self.item.get("tag"))
         collapsed = self.item.get("collapsed")
+        self.check.set_box_size(px(12, s) + 2)  # 네모 12px(글자 배율) + 테두리
         self.btn_toggle.setText("▸" if collapsed else "▾")
         self.btn_toggle.setToolTip("하위 펼치기" if collapsed else "하위 접기")
         if tag_color != self._bar_color:
@@ -713,7 +699,7 @@ class TodoPanel(QWidget):
         custom_tags_provider: () -> [{"id", "name", "color"}] (사용자 태그, widget_config.custom_tags)
         add_custom_tag: (이름, 색) -> 새 태그 id (cfg 에 추가하고 저장)
         undo_limit_provider: () -> 되돌릴 수 있는 최근 삭제 수 (widget_config.undo_limit)
-        confirm_delete: () -> bool. 행의 ✕ 로 지우기 전에 묻는다 (설정에 따라 묻지 않고 True)
+        confirm_delete: (지울 개수) -> bool. ✕ / 우클릭 "삭제" 전에 묻는다 (설정에 따라 묻지 않고 True)
         page_id: 처음 보여줄 페이지 (cfg todo_page, 없는 페이지면 첫 페이지)"""
         super().__init__(parent)
         self._snippets_provider = snippets_provider
@@ -827,13 +813,21 @@ class TodoPanel(QWidget):
         """현재 테마(theme.current())로 다시 입힌다. 글자 크기 / 색은 우패널 설정을 따른다."""
         t = theme.current()
         self.setStyleSheet(_panel_style(t))
+        # 입력칸은 둥근 테두리를 직접 그린다. 목록의 작은 버튼(▸ / ✕ / + / 칩)은 배경이 없다
+        painted.set_boxes(
+            self,
+            [
+                (QLineEdit, None, painted.input_box(t, border_alpha=30)),
+                (QPushButton, None, None),
+            ],
+        )
         self.empty_label.setStyleSheet(
             f"font-size: {px(11, t.todo_scale)}px; color: {t.text_sub};"
         )
         self.drop_line.setStyleSheet(f"background: {t.accent}; border: none;")
-        self.drop_box.setStyleSheet(
-            f"background: transparent; border: {DROP_BOX_BORDER}px solid {t.accent};"
-            f" border-radius: {ROW_RADIUS}px;"
+        painted.set_box(
+            self.drop_box,
+            painted.box(ROW_RADIUS, None, t.accent, width=DROP_BOX_BORDER),
         )
         self.refresh_rows()
         self.container.update()  # 가이드 선 / 행 구분선 / 선택 테두리 색
@@ -924,12 +918,33 @@ class TodoPanel(QWidget):
         self._reveal(next(row for row in self._rows if row.item is item))
 
     def toggle_collapse(self, item_id: str):
-        """▸/▾ 버튼: 하위를 접거나 펼친다 (숨은 하위는 _rebuild 가 선택에서 뺀다)"""
+        """▸/▾ 버튼: 하위를 접거나 펼친다 (숨은 하위는 _rebuild 가 선택에서 뺀다).
+        펼쳤으면 펼친 하위의 마지막 행까지 보이게 스크롤한다."""
         item = self._find(item_id)
         if item is not None and todo_tree.set_collapsed(
             self._items, item_id, not item.get("collapsed")
         ):
             self._save_and_rebuild()
+            if not item.get("collapsed"):
+                self._reveal_subtree(item_id)
+
+    def _reveal_subtree(self, item_id: str):
+        """item_id 행과 그 아래 보이는 하위 행들을 화면에 보인다.
+        하위가 화면보다 길면 상위 행을 맨 위에 두고 들어가는 만큼만 보인다."""
+        idx = next(
+            (i for i, row in enumerate(self._rows) if row.item["id"] == item_id), None
+        )
+        if idx is None:
+            return
+        parent = self._rows[idx]
+        last = parent
+        for row in self._rows[idx + 1 :]:
+            if row.depth <= parent.depth:
+                break
+            last = row
+        self._reveal(last, NAV_SCROLL_MARGIN)
+        # 마지막 행을 맞추느라 상위가 위로 밀려났으면 상위를 다시 맨 위로
+        self.scroll.ensureWidgetVisible(parent, 0, NAV_SCROLL_MARGIN)
 
     def set_all_collapsed(self, collapsed: bool):
         """우클릭 "모두 접기" / "모두 펼치기". 지금 행은 화면에 남겨 둔다."""
@@ -946,7 +961,7 @@ class TodoPanel(QWidget):
         return selected[0] if selected else None
 
     def set_done(self, item_id: str, done: bool):
-        """완료하면 하위도 모두 완료, 해제하면 상위도 모두 해제"""
+        """완료하면 하위도 모두 완료, 해제하면 상위와 하위를 모두 해제"""
         if todo_tree.set_done(self._items, item_id, done):
             self._save_and_rebuild()
 
@@ -963,12 +978,14 @@ class TodoPanel(QWidget):
 
     def delete_item(self, item_id: str):
         """행의 ✕: 확인(설정에 따라 생략)한 뒤 그 항목만 지운다. 하위 항목은 한 단계 위로 올라간다."""
-        if self._find(item_id) is not None and self._confirm_delete():
+        if self._find(item_id) is not None and self._confirm_delete(1):
             self._delete([item_id])
 
-    def delete_selected(self):
-        """우클릭 "삭제": 선택 항목을 완료 처리 없이 지운다. 하위는 한 단계씩 위로 올라간다."""
-        self._delete(self._selected_ids())
+    def delete_selected(self) -> bool:
+        """우클릭 "삭제" / Delete 키: 확인(설정에 따라 생략)한 뒤 선택 항목을 완료 처리 없이 지운다.
+        하위는 한 단계씩 위로 올라간다. 지웠으면 True"""
+        ids = self._selected_ids()
+        return bool(ids) and self._confirm_delete(len(ids)) and self._delete(ids)
 
     def _delete(self, ids: list) -> bool:
         """ids 를 차례로 지운다(하위는 한 단계씩 위로). 되돌릴 수 있도록 지울 때의 항목과 자리를
@@ -1434,15 +1451,14 @@ class TodoPanel(QWidget):
 
     def _paint_guides(self, painter: QPainter, t: theme.Theme):
         """하위 레벨 가이드 선: 상위의 ▸/▾ 가운데에서 내려와 하위 행들 왼쪽을 잇는 세로선.
-        행마다 자기 위 간격부터 아래 끝까지 그어서 같은 상위 아래 이어진 행끼리는 한 줄이 된다.
-        들여쓰기가 멈추는 MAX_INDENT_DEPTH 부터는 상위의 ▸/▾ 가 행과 같은 자리라 긋지 않는다."""
+        행마다 자기 위 간격부터 아래 끝까지 그어서 같은 상위 아래 이어진 행끼리는 한 줄이 된다."""
         color = QColor(t.accent)
         color.setAlpha(GUIDE_ALPHA)
         painter.setPen(QPen(color, 1))
         gap = self.list_layout.spacing()
         for row in self._rows:
             geo = row.geometry()
-            for level in range(min(row.depth, MAX_INDENT_DEPTH)):
+            for level in range(row.depth):
                 x = geo.left() + ROW_PAD + _indent(level) + TOGGLE_SIZE // 2 + 0.5
                 painter.drawLine(
                     QPointF(x, geo.top() - gap), QPointF(x, geo.bottom() + 1)
@@ -1814,7 +1830,7 @@ class TodoPanel(QWidget):
                 and not event.modifiers() & NAV_BLOCKING_MODIFIERS
                 and self.handle_nav_key(event.key())
             ):
-                return True  # 스크롤 영역의 화살표 스크롤 대신 선택을 옮긴다
+                return True  # 스크롤 영역의 화살표 스크롤 대신 선택을 옮긴다 (Delete 는 삭제)
         return super().eventFilter(obj, event)
 
     # ==================================================
@@ -1824,7 +1840,12 @@ class TodoPanel(QWidget):
         """목록 키보드 이동. 처리했으면 True
         ↑↓: 위 / 아래 행 (선택이 없으면 보이는 영역 가운데 행부터), Home / End: 처음 / 마지막 행
         ←: 펼친 상위면 접고, 아니면 상위 행으로 / →: 접힌 상위면 펴고, 펼쳤으면 첫 하위 행으로
-        (검색 / 날짜별 보기 중에는 접힘을 무시하므로 ← / → 는 이동만 한다)"""
+        (검색 / 날짜별 보기 중에는 접힘을 무시하므로 ← / → 는 이동만 한다)
+        Delete: 선택 항목 삭제 (확인 창은 설정에 따름)"""
+        if key == Qt.Key_Delete:
+            self.container.setFocus(Qt.OtherFocusReason)
+            self._delete_by_key()
+            return True
         if key not in NAV_KEYS:
             return False
         # 이후 키도 목록이 받도록 (입력칸 Esc 뒤 / 포커스 위젯이 없을 때 넘어온 경우)
@@ -1847,6 +1868,17 @@ class TodoPanel(QWidget):
             self._select_only(target.item["id"])
             self._reveal(target, NAV_SCROLL_MARGIN)
         return True
+
+    def _delete_by_key(self):
+        """Delete 키: 선택 항목을 지우고, 지운 첫 행 자리의 행을 골라 이어서 지우거나 움직이게 한다."""
+        rows = [row for row in self._rows if row.item["id"] in self._selected]
+        if not rows:
+            return
+        idx = self._rows.index(rows[0])
+        if self.delete_selected() and self._rows:
+            target = self._rows[min(idx, len(self._rows) - 1)]
+            self._select_only(target.item["id"])
+            self._reveal(target, NAV_SCROLL_MARGIN)
 
     def _current_row(self):
         """키보드 이동 / 수정의 기준 행: 마지막으로 고른 행 (선택이 없으면 None)"""

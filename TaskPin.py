@@ -149,7 +149,7 @@ class TaskPinApp(TrayApp):
             )
 
     def open_task_picker(self):
-        """위젯의 [등록] 버튼(Task 가 없을 때): 등록 창을 버튼 위에 띄운다.
+        """위젯의 [등록] 버튼(Task 가 없을 때): 등록 창을 수정 창과 같은 자리([수정] 버튼 위)에 띄운다.
         지난번에 확인 없이 닫은 업무명 / 상세 업무가 있으면 채워 둔다."""
         if self._raise_picker():
             return
@@ -161,7 +161,7 @@ class TaskPinApp(TrayApp):
         )
         picker.picked.connect(self.register_task)
         picker.canceled.connect(self._keep_task_draft)
-        self._show_picker(picker, self.widget.btn_task)
+        self._show_picker(picker, self.widget.btn_task_edit)
 
     def open_task_editor(self):
         """위젯의 [수정] 버튼: 진행 중인 Task 값으로 채운 창을 띄우고, 확인하면 그 행을 고친다."""

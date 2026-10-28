@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ui import theme
+from ui import painted, theme
 from ui.theme import CORNER_RADIUS, px
 
 
@@ -77,6 +77,7 @@ class ReminderPopup(QWidget):
             QPushButton {{ padding: {px(5, s)}px 0px; }}
             """
         )
+        painted.set_boxes(self, [(QPushButton, None, painted.button_box(t))])
 
         root = QVBoxLayout(self)
         root.setContentsMargins(16, 12, 16, 12)

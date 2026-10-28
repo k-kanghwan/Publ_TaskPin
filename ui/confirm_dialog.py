@@ -11,7 +11,6 @@ from PySide6.QtCore import QPoint, QRectF, Qt
 from PySide6.QtGui import QColor, QPainter, QPainterPath
 from PySide6.QtWidgets import (
     QApplication,
-    QCheckBox,
     QDialog,
     QHBoxLayout,
     QLabel,
@@ -20,9 +19,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ui import theme
+from ui import painted, theme
+from ui.painted import CheckBox
 from ui.theme import CORNER_RADIUS
-
 
 DIALOG_WIDTH = 260
 BORDER_ALPHA = 210  # 강조색 테두리
@@ -66,36 +65,26 @@ class ConfirmDialog(QDialog):
                 font-family: {t.font_family};
             }}
             QPushButton {{ padding: 6px 0px; }}
-            QPushButton#confirm {{
-                background: {confirm_color};
-                color: #1a1a1a;
-                font-weight: bold;
-                border: 1px solid {confirm_color};
-            }}
-            QPushButton#confirm:hover {{
-                background: {confirm_hover};
-                border: 1px solid {confirm_hover};
-            }}
+            QPushButton#confirm {{ color: #1a1a1a; font-weight: bold; }}
             QCheckBox {{
                 background: transparent;
                 color: {t.text_sub};
                 font-family: {t.font_family};
                 font-size: 12px;
-                spacing: 6px;
-            }}
-            QCheckBox::indicator {{
-                width: 12px;
-                height: 12px;
-                border: 1px solid {t.overlay(130)};
-                border-radius: 3px;
-                background: transparent;
-            }}
-            QCheckBox::indicator:hover {{ border: 1px solid {t.text_main}; }}
-            QCheckBox::indicator:checked {{
-                background: {t.accent};
-                border: 1px solid {t.accent};
             }}
             """
+        )
+
+        painted.set_boxes(
+            self,
+            [
+                (
+                    QPushButton,
+                    "confirm",
+                    painted.accent_box(t, confirm_color, confirm_hover),
+                ),
+                (QPushButton, None, painted.button_box(t)),
+            ],
         )
 
         root = QVBoxLayout(self)
@@ -134,7 +123,7 @@ class ConfirmDialog(QDialog):
 
         self._remember = None
         if remember_text:
-            self._remember = QCheckBox(remember_text)
+            self._remember = CheckBox(remember_text)  # 네모는 직접 그린다 (ui/painted)
             self._remember.setCursor(Qt.PointingHandCursor)
             root.addWidget(self._remember)
 

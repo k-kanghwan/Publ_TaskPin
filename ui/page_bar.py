@@ -12,7 +12,6 @@ from PySide6.QtCore import QEasingCurve, QRectF, QSize, Qt, QVariantAnimation, S
 from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import (
     QBoxLayout,
-    QLabel,
     QMenu,
     QPushButton,
     QSizePolicy,
@@ -21,6 +20,7 @@ from PySide6.QtWidgets import (
 )
 
 from ui import theme
+from ui.painted import EditableLabel
 from ui.theme import px
 
 DOT = 6  # 점 지름(px)
@@ -165,7 +165,7 @@ class PageDots(QWidget):
         event.ignore()  # 점 사이 빈 곳은 위젯 창 이동으로 넘긴다
 
 
-class _PageName(QLabel):
+class _PageName(EditableLabel):
     """지금 페이지 이름 (넘치면 말줄임). 더블클릭하면 이름 바꾸기"""
 
     double_clicked = Signal()
@@ -180,13 +180,27 @@ class _PageName(QLabel):
     def set_full_text(self, text: str):
         self._full = text
         self._elide()
+        self.updateGeometry()
+
+    def sizeHint(self):
+        """말줄임 전 이름 폭 - 레이아웃이 이만큼(남는 폭이 모자라면 그만큼) 주어 테두리가 글자만 감싼다"""
+        hint = super().sizeHint()
+        metrics = self.fontMetrics()
+        hint.setWidth(
+            hint.width()
+            + metrics.horizontalAdvance(self._full)
+            - metrics.horizontalAdvance(self.text())
+        )
+        return hint
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self._elide()
 
     def _elide(self):
-        shown = self.fontMetrics().elidedText(self._full, Qt.ElideRight, self.width())
+        shown = self.fontMetrics().elidedText(
+            self._full, Qt.ElideRight, self.contentsRect().width()
+        )
         self.setText(shown)
         self.setToolTip(
             "더블클릭하여 이름 바꾸기"
@@ -230,7 +244,8 @@ class PageBar(QWidget):
         self.btn_add.setToolTip("새 페이지")
         self.btn_add.clicked.connect(self.add_requested.emit)
 
-        self._layout.addWidget(self.name_label, 1)
+        # 남는 폭은 이름 칸이 받되 이름은 글자 폭만큼만 (테두리가 글자만 감싸게)
+        self._layout.addWidget(self.name_label, 1, Qt.AlignLeft | Qt.AlignVCenter)
         self._layout.addWidget(self.dots, 0, Qt.AlignCenter)
         self._layout.addWidget(self.btn_add, 0, Qt.AlignCenter)
         # 세로 배치에서 점을 위로 붙인다 (가로에서는 이름이 남는 폭을 받는다)
@@ -255,7 +270,7 @@ class PageBar(QWidget):
 
     def apply_appearance(self):
         t = theme.current()
-        self.name_label.setStyleSheet(
+        self.name_label.set_text_style(
             f"font-size: {px(11, t.todo_scale)}px; font-weight: bold; color: {t.text_sub};"
         )
         self.dots.update()

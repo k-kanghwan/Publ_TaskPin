@@ -106,6 +106,14 @@ def test_set_done_propagates():
 
     assert not todo_tree.set_done(items, "a1x", False)
 
+    # 상위를 해제하면 하위도 모두 해제
+    assert todo_tree.set_done(items, "a", True)
+    assert todo_tree.set_done(items, "a1", False)
+    done = {item["id"]: item["done"] for item in items}
+    assert done == {"a": False, "a1": False, "a1x": False, "a2": True}
+    assert todo_tree.set_done(items, "a", False)
+    assert not any(item["done"] for item in items)
+
 
 def test_remove_promote_lifts_children_in_place():
     items = _items(("a", None), ("b", None), ("b1", "b"), ("b1x", "b1"), ("b2", "b"))
