@@ -3,7 +3,8 @@
 좌측 사이드바에서 탭을 고르고 우측 카드에서 바로 바꾼다 (확인 버튼 없이 즉시 config.json 에 저장).
   - Keyboard Shortcuts : 위젯 단축키. 다른 동작과 겹치면 저장하지 않고 경고
   - Snippets           : `:트리거:` -> 문구 목록. 빈 칸 / 중복 트리거는 저장하지 않고 표시만
-  - Appearance         : 테마 / 강조색 / 배경색 / 글자도 함께 투명 / 폰트, 좌·우패널 글자 크기, TODO 글자색,
+  - Appearance         : 테마 / 강조색 / 배경색 / 글자도 함께 투명 / 폰트, 좌·우패널 글자 크기, TODO 글자색 /
+                         완료 항목 취소선 / 행 구분선,
                          리마인더 알림 창 폭 / 글자 크기(실제 크기 예시 포함),
                          사용자 태그(이름 / 색 변경, 추가, 삭제 - config.json custom_tags).
                          바꾸면 appearance_changed 로 위젯에 바로 반영한다.
@@ -687,6 +688,18 @@ class SettingsDialog(QWidget):
             self._todo_color_button,
             self._reset_button(lambda: self._set_appearance("todo_text_color", "")),
         )
+        box, self._strike_group = self._segmented(
+            ON_OFF_OPTIONS, lambda v: self._set_appearance("todo_strike", v)
+        )
+        self._add_row(
+            card_layout, "완료 항목 취소선", "체크한 할 일에 취소선을 긋습니다", box
+        )
+        box, self._row_lines_group = self._segmented(
+            ON_OFF_OPTIONS, lambda v: self._set_appearance("todo_row_lines", v)
+        )
+        self._add_row(
+            card_layout, "행 구분선", "할 일 사이에 옅은 가로선을 긋습니다", box
+        )
 
         # ---- 리마인더 알림 창 ----
         card_layout = self._add_group(groups, "알림 창 (리마인더)")
@@ -929,6 +942,8 @@ class SettingsDialog(QWidget):
         self._bg_button.set_color(a["background"], look.bg)
         self._fade_text_group.button(int(a["fade_text"])).setChecked(True)
         self._todo_color_button.set_color(a["todo_text_color"], look.text_main)
+        self._strike_group.button(int(a["todo_strike"])).setChecked(True)
+        self._row_lines_group.button(int(a["todo_row_lines"])).setChecked(True)
         self._left_scale_group.button(
             widget_config.LEFT_SCALES.index(a["left_scale"])
         ).setChecked(True)

@@ -174,6 +174,15 @@ def test_set_collapsed_and_has_children():
     assert not todo_tree.set_collapsed(items, "none", True)
 
 
+def test_set_all_collapsed_only_touches_parents():
+    items = _items(("a", None), ("a1", "a"), ("a1x", "a1"), ("b", None))
+    assert todo_tree.set_all_collapsed(items, True)
+    assert [bool(item["collapsed"]) for item in items] == [True, True, False, False]
+    assert not todo_tree.set_all_collapsed(items, True)
+    assert todo_tree.set_all_collapsed(items, False)
+    assert not any(item["collapsed"] for item in items)
+
+
 def test_expand_ancestors():
     items = _items(("a", None), ("a1", "a"), ("a1x", "a1"))
     items[0]["collapsed"] = items[1]["collapsed"] = True

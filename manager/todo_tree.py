@@ -88,6 +88,22 @@ def set_collapsed(items: list, item_id, collapsed: bool) -> bool:
     return True
 
 
+def set_all_collapsed(items: list, collapsed: bool) -> bool:
+    """하위가 있는 항목을 모두 접거나 펼친다 (우패널 우클릭 "모두 접기" / "모두 펼치기")
+
+    Returns
+    -------
+    bool : 바뀐 항목이 있으면 True
+    """
+    parents = {item.get("parent_id") for item in items}
+    changed = False
+    for item in items:
+        if item["id"] in parents and bool(item.get("collapsed")) != collapsed:
+            item["collapsed"] = collapsed
+            changed = True
+    return changed
+
+
 def expand_ancestors(items: list, item_id) -> bool:
     """item_id 가 보이도록 접힌 상위를 모두 펼친다.
 

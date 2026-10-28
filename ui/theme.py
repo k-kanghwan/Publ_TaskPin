@@ -40,6 +40,8 @@ class Theme:
     left_scale: int = 100  # 좌패널 글자 배율(%)
     todo_scale: int = 100  # 우패널(TODO) 글자 배율(%)
     todo_text: str = ""  # TODO 글자색 ("" 이면 text_main)
+    todo_strike: bool = True  # 완료한 할 일에 취소선
+    todo_row_lines: bool = False  # 할 일 행 사이 구분선
     fade_text: bool = False  # 투명도 슬라이더가 글자까지 투명하게 (False: 배경만)
     popup_width: int = 260  # 리마인더 알림 창 폭(px)
     popup_scale: int = 100  # 리마인더 알림 창 글자 배율(%)
@@ -157,6 +159,8 @@ def build(appearance: dict, system_dark: bool = True) -> Theme:
         "left_scale": appearance["left_scale"],
         "todo_scale": appearance["todo_scale"],
         "todo_text": appearance["todo_text_color"],
+        "todo_strike": appearance["todo_strike"],
+        "todo_row_lines": appearance["todo_row_lines"],
         "fade_text": appearance["fade_text"],
         "popup_width": appearance["popup_width"],
         "popup_scale": appearance["popup_scale"],

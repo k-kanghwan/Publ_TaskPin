@@ -3,17 +3,18 @@
 - 목록 아래 입력창에서 Enter 로 바로 추가 (별도 창 없음)
 - 입력 중 `(@` 를 치면 리마인더 피커가 떠서 `(@YYYY-MM-DD HH:mm)` 토큰을 넣는다
 - 입력 중 `:idea:` 같은 스니펫 트리거를 치면 설정한 문구(💡)로 바뀐다 (설정창 Snippets 탭)
-- 체크하면 취소선 + 목록 아래로, 우클릭 메뉴 "완료 항목 정리" 로 일괄 보관(DB 에는 남음)
+- 체크하면 목록 아래로 (취소선은 Appearance 설정), 우클릭 메뉴 "완료 항목 정리" 로 일괄 보관(DB 에는 남음)
 - 더블클릭으로 그 자리에서 수정 (Enter/포커스 이동: 저장, Esc: 취소)
 - 클릭으로 선택 (Ctrl: 하나씩 추가/빼기, Shift: 범위). 빈 곳 클릭 / Esc 로 해제.
   선택 테두리는 목록(container)이 그린다 - 화면에서 이어진 선택 행끼리는 테두리 하나로 묶는다.
+  하위 레벨 가이드 선(강조색)과 행 구분선(설정)도 목록이 그린다.
   선택한 채로 입력하면 마지막으로 클릭한 항목의 하위로 들어간다.
 - 키보드: ↑↓ 선택 이동(선택이 없으면 보이는 영역 가운데부터) / Home·End 처음·끝 /
   ← 접기·상위로 / → 펴기·첫 하위로 / F2(설정 단축키) 수정. 목록의 화살표 스크롤 대신 선택을 옮긴다.
 - 드래그로 순서/레벨 변경: 행 가운데에 놓으면 그 항목의 하위로, 행 사이에 놓으면 그 자리로.
   선택한 행을 끌면 선택 항목이 모두 함께 옮겨진다.
   (계층 규칙은 manager/todo_tree 참고 - 상위를 완료하면 하위도 완료, 상위를 지우면 하위는 한 단계 위로)
-- 우클릭 메뉴: 검색 / 완료 항목 정리 / 내보내기 / 추가 / 삭제 / 태그(체크박스 왼쪽 색 막대)
+- 우클릭 메뉴: 검색 / 모두 접기·펼치기 / 완료 항목 정리 / 내보내기 / 추가 / 삭제 / 태그(체크박스 왼쪽 색 막대)
   여러 개를 선택한 채 우클릭하면 선택 항목 전체에 적용된다.
   태그는 기본 6색 + 사용자 태그(config.json custom_tags, "+ 태그 추가…" / 설정창에서 관리)
 - 형제끼리는 미완료 -> 완료 순, 리마인더 항목이 시각순으로 위에 고정되고 나머지는 사용자가 정한 순서
@@ -28,7 +29,16 @@ OLE 드래그 루프 동안에는 휠이 오지 않고, 커서를 움직일 때�
 
 from datetime import UTC, datetime
 
-from PySide6.QtCore import QEvent, QPoint, QRectF, Qt, QTimer, QVariantAnimation, Signal
+from PySide6.QtCore import (
+    QEvent,
+    QPoint,
+    QPointF,
+    QRectF,
+    Qt,
+    QTimer,
+    QVariantAnimation,
+    Signal,
+)
 from PySide6.QtGui import QColor, QCursor, QIcon, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
@@ -75,6 +85,9 @@ TAG_BAR_WIDTH = 3  # 체크박스 왼쪽 태그 막대 (태그가 없어도 자�
 TOGGLE_SIZE = 14  # 하위 접기/펼치기 ▸/▾ 버튼 (하위가 없어도 자리는 둔다)
 TAG_BAR_GAP = 3  # 태그 막대 - 체크박스 간격 (체크박스 - 글자 간격보다 가깝게)
 TAG_ICON_PX = 12
+ROW_PAD = 4  # 행 좌우 여백 - hover 배경이 체크박스 / 삭제 버튼에 붙지 않게
+GUIDE_ALPHA = 170  # 하위 레벨 가이드 선 (강조색, 1px) 불투명도
+ROW_LINE_ALPHA = 40  # 행 구분선 (Appearance "행 구분선") - 위젯 구분선(t.line)과 같은 덧칠
 # 태그 (메뉴 이름, 색) - 키는 todo_store.TAGS 와 같다
 TAG_COLORS = {
     "red": ("Red", "#ec5f5d"),
@@ -404,8 +417,11 @@ class TodoRow(QWidget):
         self.mark_query = ""  # 검색 하이라이트할 검색어 (TodoPanel 이 정함)
         self.mark_level = 0.0  # 하이라이트 진하기 0~1 (0 이면 칠하지 않음)
         self._tag_color = tag_color
-        # 태그 막대에 마지막으로 칠한 색 (바뀔 때만 스타일시트를 다시 건다)
-        self._bar_color = ""
+        self._reminders_provider = reminders_provider
+        self._snippets_provider = snippets_provider
+        # 태그 막대에 지금 칠한 색. 바뀔 때만 스타일시트를 다시 건다 (위젯마다 스타일시트를 걸면
+        # 행을 만들 때 느려지므로 태그 없는 행은 아무것도 걸지 않는다 - 빈 QFrame 은 투명)
+        self._bar_color = None
         self._editing = False
         self._hover = False
         self._press_pos = None  # 드래그 시작 판정용 누른 지점
@@ -451,13 +467,9 @@ class TodoRow(QWidget):
         self.label.setWordWrap(True)
         self.label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.label.setToolTip("클릭하여 선택 · 더블클릭하여 수정 · 드래그하여 이동")
-        self.label.installEventFilter(self)
 
-        self.editor = TodoInput(reminders_provider, snippets_provider, self)
-        self.editor.hide()
-        self.editor.returnPressed.connect(self._commit_edit)
-        self.editor.focus_lost.connect(self._commit_edit)
-        self.editor.escaped.connect(self._cancel_edit)
+        # 수정 입력칸은 처음 수정할 때 만든다 (행마다 미리 만들면 목록을 펼칠 때 느려진다)
+        self.editor = None
 
         self.btn_delete = QPushButton("✕", self)
         self.btn_delete.setObjectName("delete")
@@ -474,7 +486,6 @@ class TodoRow(QWidget):
 
         layout.addLayout(lead)
         layout.addWidget(self.label, 1)
-        layout.addWidget(self.editor, 1)
         layout.addWidget(self.btn_delete, 0, Qt.AlignTop)
 
     def set_state(self, item: dict, depth: int, context=False, has_children=False):
@@ -484,8 +495,7 @@ class TodoRow(QWidget):
         self.item = item
         self.depth = depth
         self.context = context
-        # 좌우 여백은 hover 배경이 체크박스/삭제 버튼에 붙지 않게
-        self._layout.setContentsMargins(4 + self.indent(), 2, 4, 2)
+        self._layout.setContentsMargins(ROW_PAD + self.indent(), 2, ROW_PAD, 2)
         self.btn_toggle.setVisible(has_children)
         # 표시만 맞춘다 - toggled 가 다시 완료 처리를 부르지 않게
         self.check.blockSignals(True)
@@ -509,8 +519,10 @@ class TodoRow(QWidget):
         if tag_color != self._bar_color:
             self._bar_color = tag_color
             self.tag_bar.setStyleSheet(
-                f"background: {tag_color or 'transparent'}; border: none;"
+                f"background: {tag_color}; border: none;"
                 f" border-radius: {TAG_BAR_WIDTH // 2}px;"
+                if tag_color
+                else ""
             )
         emoji_style = f"font-size:{px(EMOJI_PX, s)}px;"
         marks, mark_style = (), ""
@@ -527,7 +539,7 @@ class TodoRow(QWidget):
         )
         color = t.text_sub if done or self.context else t.todo_color
         html = f'<span style="color:{color};">{body}</span>'
-        if done:
+        if done and t.todo_strike:
             html = f"<s>{html}</s>"
 
         due = todo_store.due_at(self.item)
@@ -548,6 +560,16 @@ class TodoRow(QWidget):
         return self._editing
 
     def start_edit(self):
+        if self.editor is None:
+            self.editor = TodoInput(
+                self._reminders_provider, self._snippets_provider, self
+            )
+            self.editor.returnPressed.connect(self._commit_edit)
+            self.editor.focus_lost.connect(self._commit_edit)
+            self.editor.escaped.connect(self._cancel_edit)
+            self._layout.insertWidget(
+                self._layout.indexOf(self.label) + 1, self.editor, 1
+            )
         self._editing = True
         self.label.hide()
         self.editor.setText(self.item["text"])
@@ -577,11 +599,14 @@ class TodoRow(QWidget):
         self.label.show()
 
     # ---- 이벤트 ----
-    def eventFilter(self, obj, event):
-        if obj is self.label and event.type() == QEvent.MouseButtonDblClick:
+    def mouseDoubleClickEvent(self, event):
+        # 글자 위 더블클릭으로 수정 (라벨은 마우스를 받지 않아 행으로 올라온다)
+        if not self._editing and self.label.geometry().contains(
+            event.position().toPoint()
+        ):
             self.start_edit()
-            return True
-        return super().eventFilter(obj, event)
+            return
+        super().mouseDoubleClickEvent(event)
 
     # 행의 누름은 선택 / 드래그용으로 받아서 위젯 창 이동으로 넘어가지 않게 한다
     def mousePressEvent(self, event):
@@ -760,6 +785,7 @@ class TodoPanel(QWidget):
             f" border-radius: {ROW_RADIUS}px;"
         )
         self.refresh_rows()
+        self.container.update()  # 가이드 선 / 행 구분선 / 선택 테두리 색
 
     # ==================================================
     # 조회
@@ -823,6 +849,14 @@ class TodoPanel(QWidget):
             self._items, item_id, not item.get("collapsed")
         ):
             self._save_and_rebuild()
+
+    def set_all_collapsed(self, collapsed: bool):
+        """우클릭 "모두 접기" / "모두 펼치기". 지금 행은 화면에 남겨 둔다."""
+        if todo_tree.set_all_collapsed(self._items, collapsed):
+            self._save_and_rebuild()
+            row = self._current_row()
+            if row is not None:
+                self._reveal(row, NAV_SCROLL_MARGIN)
 
     def _add_parent_id(self):
         if self._anchor_id in self._selected:
@@ -1125,15 +1159,52 @@ class TodoPanel(QWidget):
             blocks.append(block)
         return blocks
 
-    def _paint_selection(self):
+    def _paint_list(self):
+        """목록(container)에 직접 그리는 것: 행 구분선 -> 하위 레벨 가이드 선 -> 선택 테두리.
+        container 의 Paint 이벤트에서 부르므로 행(자식)보다 먼저, 행의 hover 배경 아래에 그려진다."""
+        if not self._rows:
+            return
+        t = theme.current()
+        painter = QPainter(self.container)
+        painter.setRenderHint(QPainter.Antialiasing)
+        if t.todo_row_lines:
+            self._paint_row_lines(painter, t)
+        self._paint_guides(painter, t)
+        self._paint_selection(painter, t)
+        painter.end()
+
+    def _paint_row_lines(self, painter: QPainter, t: theme.Theme):
+        """행 구분선: 이웃 행 사이 간격의 첫 픽셀 줄"""
+        painter.setPen(QPen(t.overlay_color(ROW_LINE_ALPHA), 1))
+        for upper, lower in zip(self._rows, self._rows[1:]):
+            y = upper.geometry().bottom() + 1.5  # 픽셀 가운데 - 1px 선이 흐려지지 않게
+            geo = lower.geometry()
+            painter.drawLine(QPointF(geo.left(), y), QPointF(geo.right() + 1, y))
+
+    def _paint_guides(self, painter: QPainter, t: theme.Theme):
+        """하위 레벨 가이드 선: 상위의 ▸/▾ 가운데에서 내려와 하위 행들 왼쪽을 잇는 세로선.
+        행마다 자기 위 간격부터 아래 끝까지 그어서 같은 상위 아래 이어진 행끼리는 한 줄이 된다.
+        들여쓰기가 멈추는 MAX_INDENT_DEPTH 부터는 상위의 ▸/▾ 가 행과 같은 자리라 긋지 않는다."""
+        color = QColor(t.accent)
+        color.setAlpha(GUIDE_ALPHA)
+        painter.setPen(QPen(color, 1))
+        gap = self.list_layout.spacing()
+        for row in self._rows:
+            geo = row.geometry()
+            for level in range(min(row.depth, MAX_INDENT_DEPTH)):
+                x = geo.left() + ROW_PAD + _indent(level) + TOGGLE_SIZE // 2 + 0.5
+                painter.drawLine(
+                    QPointF(x, geo.top() - gap), QPointF(x, geo.bottom() + 1)
+                )
+
+    def _paint_selection(self, painter: QPainter, t: theme.Theme):
         """선택 테두리: 이어진 선택 행 묶음마다 둥근 사각형 하나.
-        왼쪽 끝은 묶음에서 가장 얕은 레벨의 들여쓰기에 맞춘다. (container 의 Paint 이벤트에서 부름)"""
+        왼쪽 끝은 묶음에서 가장 얕은 레벨의 들여쓰기에 맞춘다."""
         blocks = self._selection_blocks()
         if not blocks:
             return
-        painter = QPainter(self.container)
-        painter.setRenderHint(QPainter.Antialiasing)
-        painter.setPen(QPen(QColor(theme.current().accent), SELECTED_BORDER))
+        painter.setPen(QPen(QColor(t.accent), SELECTED_BORDER))
+        painter.setBrush(Qt.NoBrush)
         half = SELECTED_BORDER / 2
         for block in blocks:
             top = block[0].geometry().top()
@@ -1166,6 +1237,16 @@ class TodoPanel(QWidget):
         menu.setStyleSheet(theme.menu_style(t))
 
         menu.addAction("검색", self.open_search)
+        parents = {item.get("parent_id") for item in self._items}
+        folds = [
+            bool(item.get("collapsed")) for item in self._items if item["id"] in parents
+        ]
+        act_fold = menu.addAction("모두 접기", lambda: self.set_all_collapsed(True))
+        act_fold.setEnabled(not all(folds))
+        act_unfold = menu.addAction(
+            "모두 펼치기", lambda: self.set_all_collapsed(False)
+        )
+        act_unfold.setEnabled(any(folds))
         menu.addSeparator()
         act_clear = menu.addAction("완료 항목 정리", self.clear_done)
         act_clear.setEnabled(self.has_done())
@@ -1422,7 +1503,7 @@ class TodoPanel(QWidget):
     def eventFilter(self, obj, event):
         if obj is self.container:
             if event.type() == QEvent.Paint:
-                self._paint_selection()  # 행(자식)보다 먼저, 목록 위에 그린다
+                self._paint_list()  # 행(자식)보다 먼저, 목록 위에 그린다
             elif event.type() == QEvent.LayoutRequest:
                 self.container.update()  # 행 높이가 바뀌면(수정 중 등) 테두리도 다시
             elif (

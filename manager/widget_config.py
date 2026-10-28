@@ -43,6 +43,8 @@ DEFAULT_APPEARANCE = {
     "left_scale": 100,  # 좌패널 글자 배율(%)
     "todo_scale": 100,  # 우패널(TODO) 글자 배율(%)
     "todo_text_color": "",  # TODO 글자색
+    "todo_strike": True,  # 완료한 할 일에 취소선
+    "todo_row_lines": False,  # 할 일 행 사이 구분선
     "fade_text": False,  # 투명도 슬라이더가 글자까지 투명하게 할지 (False: 배경만)
     "popup_width": 260,  # 리마인더 알림 창 폭(px)
     "popup_scale": 100,  # 리마인더 알림 창 글자 배율(%)
@@ -147,6 +149,10 @@ def _color(value, default: str) -> str:
     return default
 
 
+def _bool(value, default: bool) -> bool:
+    return value if isinstance(value, bool) else default
+
+
 def _scale(value, steps: tuple, default: int = 100) -> int:
     # bool 은 int 의 하위 타입이고 100.0 == 100 이므로 정확히 int 만 받는다
     return value if type(value) is int and value in steps else default
@@ -168,6 +174,8 @@ def appearance(cfg: dict) -> dict:
         "left_scale": _scale(saved.get("left_scale"), LEFT_SCALES),
         "todo_scale": _scale(saved.get("todo_scale"), TODO_SCALES),
         "todo_text_color": _color(saved.get("todo_text_color"), ""),
+        "todo_strike": _bool(saved.get("todo_strike"), default["todo_strike"]),
+        "todo_row_lines": _bool(saved.get("todo_row_lines"), default["todo_row_lines"]),
         "fade_text": saved.get("fade_text") is True,
         "popup_width": _scale(
             saved.get("popup_width"), POPUP_WIDTHS, default["popup_width"]
