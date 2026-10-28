@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 프로젝트 상태
 
-- 현재 버전은 `version.py`의 `VERSION`(지금 0.1.16). 초기 구현 계획은 `.claude/plans/init-todo.md`, 요구사항 원본은 `PRD.md`이고, 기능 판단은 PRD를 따른다.
+- 현재 버전은 `version.py`의 `VERSION`(지금 0.1.17). 초기 구현 계획은 `.claude/plans/init-todo.md`, 요구사항 원본은 `PRD.md`이고, 기능 판단은 PRD를 따른다.
 - 앱 표시명은 **Task알림**(창 제목·exe 표시명). 폴더명·자동 실행 레지스트리 키·단일 인스턴스 ID·mutex 같은 내부 식별자는 ASCII **TaskPin**을 쓴다.
 - 앱 아이콘은 `ico/01_original_navy-coral/`의 `icon.svg`(트레이·창)와 `icon.ico`(exe/설치본)다. SVG를 고쳤을 때만 `python tools/make_ico.py`로 같은 폴더의 `icon.ico`를 다시 만든다. `img/image.png`는 참고 앱 화면이라 PRD의 FE 변경사항이 반영되지 않았다.
 - 스택: Python 3.11.4 이상, PySide6, SQLite(내장 `sqlite3`), Nuitka standalone + Inno Setup 설치본. 버전은 Semantic Versioning.
@@ -66,6 +66,7 @@ python tools/build_installer.py              # Nuitka 빌드 -> ISCC -> dist 확
   - 좌측 하단 배치: 상세 업무(비어 있으면 숨김) → 업무명 배지(가운데 정렬·테두리, 비어 있으면 숨김) → [등록/해제][수정][완료] → 투명도 슬라이더. 위젯 버튼은 `NoFocus`라 클릭해도 글자 둘레에 점선 포커스 표시가 생기지 않는다(`theme.button_style`도 `outline: none`). 상세 업무(`clock_widget._DetailLabel`)는 받은 높이에 들어가는 줄 수만큼 보여주고 넘치면 "…" + 툴팁이다. 가로 모드에서는 좌패널의 남는 높이를 모두 받아(stretch 1, 아래 정렬 - 여백 spacer는 stretch 0) 위젯을 키우면 더 많은 줄이 보이고, 세로 모드에서는 남는 높이를 TODO 목록이 받으므로 3줄까지만 요청한다(`TASK_DETAIL_MAX_LINES`). 상세 업무가 보이고 숨는 것이 바뀌면 `_apply_size_limits()`로 최소 높이를 다시 맞춘다. 투명도 슬라이더에는 `min-height`(`SLIDER_HEIGHT`)를 준다 - 기본 높이는 화면 배율이 클수록 줄어(175%에서 13px) 핸들 위아래가 잘린다.
   - 등록 창은 왼쪽이 업무명/시간 폼, 오른쪽이 상세 업무(`QPlainTextEdit`) 칸이다. 상세 칸에서 Enter는 줄바꿈이고 Ctrl+Enter는 어디서든 확인이다. 조합 중인 한글은 업무명처럼 preedit을 합쳐 읽는다.
   - 등록 창(`TaskPicker`)은 `Qt.Popup`이 아니라 활성화되는 Tool 창이다. Windows에서 Popup은 전경 창이 되지 않아 IME가 붙지 않는다(한글 입력 불가).
+  - 등록/수정 창은 다른 창을 눌러 포커스가 옮겨져도 닫지 않는다(취소·Esc·확인으로만 닫힘). 한 번에 하나만 띄우고(`TaskPinApp._picker`, 이미 떠 있으면 앞으로), Task를 완료/해제하면 열린 수정 창은 닫는다. 등록 창을 확인 없이 닫으면 적던 업무명·상세 업무를 `TaskPinApp._task_draft`에 남겨(앱 실행 중에만, config에 넣지 않음) 다음 [등록] 때 `TaskPicker(draft=)`로 채운다. 시작·소요는 늘 새 기본값이다.
   - 등록 전에는 시작이 `--:--`. 종료 = 시작 + 소요 시간. 남은시간이 0을 지나면 초과 시간을 `+`로 표시한다.
 - 더블클릭으로 편집할 수 있는 곳은 사용자 이름 하나뿐이다.
 - 우클릭 메뉴는 패널마다 다르다. 좌패널(`ClockWidget.contextMenuEvent`): 가로/세로 모드·잠금·자동 실행·설정·위젯 숨기기·프로그램 종료. 우패널(`TodoPanel.contextMenuEvent`, 위로 올려 보내지 않음): 검색·모두 접기·모두 펼치기·완료 항목 정리·내보내기·추가·삭제·삭제 이력·태그. 내보내기는 cfg(`export_dir`)가 필요해 `TodoPanel.export_requested`로 위젯에 맡긴다.
