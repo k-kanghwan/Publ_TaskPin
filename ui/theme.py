@@ -40,6 +40,9 @@ class Theme:
     left_scale: int = 100  # 좌패널 글자 배율(%)
     todo_scale: int = 100  # 우패널(TODO) 글자 배율(%)
     todo_text: str = ""  # TODO 글자색 ("" 이면 text_main)
+    todo_strike: bool = True  # 완료한 할 일에 취소선
+    todo_row_lines: bool = False  # 할 일 행 사이 구분선
+    page_bar: str = "top"  # TODO 페이지 표시 위치 (top / bottom / left / right)
     fade_text: bool = False  # 투명도 슬라이더가 글자까지 투명하게 (False: 배경만)
     popup_width: int = 260  # 리마인더 알림 창 폭(px)
     popup_scale: int = 100  # 리마인더 알림 창 글자 배율(%)
@@ -157,6 +160,9 @@ def build(appearance: dict, system_dark: bool = True) -> Theme:
         "left_scale": appearance["left_scale"],
         "todo_scale": appearance["todo_scale"],
         "todo_text": appearance["todo_text_color"],
+        "todo_strike": appearance["todo_strike"],
+        "todo_row_lines": appearance["todo_row_lines"],
+        "page_bar": appearance["page_bar"],
         "fade_text": appearance["fade_text"],
         "popup_width": appearance["popup_width"],
         "popup_scale": appearance["popup_scale"],
@@ -199,25 +205,20 @@ def menu_style(t: Theme) -> str:
 """
 
 
+# 둥근 배경 / 테두리는 스타일시트가 아니라 ui/painted 가 그린다 (스타일시트 border-radius 는 모서리가 깨짐).
+# 여기서는 글자 / 여백과 같은 두께의 투명 테두리만 정한다 - 버튼은 painted.button_box, 입력칸은 painted.form_rules
 def button_style(t: Theme, font_px: int = 12) -> str:
     return f"""
     QPushButton {{
-        background: {t.overlay(26)};
+        background: transparent;
         color: {t.text_main};
         font-family: {t.font_family};
         font-size: {font_px}px;
-        border: 1px solid {t.overlay(40)};
-        border-radius: 6px;
+        border: 1px solid transparent;
         padding: 7px 0px;
     }}
     QPushButton:focus {{ outline: none; }}
-    QPushButton:hover {{ background: {t.overlay(46)}; }}
-    QPushButton:pressed {{ background: {t.overlay(66)}; }}
-    QPushButton:disabled {{
-        background: {t.overlay(10)};
-        color: {t.text_disabled};
-        border: 1px solid {t.overlay(18)};
-    }}
+    QPushButton:disabled {{ color: {t.text_disabled}; }}
 """
 
 
@@ -225,17 +226,15 @@ def button_style(t: Theme, font_px: int = 12) -> str:
 def popup_form_style(t: Theme) -> str:
     return f"""
     QComboBox, QLineEdit {{
-        background: {t.overlay(18)};
+        background: transparent;
         color: {t.text_main};
         font-family: {t.font_family};
         font-size: 12px;
-        border: 1px solid {t.overlay(40)};
-        border-radius: 6px;
+        border: 1px solid transparent;
         padding: 3px 8px;
         selection-background-color: {t.accent};
         selection-color: {t.on_accent};
     }}
-    QLineEdit:focus {{ border: 1px solid {t.overlay(90)}; }}
     QComboBox::drop-down {{ border: none; width: 0px; }}
     QComboBox QAbstractItemView {{
         background: {t.menu_bg};

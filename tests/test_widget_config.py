@@ -88,6 +88,20 @@ def test_import_rejects_non_config(tmp_path):
 # ==================================================
 # Appearance
 # ==================================================
+def test_confirm_delete_and_undo_limit():
+    assert widget_config.confirm_delete({}) is True
+    assert widget_config.confirm_delete({"confirm_delete": "no"}) is True
+    assert widget_config.confirm_delete({"confirm_delete": False}) is False
+    assert widget_config.undo_limit({}) == widget_config.DEFAULT_UNDO_LIMIT
+    assert widget_config.undo_limit({"undo_limit": 20}) == 20
+    assert (
+        widget_config.undo_limit({"undo_limit": 7}) == widget_config.DEFAULT_UNDO_LIMIT
+    )
+    assert widget_config.undo_limit({"undo_limit": True}) == (
+        widget_config.DEFAULT_UNDO_LIMIT
+    )
+
+
 def test_appearance_defaults():
     assert widget_config.appearance({}) == widget_config.DEFAULT_APPEARANCE
     assert widget_config.appearance({"appearance": "broken"}) == (
@@ -104,6 +118,9 @@ def test_appearance_keeps_valid_values():
         "left_scale": 115,
         "todo_scale": 130,
         "todo_text_color": "#ffffff",
+        "todo_strike": False,
+        "todo_row_lines": True,
+        "page_bar": "left",
         "fade_text": True,
         "popup_width": 380,
         "popup_scale": 130,
@@ -125,6 +142,9 @@ def test_appearance_replaces_broken_values():
         "left_scale": 130,  # 좌패널은 115 까지
         "todo_scale": 100.0,
         "todo_text_color": "#12345",
+        "todo_strike": 0,  # bool 만 받는다
+        "todo_row_lines": "on",
+        "page_bar": "middle",  # 정해진 위치만
         "fade_text": "yes",  # bool 만 받는다
         "popup_width": 300,  # 정해진 폭만
         "popup_scale": 200,

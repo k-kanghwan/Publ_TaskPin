@@ -52,16 +52,19 @@ from PySide6.QtWidgets import (
 )
 
 from manager import os_win, snippets, todo_export, todo_store, widget_config
-from ui import theme
+from ui import painted, theme
+from ui.confirm_dialog import ConfirmDialog
+from ui.painted import EditableLabel
 from ui.reminder_popup import ReminderPopup
 from ui.theme import CORNER_RADIUS, px
-from ui.todo_panel import TodoPanel
-
+from ui.todo_panel import NAV_BLOCKING_MODIFIERS, TodoPanel
 
 # ========= ========= 테마 ========= =========
 WINDOW_OPACITY = 1.0  # 설정에 값이 없을 때의 불투명도 (= 투명도 0%)
 OPACITY_MIN = 0.2  # 이보다 낮으면 위젯이 사라져 조작 불가
 TRANSPARENCY_MAX = round((1 - OPACITY_MIN) * 100)  # 슬라이더 최대 투명도(%) = 80
+SLIDER_HANDLE = 12  # 투명도 슬라이더 핸들 지름(px) - 홈(4px)보다 크다
+SLIDER_HEIGHT = SLIDER_HANDLE + 4  # 핸들이 잘리지 않는 슬라이더 높이
 # 세로 모드: 폭 280 ~ 364(1.3배), 높이 최소 ~ 583
 WIDGET_WIDTH = 280
 WIDGET_MIN_HEIGHT = 324
@@ -495,7 +498,7 @@ class ClockWidget(QWidget):
         self.status_dot.setFixedSize(12, 12)
 
         # 이름은 위젯에서 유일하게 더블클릭으로 편집하는 곳 - 같은 자리에 편집칸을 띄운다
-        self.name_label = QLabel()
+        self.name_label = EditableLabel()
         self.name_label.setToolTip("더블클릭하여 이름 수정")
         self.name_label.installEventFilter(self)
 
@@ -508,7 +511,8 @@ class ClockWidget(QWidget):
         self.name_edit.escaped.connect(self._finish_name_edit)
 
         header.addWidget(self.status_dot)
-        header.addWidget(self.name_label, 1)
+        # 테두리가 글자만 감싸도록 남는 폭은 늘리지 않는다 (편집칸은 남는 폭을 모두 받음)
+        header.addWidget(self.name_label, 1, Qt.AlignLeft | Qt.AlignVCenter)
         header.addWidget(self.name_edit, 1)
         info.addLayout(header)
 
@@ -617,8 +621,12 @@ class ClockWidget(QWidget):
             lambda: snippets.from_config(self._cfg),
             lambda: widget_config.custom_tags(self._cfg),
             self._add_custom_tag,
+            lambda: widget_config.undo_limit(self._cfg),
+            self._confirm_todo_delete,
+            page_id=self._cfg.get("todo_page"),
         )
         self.todo_panel.export_requested.connect(self._export_todos)
+        self.todo_panel.page_changed.connect(self._save_todo_page)
 
         # 세로 모드에서 폭을 바꾸면 업무명 배지 말줄임을 다시 (자식을 다 만든 뒤에 건다)
         self._left_col.installEventFilter(self)
@@ -641,6 +649,10 @@ class ClockWidget(QWidget):
                 color: {t.text_main};
                 font-family: {t.font_family};
             }}
+            QSlider:horizontal {{
+                /* 기본 높이는 화면 배율이 클수록 줄어(175% 에서 13px) 핸들 위아래가 잘린다 */
+                min-height: {SLIDER_HEIGHT}px;
+            }}
             QSlider::groove:horizontal {{
                 height: 4px;
                 background: {t.overlay(50)};
@@ -651,27 +663,34 @@ class ClockWidget(QWidget):
                 border-radius: 2px;
             }}
             QSlider::handle:horizontal {{
-                width: 12px;
-                margin: -5px 0;
+                width: {SLIDER_HANDLE}px;
+                height: {SLIDER_HANDLE}px;
+                margin: -{(SLIDER_HANDLE - 4) // 2}px 0;
                 background: {t.text_main};
-                border-radius: 6px;
+                border-radius: {SLIDER_HANDLE // 2}px;
             }}
             """
         )
+        painted.set_boxes(self, [(QPushButton, None, painted.button_box(t))])
         self.name_edit.setStyleSheet(
             f"""
             QLineEdit {{
                 {self._name_font()}
-                background: {t.overlay(18)};
+                background: transparent;
                 color: {t.text_main};
                 font-family: {t.font_family};
-                border: 1px solid {t.overlay(90)};
-                border-radius: 4px;
+                border: 1px solid transparent;
                 padding: 0px 4px;
                 selection-background-color: {t.accent};
                 selection-color: {t.on_accent};
             }}
             """
+        )
+        painted.set_box(
+            self.name_edit,
+            painted.box(
+                painted.EDITABLE_RADIUS, t.overlay_color(18), t.overlay_color(90)
+            ),
         )
         self.now_label.setStyleSheet(f"font-size: {px(12, s)}px; color: {t.text_sub};")
         self.remaining_caption.setStyleSheet(sub_style)
@@ -683,12 +702,15 @@ class ClockWidget(QWidget):
             font-size: {px(12, s)}px;
             font-weight: bold;
             color: {t.text_main};
-            background: {t.accent_rgba(40)};
-            border: 1px solid {t.accent_rgba(170)};
-            border-radius: 6px;
+            background: transparent;
+            border: 1px solid transparent;
             padding: 5px 8px;
             """
         )
+        badge_bg, badge_border = QColor(t.accent), QColor(t.accent)
+        badge_bg.setAlpha(40)
+        badge_border.setAlpha(170)
+        painted.set_box(self.task_title_label, painted.box(6, badge_bg, badge_border))
         self.task_detail_label.setStyleSheet(sub_style)
         self.opacity_caption.setStyleSheet(sub_style)
         self.opacity_value.setStyleSheet(sub_style)
@@ -863,14 +885,13 @@ class ClockWidget(QWidget):
 
     def _apply_task_dot(self, registered: bool):
         """Task 시간이 등록되어 있으면 초록 점, 없으면 빈 원"""
-        if registered:
-            style = f"background: {TASK_DOT_COLOR}; border-radius: 6px;"
-        else:
-            style = (
-                f"background: transparent; border: 1.5px solid {theme.current().text_sub};"
-                " border-radius: 6px;"
-            )
-        self.status_dot.setStyleSheet(style)
+        radius = self.status_dot.width() / 2
+        painted.set_box(
+            self.status_dot,
+            painted.box(radius, TASK_DOT_COLOR)
+            if registered
+            else painted.box(radius, None, theme.current().text_sub, width=1.5),
+        )
 
     # ==================================================
     # 외부(TaskPinApp)에서 호출하는 슬롯
@@ -921,14 +942,11 @@ class ClockWidget(QWidget):
             self._place_grip()
 
     def set_user_name(self, name: str):
-        if name:
-            self.name_label.setText(name)
-            self.name_label.setStyleSheet(self._name_font())
-        else:
-            self.name_label.setText("이름")
-            self.name_label.setStyleSheet(
-                f"{self._name_font()} color: {theme.current().text_dim};"
-            )
+        t = theme.current()
+        self.name_label.setText(name or "이름")
+        self.name_label.set_text_style(
+            f"{self._name_font()} color: {t.text_main if name else t.text_dim};"
+        )
 
     # ==================================================
     # 사용자 이름 편집 (더블클릭)
@@ -976,7 +994,10 @@ class ClockWidget(QWidget):
             "task_edit": self._on_edit_shortcut,
             "task_clear": self._on_clear_shortcut,
             "todo_focus": self.todo_panel.focus_input,
+            "todo_edit": self.todo_panel.edit_current,
             "todo_search": self.todo_panel.open_search,
+            "todo_page_prev": lambda: self.todo_panel.step_page(-1),
+            "todo_page_next": lambda: self.todo_panel.step_page(1),
             "settings": self.settings_requested.emit,
         }
         for action, keys in mapping.items():
@@ -1012,6 +1033,34 @@ class ClockWidget(QWidget):
         widget_config.save_config(self._cfg)
         return tag_id
 
+    def _save_todo_page(self, page_id: int):
+        """마지막으로 본 TODO 페이지 - 다음 실행 때 그 페이지부터 보여준다."""
+        self._cfg["todo_page"] = page_id
+        widget_config.save_config(self._cfg)
+
+    def _confirm_todo_delete(self, count: int) -> bool:
+        """할 일 삭제(행의 ✕ / 우클릭 "삭제"): 지우기 전에 묻는다. "다시 묻지 않음"을 켜고 삭제하면
+        설정에 남겨 다음부터 묻지 않는다 (설정창 Application 에서 다시 켤 수 있다)."""
+        if not widget_config.confirm_delete(self._cfg):
+            return True
+        dialog = ConfirmDialog(
+            "할 일 삭제",
+            "선택된 항목을 삭제하시겠습니까?"
+            if count == 1
+            else f"선택된 항목 {count}개를 삭제하시겠습니까?",
+            confirm_text="삭제",
+            note="우클릭 → 삭제 이력에서 되돌릴 수 있습니다.",
+            danger=True,
+            remember_text="다시 묻지 않음",
+            parent=self,
+        )
+        if not dialog.exec_over(self):
+            return False
+        if dialog.remembered():
+            self._cfg["confirm_delete"] = False
+            widget_config.save_config(self._cfg)
+        return True
+
     def set_clock(self, now_text: str, remaining_text: str):
         self.now_label.setText(f"현재시간  {now_text}")
         self.remaining_label.setText(remaining_text)
@@ -1030,6 +1079,17 @@ class ClockWidget(QWidget):
         if not t.fade_text:  # 글자는 두고 배경만 투명하게
             bg.setAlphaF(self._opacity())
         painter.fillPath(path, bg)
+
+    def keyPressEvent(self, event):
+        """포커스 위젯이 없을 때(좌패널을 클릭한 뒤 등) 받은 ↑↓ / Home / End 같은 목록 키는
+        TODO 목록으로 넘겨 바로 할 일을 고르게 한다."""
+        if (
+            QApplication.focusWidget() in (None, self)
+            and not event.modifiers() & NAV_BLOCKING_MODIFIERS
+            and self.todo_panel.handle_nav_key(event.key())
+        ):
+            return
+        super().keyPressEvent(event)
 
     # ==================================================
     # 드래그 이동
@@ -1123,7 +1183,7 @@ class ClockWidget(QWidget):
         menu.exec(event.globalPos())
 
     def _export_todos(self, archived: bool):
-        """우패널 "TODO 내보내기": TODO 를 Markdown 체크리스트 파일로 저장한다. 마지막 저장 폴더를 기억한다."""
+        """우패널 "내보내기": TODO 를 Markdown 체크리스트 파일로 저장한다. 마지막 저장 폴더를 기억한다."""
         now = datetime.now()
         if archived:
             text = todo_export.archived_to_markdown(

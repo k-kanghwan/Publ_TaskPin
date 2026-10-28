@@ -88,6 +88,22 @@ def set_collapsed(items: list, item_id, collapsed: bool) -> bool:
     return True
 
 
+def set_all_collapsed(items: list, collapsed: bool) -> bool:
+    """하위가 있는 항목을 모두 접거나 펼친다 (우패널 우클릭 "모두 접기" / "모두 펼치기")
+
+    Returns
+    -------
+    bool : 바뀐 항목이 있으면 True
+    """
+    parents = {item.get("parent_id") for item in items}
+    changed = False
+    for item in items:
+        if item["id"] in parents and bool(item.get("collapsed")) != collapsed:
+            item["collapsed"] = collapsed
+            changed = True
+    return changed
+
+
 def expand_ancestors(items: list, item_id) -> bool:
     """item_id 가 보이도록 접힌 상위를 모두 펼친다.
 
@@ -133,7 +149,7 @@ def ancestors(items: list, item_id) -> list:
 
 
 def set_done(items: list, item_id, done: bool) -> bool:
-    """완료하면 하위도 모두 완료, 해제하면 상위도 모두 해제한다.
+    """완료하면 하위도 모두 완료, 해제하면 상위와 하위를 모두 해제한다.
 
     Returns
     -------
@@ -142,7 +158,9 @@ def set_done(items: list, item_id, done: bool) -> bool:
     item = _find(items, item_id)
     if item is None:
         return False
-    related = descendants(items, item_id) if done else ancestors(items, item_id)
+    related = descendants(items, item_id)
+    if not done:
+        related += ancestors(items, item_id)
     changed = False
     for target in [item] + related:
         if target["done"] != done:
@@ -227,6 +245,59 @@ def move_many(items: list, ids: list, parent_id, before_id) -> bool:
     for item_id in roots:
         changed = move(items, item_id, parent_id, before_id) or changed
     return changed
+
+
+def removal(items: list, item_id):
+    """remove_promote 로 지우기 전에 되돌릴 자리를 남긴다 (우패널 "삭제 이력").
+
+    Returns
+    -------
+    {"parent_id", "before_id": 바로 뒤 형제 / 없으면 None, "child_ids": 바로 아래 하위 (순서대로)}
+    없는 항목이면 None
+    """
+    item = _find(items, item_id)
+    if item is None:
+        return None
+    parent_id = item.get("parent_id")
+    siblings = [other for other in items if other.get("parent_id") == parent_id]
+    idx = siblings.index(item)
+    return {
+        "parent_id": parent_id,
+        "before_id": siblings[idx + 1]["id"] if idx + 1 < len(siblings) else None,
+        "child_ids": [
+            other["id"] for other in items if other.get("parent_id") == item_id
+        ],
+    }
+
+
+def restore(items: list, item: dict, parent_id, before_id, child_ids) -> bool:
+    """지운 항목(지울 때의 dict)을 removal 이 남긴 자리로 되돌린다.
+    상위 / 뒤 형제가 그사이 없어졌으면 최상위 / 형제 맨 뒤로 간다. 한 단계 올라갔던 하위 중
+    아직 그 자리(지운 항목의 상위 아래)에 있는 것만 다시 하위로 데려온다 (다른 데로 옮긴 하위는 그대로).
+    완료 규칙은 move 와 같다 (미완료가 완료된 상위 아래로 들어가면 상위를 다시 미완료로).
+
+    Returns
+    -------
+    bool : 넣었으면 True. 같은 id 가 이미 목록에 있으면 넣지 않는다.
+    """
+    if _find(items, item["id"]) is not None:
+        return False
+    if parent_id is not None and _find(items, parent_id) is None:
+        parent_id = None
+    item["parent_id"] = parent_id
+    items.append(item)
+    if before_id is not None:
+        # 뒤 형제가 없어졌거나 다른 데로 옮겨졌으면 move 가 거절하므로 맨 뒤에 남는다
+        move(items, item["id"], parent_id, before_id)
+    for child_id in child_ids:
+        child = _find(items, child_id)
+        if child is not None and child.get("parent_id") == parent_id:
+            move(items, child_id, item["id"], None)
+    if not item["done"]:
+        # 미완료 항목이 완료된 상위 아래로 돌아오면 상위를 다시 미완료로 (move 와 같은 규칙)
+        for parent in ancestors(items, item["id"]):
+            parent["done"] = False
+    return True
 
 
 def remove_promote(items: list, item_id) -> bool:

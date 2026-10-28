@@ -69,7 +69,10 @@ def test_shortcuts_fill_missing_and_broken():
         "task_edit": "R",
         "task_clear": "C",
         "todo_focus": "",  # 빈 문자열은 해제
+        "todo_edit": "",  # 새 동작의 기본 키(F2)를 사용자가 이미 쓰고 있어 비워 둠
         "todo_search": "Ctrl+F",
+        "todo_page_prev": "Ctrl+PgUp",
+        "todo_page_next": "Ctrl+PgDown",
         "settings": "Ctrl+,",
     }
     assert widget_config.shortcuts({"shortcuts": "깨짐"}) == (
@@ -90,6 +93,14 @@ def test_todo_search_default_yields_to_user_key():
     result = widget_config.shortcuts({"shortcuts": {"settings": "Ctrl+F"}})
     assert result["settings"] == "Ctrl+F"
     assert result["todo_search"] == ""
+
+
+def test_todo_edit_default_is_f2_unless_taken():
+    # v0.1.14 에 생긴 할 일 수정(F2)
+    assert widget_config.shortcuts({"shortcuts": {}})["todo_edit"] == "F2"
+    result = widget_config.shortcuts({"shortcuts": {"task_edit": "F2"}})
+    assert result["task_edit"] == "F2"
+    assert result["todo_edit"] == ""
 
 
 def test_load_config_does_not_share_defaults(tmp_path, monkeypatch):

@@ -26,8 +26,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ui import theme
-
+from ui import painted, theme
 
 TIME_STEP_MIN = 15
 DEFAULT_TIME = "09:00"
@@ -92,17 +91,18 @@ class ReminderPicker(QFrame):
                 font-family: {t.font_family};
                 font-size: 12px;
                 border: 1px solid transparent;
-                border-radius: 6px;
             }}
-            QPushButton:hover {{ background: {t.overlay(30)}; }}
-            QPushButton#ok {{
-                background: {t.accent};
-                color: {t.on_accent};
-                padding: 4px 14px;
-            }}
-            QPushButton#ok:hover {{ background: {t.accent_hover}; }}
+            QPushButton#ok {{ color: {t.on_accent}; padding: 4px 14px; }}
             """
             + theme.popup_form_style(t)
+        )
+        painted.set_boxes(
+            self,
+            [
+                (QPushButton, "ok", painted.box(6, t.accent, hover_bg=t.accent_hover)),
+                (QPushButton, None, painted.box(6, hover_bg=t.overlay_color(30))),
+                *painted.form_rules(t),
+            ],
         )
 
         root = QVBoxLayout(self)
@@ -220,20 +220,20 @@ class ReminderPicker(QFrame):
 
             if day == self._selected:
                 color, bg, border = t.on_accent, t.accent, t.accent
+                hover = t.accent
             else:
                 in_month = day.month == self._month.month
                 color = self._weekday_color(i % 7) if in_month else t.text_dim
                 if in_month and i % 7 not in (0, 6):
                     color = t.text_main
-                bg = "transparent"
-                border = t.text_sub if day == today else "transparent"
+                bg = None
+                border = t.text_sub if day == today else None
+                hover = t.overlay_color(30)
             weight = "bold" if day in reminder_days else "normal"
-            hover = t.accent if day == self._selected else t.overlay(30)
             btn.setStyleSheet(
-                f"QPushButton {{ color: {color}; background: {bg};"
-                f" border: 1px solid {border}; font-weight: {weight}; }}"
-                f" QPushButton:hover {{ background: {hover}; }}"
+                f"QPushButton {{ color: {color}; font-weight: {weight}; }}"
             )
+            painted.set_box(btn, painted.box(6, bg, border, hover_bg=hover))
 
         listed = [
             (dt, text) for dt, text in self._reminders if dt.date() == self._selected

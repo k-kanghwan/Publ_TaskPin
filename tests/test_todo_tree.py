@@ -106,6 +106,14 @@ def test_set_done_propagates():
 
     assert not todo_tree.set_done(items, "a1x", False)
 
+    # 상위를 해제하면 하위도 모두 해제
+    assert todo_tree.set_done(items, "a", True)
+    assert todo_tree.set_done(items, "a1", False)
+    done = {item["id"]: item["done"] for item in items}
+    assert done == {"a": False, "a1": False, "a1x": False, "a2": True}
+    assert todo_tree.set_done(items, "a", False)
+    assert not any(item["done"] for item in items)
+
 
 def test_remove_promote_lifts_children_in_place():
     items = _items(("a", None), ("b", None), ("b1", "b"), ("b1x", "b1"), ("b2", "b"))
@@ -174,9 +182,82 @@ def test_set_collapsed_and_has_children():
     assert not todo_tree.set_collapsed(items, "none", True)
 
 
+def test_set_all_collapsed_only_touches_parents():
+    items = _items(("a", None), ("a1", "a"), ("a1x", "a1"), ("b", None))
+    assert todo_tree.set_all_collapsed(items, True)
+    assert [bool(item["collapsed"]) for item in items] == [True, True, False, False]
+    assert not todo_tree.set_all_collapsed(items, True)
+    assert todo_tree.set_all_collapsed(items, False)
+    assert not any(item["collapsed"] for item in items)
+
+
 def test_expand_ancestors():
     items = _items(("a", None), ("a1", "a"), ("a1x", "a1"))
     items[0]["collapsed"] = items[1]["collapsed"] = True
     assert todo_tree.expand_ancestors(items, "a1x")
     assert not items[0]["collapsed"] and not items[1]["collapsed"]
     assert not todo_tree.expand_ancestors(items, "a1x")
+
+
+def _delete(items, item_id):
+    """TodoPanel._delete 와 같은 순서: 자리를 남기고 지운다"""
+    info = todo_tree.removal(items, item_id)
+    snapshot = dict(next(item for item in items if item["id"] == item_id))
+    todo_tree.remove_promote(items, item_id)
+    return snapshot, info
+
+
+def _restore(items, snapshot, info):
+    return todo_tree.restore(
+        items, snapshot, info["parent_id"], info["before_id"], info["child_ids"]
+    )
+
+
+def test_removal_records_place():
+    items = _items(("a", None), ("a1", "a"), ("a2", "a"), ("b", None))
+    assert todo_tree.removal(items, "a") == {
+        "parent_id": None,
+        "before_id": "b",
+        "child_ids": ["a1", "a2"],
+    }
+    assert todo_tree.removal(items, "a2")["before_id"] is None
+    assert todo_tree.removal(items, "none") is None
+
+
+def test_restore_puts_item_back_with_children():
+    items = _items(("x", None), ("a", None), ("a1", "a"), ("a2", "a"), ("b", None))
+    before = _layout(items)
+    snapshot, info = _delete(items, "a")
+    assert _layout(items) == [("x", 0), ("a1", 0), ("a2", 0), ("b", 0)]
+    assert _restore(items, snapshot, info)
+    assert _layout(items) == before
+    assert not _restore(items, dict(snapshot), info)  # 이미 있는 id
+
+
+def test_restore_many_in_reverse_order():
+    # 상위와 하위를 함께 지웠다가 거꾸로 되돌리면 원래 계층으로
+    items = _items(("a", None), ("a1", "a"), ("a1x", "a1"), ("b", None))
+    before = _layout(items)
+    deleted = [_delete(items, "a"), _delete(items, "a1")]
+    assert _layout(items) == [("a1x", 0), ("b", 0)]
+    for snapshot, info in reversed(deleted):
+        _restore(items, snapshot, info)
+    assert _layout(items) == before
+
+
+def test_restore_when_place_is_gone():
+    items = _items(("p", None), ("a", "p"), ("a1", "a"), ("x", None))
+    snapshot, info = _delete(items, "a")  # a1 은 p 아래로 올라감
+    todo_tree.move(items, "a1", "x", None)  # 그 뒤 사용자가 다른 데로 옮김
+    todo_tree.remove_promote(items, "p")
+    assert _restore(items, snapshot, info)
+    # 상위 p 가 없으니 최상위 맨 뒤, 옮겨 간 하위는 그대로
+    assert _layout(items) == [("x", 0), ("a1", 1), ("a", 0)]
+
+
+def test_restore_reopens_done_parent():
+    items = _items(("p", None), ("c", "p"))
+    snapshot, info = _delete(items, "c")
+    todo_tree.set_done(items, "p", True)
+    _restore(items, snapshot, info)
+    assert not items[0]["done"]
