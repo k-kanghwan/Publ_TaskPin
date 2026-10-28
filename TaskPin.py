@@ -8,8 +8,8 @@
 # nuitka-project: --output-dir={MAIN_DIRECTORY}/build
 # nuitka-project: --enable-plugin=pyside6
 # nuitka-project: --windows-console-mode=disable
-# nuitka-project: --windows-icon-from-ico={MAIN_DIRECTORY}/ico/taskpin.ico
-# nuitka-project: --include-data-files={MAIN_DIRECTORY}/ico/taskpin_icon_A_memo.svg=ico/taskpin_icon_A_memo.svg
+# nuitka-project: --windows-icon-from-ico={MAIN_DIRECTORY}/ico/01_original_navy-coral/icon.ico
+# nuitka-project: --include-data-files={MAIN_DIRECTORY}/ico/01_original_navy-coral/icon.svg=ico/01_original_navy-coral/icon.svg
 # nuitka-project: --product-name=Task알림
 # nuitka-project: --product-version={APP_VERSION}
 # nuitka-project: --file-description=Task알림

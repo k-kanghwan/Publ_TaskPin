@@ -15,7 +15,7 @@ from PySide6.QtWidgets import QApplication, QMenu, QMessageBox, QSystemTrayIcon,
 from manager import os_win, paths
 
 
-TRAY_ICON = "ico/taskpin_icon_A_memo.svg"
+TRAY_ICON = "ico/01_original_navy-coral/icon.svg"
 
 
 def notify_running_instance(app_id) -> bool:

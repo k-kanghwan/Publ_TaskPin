@@ -64,6 +64,6 @@ python -m nuitka TaskPin.py
 
 ## 참고
 
-- 앱 아이콘(`ico/taskpin_icon_A_memo.svg`)을 바꿨다면 빌드 전에 `python tools/make_ico.py`로 `ico/taskpin.ico`를 다시 만든다.
+- 앱 아이콘 SVG(`ico/01_original_navy-coral/icon.svg`)를 고쳤다면 빌드 전에 `python tools/make_ico.py`로 같은 폴더의 `icon.ico`를 다시 만든다.
 - 같은 버전으로 다시 빌드하면 `build/`와 `dist/`의 결과물을 덮어쓴다.
 - Inno Setup 6.7 이상은 컴파일러가 "Non-commercial use only"로 표시된다. 상업적으로 배포하려면 라이선스를 확인해야 한다.

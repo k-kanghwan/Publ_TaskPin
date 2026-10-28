@@ -14,8 +14,8 @@ from PySide6.QtGui import QGuiApplication, QImage, QPainter
 from PySide6.QtSvg import QSvgRenderer
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SRC = os.path.join(ROOT, "ico", "taskpin_icon_A_memo.svg")
-DST = os.path.join(ROOT, "ico", "taskpin.ico")
+SRC = os.path.join(ROOT, "ico", "01_original_navy-coral", "icon.svg")
+DST = os.path.join(ROOT, "ico", "01_original_navy-coral", "icon.ico")
 SIZES = (16, 20, 24, 32, 40, 48, 64, 128, 256)
 
 
