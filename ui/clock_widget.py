@@ -55,7 +55,7 @@ from manager import os_win, snippets, todo_export, todo_store, widget_config
 from ui import theme
 from ui.reminder_popup import ReminderPopup
 from ui.theme import CORNER_RADIUS, px
-from ui.todo_panel import TodoPanel
+from ui.todo_panel import NAV_BLOCKING_MODIFIERS, TodoPanel
 
 
 # ========= ========= 테마 ========= =========
@@ -983,6 +983,7 @@ class ClockWidget(QWidget):
             "task_edit": self._on_edit_shortcut,
             "task_clear": self._on_clear_shortcut,
             "todo_focus": self.todo_panel.focus_input,
+            "todo_edit": self.todo_panel.edit_current,
             "todo_search": self.todo_panel.open_search,
             "settings": self.settings_requested.emit,
         }
@@ -1037,6 +1038,17 @@ class ClockWidget(QWidget):
         if not t.fade_text:  # 글자는 두고 배경만 투명하게
             bg.setAlphaF(self._opacity())
         painter.fillPath(path, bg)
+
+    def keyPressEvent(self, event):
+        """포커스 위젯이 없을 때(좌패널을 클릭한 뒤 등) 받은 ↑↓ / Home / End 같은 목록 키는
+        TODO 목록으로 넘겨 바로 할 일을 고르게 한다."""
+        if (
+            QApplication.focusWidget() in (None, self)
+            and not event.modifiers() & NAV_BLOCKING_MODIFIERS
+            and self.todo_panel.handle_nav_key(event.key())
+        ):
+            return
+        super().keyPressEvent(event)
 
     # ==================================================
     # 드래그 이동

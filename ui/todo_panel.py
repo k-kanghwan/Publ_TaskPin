@@ -8,6 +8,8 @@
 - 클릭으로 선택 (Ctrl: 하나씩 추가/빼기, Shift: 범위). 빈 곳 클릭 / Esc 로 해제.
   선택 테두리는 목록(container)이 그린다 - 화면에서 이어진 선택 행끼리는 테두리 하나로 묶는다.
   선택한 채로 입력하면 마지막으로 클릭한 항목의 하위로 들어간다.
+- 키보드: ↑↓ 선택 이동(선택이 없으면 보이는 영역 가운데부터) / Home·End 처음·끝 /
+  ← 접기·상위로 / → 펴기·첫 하위로 / F2(설정 단축키) 수정. 목록의 화살표 스크롤 대신 선택을 옮긴다.
 - 드래그로 순서/레벨 변경: 행 가운데에 놓으면 그 항목의 하위로, 행 사이에 놓으면 그 자리로.
   선택한 행을 끌면 선택 항목이 모두 함께 옮겨진다.
   (계층 규칙은 manager/todo_tree 참고 - 상위를 완료하면 하위도 완료, 상위를 지우면 하위는 한 단계 위로)
@@ -94,6 +96,12 @@ HIGHLIGHT_COLOR = "#f5cc45"  # 태그 Yellow 와 같은 색
 HIGHLIGHT_ALPHA = 150  # 가장 진할 때의 불투명도 (0~255)
 HIGHLIGHT_HOLD_MS = 2000
 HIGHLIGHT_FADE_MS = 600
+# 목록 키보드 이동 (TodoPanel.handle_nav_key) - 목록 스크롤 대신 선택을 옮긴다
+NAV_KEYS = (Qt.Key_Up, Qt.Key_Down, Qt.Key_Left, Qt.Key_Right, Qt.Key_Home, Qt.Key_End)
+NAV_BLOCKING_MODIFIERS = (
+    Qt.ShiftModifier | Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier
+)
+NAV_SCROLL_MARGIN = 8  # 키보드로 옮긴 행 위아래로 남길 여유(px)
 
 
 def _indent(depth: int) -> int:
@@ -535,6 +543,10 @@ class TodoRow(QWidget):
         )
 
     # ---- 수정 ----
+    @property
+    def editing(self) -> bool:
+        return self._editing
+
     def start_edit(self):
         self._editing = True
         self.label.hide()
@@ -905,8 +917,9 @@ class TodoPanel(QWidget):
         self.filter_bar.edit.selectAll()
 
     def close_search(self):
-        """검색 줄을 닫고 필터를 푼다 (검색칸에서 빠져 E / C 같은 글자 단축키가 다시 동작하도록)"""
-        self.filter_bar.edit.clearFocus()
+        """검색 줄을 닫고 필터를 푼다. 포커스는 목록으로 - 검색칸에서 빠져 E / C 같은 글자 단축키가
+        다시 동작하고, 바로 ↑↓ 로 할 일을 고를 수 있게"""
+        self.container.setFocus(Qt.OtherFocusReason)
         self.filter_bar.reset()
         self.filter_bar.hide()
         self._stop_highlight()
@@ -952,12 +965,12 @@ class TodoPanel(QWidget):
                 todo_filter.counts(self._items, self.filter_bar.query(), now)
             )
 
-    def _reveal(self, row: "TodoRow"):
-        """row 가 보이도록 스크롤한다. 목록을 막 다시 만들었으면 스크롤 범위가 아직 옛 크기라서
-        (레이아웃 요청이 대기 중) 레이아웃을 지금 끝낸 뒤에 맞춘다 - 맨 아래 행이 범위 밖으로 잘리지 않게"""
+    def _reveal(self, row: "TodoRow", margin: int = 50):
+        """row 가 보이도록 스크롤한다 (위아래 margin px 여유). 목록을 막 다시 만들었으면 스크롤 범위가
+        아직 옛 크기라서(레이아웃 요청이 대기 중) 레이아웃을 지금 끝낸 뒤에 맞춘다 - 맨 아래 행이 잘리지 않게"""
         self.list_layout.activate()
         QApplication.sendPostedEvents(None, QEvent.LayoutRequest)
-        self.scroll.ensureWidgetVisible(row)
+        self.scroll.ensureWidgetVisible(row, 0, margin)
 
     def _save_and_rebuild(self):
         todo_tree.detach_orphans(
@@ -1422,7 +1435,88 @@ class TodoPanel(QWidget):
             elif event.type() == QEvent.KeyPress and event.key() == Qt.Key_Escape:
                 self.clear_selection()
                 return True
+            elif (
+                event.type() == QEvent.KeyPress
+                and self.container.hasFocus()  # 행 편집칸에서 올라온 키는 그대로 둔다
+                and not event.modifiers() & NAV_BLOCKING_MODIFIERS
+                and self.handle_nav_key(event.key())
+            ):
+                return True  # 스크롤 영역의 화살표 스크롤 대신 선택을 옮긴다
         return super().eventFilter(obj, event)
+
+    # ==================================================
+    # 키보드 이동
+    # ==================================================
+    def handle_nav_key(self, key) -> bool:
+        """목록 키보드 이동. 처리했으면 True
+        ↑↓: 위 / 아래 행 (선택이 없으면 보이는 영역 가운데 행부터), Home / End: 처음 / 마지막 행
+        ←: 펼친 상위면 접고, 아니면 상위 행으로 / →: 접힌 상위면 펴고, 펼쳤으면 첫 하위 행으로
+        (검색 / 날짜별 보기 중에는 접힘을 무시하므로 ← / → 는 이동만 한다)"""
+        if key not in NAV_KEYS:
+            return False
+        # 이후 키도 목록이 받도록 (입력칸 Esc 뒤 / 포커스 위젯이 없을 때 넘어온 경우)
+        self.container.setFocus(Qt.OtherFocusReason)
+        if not self._rows:
+            return True
+        current = self._current_row()
+        if key == Qt.Key_Home:
+            target = self._rows[0]
+        elif key == Qt.Key_End:
+            target = self._rows[-1]
+        elif current is None:
+            target = self._middle_row()
+        elif key in (Qt.Key_Up, Qt.Key_Down):
+            idx = self._rows.index(current) + (-1 if key == Qt.Key_Up else 1)
+            target = self._rows[min(max(idx, 0), len(self._rows) - 1)]
+        else:
+            target = self._tree_step(current, expand=key == Qt.Key_Right)
+        if target is not None:
+            self._select_only(target.item["id"])
+            self._reveal(target, NAV_SCROLL_MARGIN)
+        return True
+
+    def _current_row(self):
+        """키보드 이동 / 수정의 기준 행: 마지막으로 고른 행 (선택이 없으면 None)"""
+        if not self._selected:
+            return None
+        current_id = (
+            self._anchor_id
+            if self._anchor_id in self._selected
+            else self._selected_ids()[0]
+        )
+        return next((row for row in self._rows if row.item["id"] == current_id), None)
+
+    def _middle_row(self):
+        """목록에서 지금 보이는 영역의 가운데에 가장 가까운 행"""
+        viewport = self.scroll.viewport()
+        y = self.container.mapFrom(viewport, QPoint(0, viewport.height() // 2)).y()
+        return min(self._rows, key=lambda row: abs(row.geometry().center().y() - y))
+
+    def _tree_step(self, row: "TodoRow", expand: bool):
+        """← / →: 접기 / 펴기는 그 자리에서 하고 None, 이동할 때는 옮겨 갈 행"""
+        item = row.item
+        if todo_tree.has_children(self._items, item["id"]):
+            # 거르는 중에는 접힘을 무시한다 - 바꿔도 화면이 그대로라 이동만 한다
+            if not self._filtering() and bool(item.get("collapsed")) == expand:
+                self.toggle_collapse(item["id"])
+                return None
+            if expand:
+                idx = self._rows.index(row) + 1
+                below = self._rows[idx] if idx < len(self._rows) else None
+                if below is not None and below.item.get("parent_id") == item["id"]:
+                    return below
+                return None
+        if not expand:
+            parent_id = item.get("parent_id")
+            return next((r for r in self._rows if r.item["id"] == parent_id), None)
+        return None
+
+    def edit_current(self):
+        """할 일 수정 단축키(F2): 지금 행(마지막으로 고른 행)을 그 자리에서 수정한다."""
+        row = self._current_row()
+        if row is not None and not row.editing:
+            self._reveal(row, NAV_SCROLL_MARGIN)
+            row.start_edit()
 
     def focus_input(self):
         """할 일 추가 단축키 / 우클릭 "추가": 입력칸으로 커서 이동 (선택은 유지 - 하위로 추가)"""
@@ -1430,9 +1524,10 @@ class TodoPanel(QWidget):
         self.input.end(False)
 
     def _on_input_escaped(self):
-        """Esc: 입력을 지우고 선택을 푼 뒤 입력칸에서 빠진다 (E / C 같은 글자 단축키가 다시 동작하도록)"""
+        """Esc: 입력을 지우고 선택을 푼 뒤 목록으로 포커스를 옮긴다
+        (E / C 같은 글자 단축키가 다시 동작하고, 바로 ↑↓ 로 할 일을 고를 수 있게)"""
         self.input.clear()
-        self.input.clearFocus()
+        self.container.setFocus(Qt.OtherFocusReason)
         self.clear_selection()
 
     def _on_input_return(self):

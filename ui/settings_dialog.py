@@ -70,6 +70,7 @@ SHORTCUT_ROWS = [
     ("task_edit", "Task 수정", "진행 중인 Task를 수정합니다"),
     ("task_clear", "Task 완료", "진행 중인 Task를 완료합니다"),
     ("todo_focus", "할 일 추가", "할 일 입력칸으로 커서 이동"),
+    ("todo_edit", "할 일 수정", "선택한 할 일을 그 자리에서 수정합니다"),
     ("todo_search", "할 일 검색", "검색 · 날짜별 보기 줄을 엽니다"),
     ("settings", "설정 열기", "이 설정창을 엽니다"),
 ]
@@ -464,7 +465,8 @@ class SettingsDialog(QWidget):
     def _build_shortcuts_page(self) -> QWidget:
         page, _card, card_layout = self._page(
             "Keyboard Shortcuts",
-            "위젯을 클릭해 활성화한 상태에서 동작합니다. 입력칸에 커서가 있으면 글자 키는 글자로 입력됩니다.",
+            "위젯을 클릭해 활성화한 상태에서 동작합니다. 입력칸에 커서가 있으면 글자 키는 글자로 입력됩니다.\n"
+            "할 일 목록(고정): ↑↓ 선택 · ←→ 접기/펴기 · Home/End 처음/끝 · Esc 선택 해제",
         )
         current = widget_config.shortcuts(self._cfg)
         for action, title, subtitle in SHORTCUT_ROWS:

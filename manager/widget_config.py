@@ -22,6 +22,7 @@ DEFAULT_SHORTCUTS = {
     "task_edit": "R",  # Task 수정
     "task_clear": "C",  # Task 완료
     "todo_focus": "A",  # 할 일 입력칸으로 커서 이동
+    "todo_edit": "F2",  # 선택한 할 일을 그 자리에서 수정
     "todo_search": "Ctrl+F",  # 할 일 검색 / 날짜별 보기 줄 열기
     "settings": "Ctrl+,",  # 설정 열기
 }
