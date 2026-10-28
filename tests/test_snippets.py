@@ -70,6 +70,12 @@ def test_shortcuts_fill_missing_and_broken():
         "task_clear": "C",
         "todo_focus": "",  # 빈 문자열은 해제
         "todo_edit": "",  # 새 동작의 기본 키(F2)를 사용자가 이미 쓰고 있어 비워 둠
+        "todo_up": "Up",
+        "todo_down": "Down",
+        "todo_collapse": "Left",
+        "todo_expand": "Right",
+        "todo_first": "G, G",
+        "todo_last": "Shift+G",
         "todo_search": "Ctrl+F",
         "todo_page_prev": "Ctrl+PgUp",
         "todo_page_next": "Ctrl+PgDown",
@@ -148,3 +154,11 @@ def test_lone_low_surrogate_is_dropped():
     decoder = os_win.ImeCharDecoder()
     assert decoder.feed(os_win.WM_IME_CHAR, 0xDE80) == (True, None)
     assert decoder.feed(os_win.WM_IME_CHAR, ord("가")) == (True, "가")
+
+
+def test_list_shortcuts_yield_to_user_key():
+    # 목록 키(위 / 아래 / 접기 / 펼치기)도 설정 단축키 - 사용자가 이미 쓰는 키면 기본값을 비운다
+    result = widget_config.shortcuts({"shortcuts": {"todo_edit": "Up"}})
+    assert result["todo_up"] == ""
+    assert result["todo_down"] == "Down"
+    assert set(widget_config.LIST_SHORTCUTS) <= set(widget_config.DEFAULT_SHORTCUTS)

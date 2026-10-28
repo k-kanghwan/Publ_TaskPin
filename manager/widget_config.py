@@ -16,18 +16,36 @@ from manager import paths, snippets
 CONFIG_NAME = "config.json"
 EXPORT_PREFIX = "TaskPin-config"  # 설정 내보내기 파일 이름
 
-# 위젯 단축키 (위젯 창이 활성일 때만 동작). 값은 QKeySequence PortableText, "" 이면 해제
+# 위젯 단축키 (위젯 창이 활성일 때만 동작). 값은 QKeySequence PortableText, "" 이면 해제.
+# 두 키까지 이어 누를 수 있다 ("G, G" = g 를 두 번)
 DEFAULT_SHORTCUTS = {
     "task_register": "E",  # Task 등록 / 진행 중이면 해제 (좌패널 [등록/해제] 버튼)
     "task_edit": "R",  # Task 수정
     "task_clear": "C",  # Task 완료
     "todo_focus": "A",  # 할 일 입력칸으로 커서 이동
     "todo_edit": "F2",  # 선택한 할 일을 그 자리에서 수정
+    # 목록 키 (LIST_SHORTCUTS): 할 일 목록에 포커스가 있을 때만 - 입력칸의 화살표는 그대로 둔다
+    "todo_up": "Up",  # 위 할 일 선택
+    "todo_down": "Down",  # 아래 할 일 선택
+    "todo_collapse": "Left",  # 펼친 상위면 접고, 아니면 상위로
+    "todo_expand": "Right",  # 접힌 상위면 펴고, 펼쳤으면 첫 하위로
+    "todo_first": "G, G",  # 맨 위 할 일 (vim 의 gg) - Home 은 고정 키로 따로 듣는다
+    "todo_last": "Shift+G",  # 맨 아래 할 일 (vim 의 G) - End 도 고정
     "todo_search": "Ctrl+F",  # 할 일 검색 / 날짜별 보기 줄 열기
     "todo_page_prev": "Ctrl+PgUp",  # 할 일 이전 페이지 (엑셀 시트 이동과 같음)
     "todo_page_next": "Ctrl+PgDown",  # 할 일 다음 페이지
     "settings": "Ctrl+,",  # 설정 열기
 }
+
+# 창 단축키(QShortcut)가 아니라 할 일 목록이 직접 받는 키 (TodoPanel.set_nav_keys)
+LIST_SHORTCUTS = (
+    "todo_up",
+    "todo_down",
+    "todo_collapse",
+    "todo_expand",
+    "todo_first",
+    "todo_last",
+)
 
 # 설정창 Appearance 탭. 색은 "#rrggbb", "" 이면 테마를 따른다
 THEMES = ("dark", "light", "system")

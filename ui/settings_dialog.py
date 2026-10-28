@@ -67,17 +67,62 @@ TABS = [
 ]
 
 # (동작, 이름, 보조설명) - 동작 키는 widget_config.DEFAULT_SHORTCUTS 와 같다
-SHORTCUT_ROWS = [
-    ("task_register", "Task 등록/해제", "Task가 없으면 등록, 진행 중이면 해제합니다"),
-    ("task_edit", "Task 수정", "진행 중인 Task를 수정합니다"),
-    ("task_clear", "Task 완료", "진행 중인 Task를 완료합니다"),
-    ("todo_focus", "할 일 추가", "할 일 입력칸으로 커서 이동"),
-    ("todo_edit", "할 일 수정", "선택한 할 일을 그 자리에서 수정합니다"),
-    ("todo_search", "할 일 검색", "검색 · 날짜별 보기 줄을 엽니다"),
-    ("todo_page_prev", "이전 페이지", "할 일 목록을 앞 페이지로 넘깁니다"),
-    ("todo_page_next", "다음 페이지", "할 일 목록을 뒤 페이지로 넘깁니다"),
-    ("settings", "설정 열기", "이 설정창을 엽니다"),
+SHORTCUT_MAX_KEYS = 2  # 이어 누르는 키 수 (gg)
+# Keyboard Shortcuts 탭: (그룹 이름, [(동작, 제목, 설명)])
+SHORTCUT_GROUPS = [
+    (
+        "Task 관리",
+        [
+            (
+                "task_register",
+                "Task 등록/해제",
+                "Task가 없으면 등록, 진행 중이면 해제합니다",
+            ),
+            ("task_edit", "Task 수정", "진행 중인 Task를 수정합니다"),
+            ("task_clear", "Task 완료", "진행 중인 Task를 완료합니다"),
+        ],
+    ),
+    (
+        "편집",
+        [
+            ("todo_focus", "할 일 추가", "할 일 입력칸으로 커서 이동"),
+            ("todo_edit", "할 일 수정", "선택한 할 일을 그 자리에서 수정합니다"),
+        ],
+    ),
+    (
+        "탐색",
+        [
+            ("todo_up", "위 할 일 선택", "할 일 목록에서 위 행을 고릅니다"),
+            ("todo_down", "아래 할 일 선택", "할 일 목록에서 아래 행을 고릅니다"),
+            ("todo_first", "맨 위 할 일", "목록의 첫 행을 고릅니다 (Home 도 됩니다)"),
+            (
+                "todo_last",
+                "맨 아래 할 일",
+                "목록의 마지막 행을 고릅니다 (End 도 됩니다)",
+            ),
+            (
+                "todo_collapse",
+                "하위 접기",
+                "펼친 상위면 접고, 아니면 상위 행으로 갑니다",
+            ),
+            (
+                "todo_expand",
+                "하위 펼치기",
+                "접힌 상위면 펴고, 펼쳤으면 첫 하위 행으로 갑니다",
+            ),
+            ("todo_search", "할 일 검색", "검색 · 날짜별 보기 줄을 엽니다"),
+        ],
+    ),
+    (
+        "페이지",
+        [
+            ("todo_page_prev", "이전 페이지", "할 일 목록을 앞 페이지로 넘깁니다"),
+            ("todo_page_next", "다음 페이지", "할 일 목록을 뒤 페이지로 넘깁니다"),
+        ],
+    ),
+    ("일반", [("settings", "설정 열기", "이 설정창을 엽니다")]),
 ]
+SHORTCUT_ROWS = [row for _group, rows in SHORTCUT_GROUPS for row in rows]
 
 # Appearance 선택지 (값, 표시) - 값은 widget_config.THEMES / LEFT_SCALES / TODO_SCALES 와 같다
 THEME_OPTIONS = [("dark", "다크"), ("light", "라이트"), ("system", "시스템")]
@@ -207,6 +252,16 @@ def _settings_boxes(t: theme.Theme) -> list:
     ]
 
 
+def _keys_overlap(a: str, b: str) -> bool:
+    """두 단축키가 같거나 한쪽이 다른 쪽의 앞부분인지 ("G" 와 "G, G" - 앞 키에서 바로 실행되어 버린다)"""
+    seq_a = QKeySequence(a, QKeySequence.PortableText)
+    seq_b = QKeySequence(b, QKeySequence.PortableText)
+    combos_a = [seq_a[i].toCombined() for i in range(seq_a.count())]
+    combos_b = [seq_b[i].toCombined() for i in range(seq_b.count())]
+    shorter = min(len(combos_a), len(combos_b))
+    return shorter > 0 and combos_a[:shorter] == combos_b[:shorter]
+
+
 def _line() -> QFrame:
     line = QFrame()
     line.setObjectName("line")
@@ -222,11 +277,12 @@ def _set_invalid(edit: QLineEdit, invalid: bool):
 
 
 class _ShortcutEdit(QKeySequenceEdit):
-    """키 조합 하나만 받는 입력칸. Esc 는 단축키로 받지 않고 입력을 취소한다."""
+    """키 조합을 두 개까지 받는 입력칸 ("G, G" 처럼 이어 누르기 - 하나만 누르면 잠시 뒤 끝난다).
+    Esc 는 단축키로 받지 않고 입력을 취소한다."""
 
     def __init__(self, keys: str, parent=None):
         super().__init__(QKeySequence(keys, QKeySequence.PortableText), parent)
-        self.setMaximumSequenceLength(1)
+        self.setMaximumSequenceLength(SHORTCUT_MAX_KEYS)
         self.setFixedWidth(KEY_EDIT_WIDTH)
         self._saved = self.keySequence()
 
@@ -459,6 +515,35 @@ class SettingsDialog(QWidget):
         return page, card, card_layout
 
     @staticmethod
+    def _group_page(title: str, hint: str):
+        """섹션 제목 + 보조설명 + 스크롤되는 그룹 목록 (_add_group 으로 채운다).
+        행이 많은 탭은 스크롤에 넣어야 창 높이를 넘을 때 행이 납작하게 눌리지 않는다.
+        Returns (페이지, 그룹 레이아웃)"""
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(0, 4, 0, 0)
+        layout.setSpacing(8)
+        section = QLabel(title)
+        section.setObjectName("section")
+        hint_label = QLabel(hint)
+        hint_label.setObjectName("sub")
+        hint_label.setWordWrap(True)
+        layout.addWidget(section)
+        layout.addWidget(hint_label)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        container = QWidget()
+        groups = QVBoxLayout(container)
+        groups.setContentsMargins(0, 0, 6, 0)
+        groups.setSpacing(8)
+        scroll.setWidget(container)
+        layout.addWidget(scroll, 1)
+        return page, groups
+
+    @staticmethod
     def _card():
         """둥근 카드. Returns (카드, 카드 레이아웃)"""
         card = QFrame()
@@ -494,35 +579,45 @@ class SettingsDialog(QWidget):
     # Keyboard Shortcuts
     # ==================================================
     def _build_shortcuts_page(self) -> QWidget:
-        page, _card, card_layout = self._page(
+        page, groups = self._group_page(
             "Keyboard Shortcuts",
-            "위젯을 클릭해 활성화한 상태에서 동작합니다. 입력칸에 커서가 있으면 글자 키는 글자로 입력됩니다.\n"
-            "할 일 목록(고정): ↑↓ 선택 · ←→ 접기/펴기 · Home/End 처음/끝 · Delete 삭제 · Esc 선택 해제",
+            "위젯을 클릭해 활성화한 상태에서 동작합니다. 입력칸에 커서가 있으면 글자 키는 글자로 입력됩니다. "
+            "키를 두 번 이어 눌러 G, G (gg) 처럼 정할 수도 있습니다.\n"
+            "탐색 키(선택 · 맨 위 / 아래 · 접기 / 펼치기)는 할 일 목록에 포커스가 있을 때만 동작합니다 "
+            "(입력칸의 화살표는 그대로). 고정 키: Home/End 처음/끝 · Delete 삭제 · Esc 선택 해제",
         )
         current = widget_config.shortcuts(self._cfg)
-        for action, title, subtitle in SHORTCUT_ROWS:
-            edit = _ShortcutEdit(current[action])
-            edit.editingFinished.connect(
-                lambda a=action: self._set_shortcut(a, self._shortcut_edits[a].keys())
-            )
-            btn_reset = QPushButton("↺")
-            btn_reset.setObjectName("small")
-            btn_reset.setCursor(Qt.PointingHandCursor)
-            btn_reset.setToolTip(
-                f"기본값({widget_config.DEFAULT_SHORTCUTS[action]})으로 되돌리기"
-            )
-            btn_reset.clicked.connect(
-                lambda _=False, a=action: self._set_shortcut(
-                    a, widget_config.DEFAULT_SHORTCUTS[a]
-                )
-            )
-            self._shortcut_edits[action] = edit
-            self._shortcut_notes[action] = (
-                self._add_row(card_layout, title, subtitle, edit, btn_reset),
-                subtitle,
-            )
-        page.layout().addStretch(1)
+        for group, rows in SHORTCUT_GROUPS:
+            card_layout = self._add_group(groups, group)
+            for action, title, subtitle in rows:
+                self._add_shortcut_row(card_layout, action, title, subtitle, current)
+        groups.addStretch(1)
         return page
+
+    def _add_shortcut_row(
+        self, card_layout: QVBoxLayout, action: str, title: str, subtitle: str, current
+    ):
+        """단축키 한 줄: [제목 / 설명] [키 입력칸] [↺ 기본값]"""
+        edit = _ShortcutEdit(current[action])
+        edit.editingFinished.connect(
+            lambda a=action: self._set_shortcut(a, self._shortcut_edits[a].keys())
+        )
+        btn_reset = QPushButton("↺")
+        btn_reset.setObjectName("small")
+        btn_reset.setCursor(Qt.PointingHandCursor)
+        btn_reset.setToolTip(
+            f"기본값({widget_config.DEFAULT_SHORTCUTS[action]})으로 되돌리기"
+        )
+        btn_reset.clicked.connect(
+            lambda _=False, a=action: self._set_shortcut(
+                a, widget_config.DEFAULT_SHORTCUTS[a]
+            )
+        )
+        self._shortcut_edits[action] = edit
+        self._shortcut_notes[action] = (
+            self._add_row(card_layout, title, subtitle, edit, btn_reset),
+            subtitle,
+        )
 
     def _set_shortcut(self, action: str, keys: str):
         """겹치지 않으면 저장하고 위젯에 알린다. 겹치면 이전 값으로 되돌리고 경고한다."""
@@ -532,7 +627,7 @@ class SettingsDialog(QWidget):
             (
                 other
                 for other, k in current.items()
-                if other != action and k and k == keys
+                if other != action and k and keys and _keys_overlap(k, keys)
             ),
             None,
         )
@@ -634,30 +729,10 @@ class SettingsDialog(QWidget):
     # Appearance
     # ==================================================
     def _build_appearance_page(self) -> QWidget:
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        layout.setContentsMargins(0, 4, 0, 0)
-        layout.setSpacing(8)
-        section = QLabel("Appearance")
-        section.setObjectName("section")
-        hint = QLabel(
-            "바꾸는 즉시 위젯에 반영됩니다. 설정창은 테마(다크 / 라이트)와 강조색만 따릅니다."
+        page, groups = self._group_page(
+            "Appearance",
+            "바꾸는 즉시 위젯에 반영됩니다. 설정창은 테마(다크 / 라이트)와 강조색만 따릅니다.",
         )
-        hint.setObjectName("sub")
-        hint.setWordWrap(True)
-        layout.addWidget(section)
-        layout.addWidget(hint)
-
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.NoFrame)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        container = QWidget()
-        groups = QVBoxLayout(container)
-        groups.setContentsMargins(0, 0, 6, 0)
-        groups.setSpacing(8)
-        scroll.setWidget(container)
-        layout.addWidget(scroll, 1)
 
         # ---- 위젯 전체 ----
         card_layout = self._add_group(groups, "위젯 전체")
@@ -799,7 +874,7 @@ class SettingsDialog(QWidget):
         bottom = QHBoxLayout()
         bottom.addWidget(btn_reset_all)
         bottom.addStretch(1)
-        layout.addLayout(bottom)
+        page.layout().addLayout(bottom)  # 스크롤 밖 (늘 보이게)
 
         self._refresh_appearance()
         return page
