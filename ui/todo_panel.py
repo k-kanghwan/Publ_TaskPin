@@ -11,7 +11,7 @@
 - 드래그로 순서/레벨 변경: 행 가운데에 놓으면 그 항목의 하위로, 행 사이에 놓으면 그 자리로.
   선택한 행을 끌면 선택 항목이 모두 함께 옮겨진다.
   (계층 규칙은 manager/todo_tree 참고 - 상위를 완료하면 하위도 완료, 상위를 지우면 하위는 한 단계 위로)
-- 우클릭 메뉴: 완료 항목 정리 / TODO 내보내기 / 추가 / 삭제 / 태그(체크박스 왼쪽 색 막대)
+- 우클릭 메뉴: 검색 / 완료 항목 정리 / 내보내기 / 추가 / 삭제 / 태그(체크박스 왼쪽 색 막대)
   여러 개를 선택한 채 우클릭하면 선택 항목 전체에 적용된다.
   태그는 기본 6색 + 사용자 태그(config.json custom_tags, "+ 태그 추가…" / 설정창에서 관리)
 - 형제끼리는 미완료 -> 완료 순, 리마인더 항목이 시각순으로 위에 고정되고 나머지는 사용자가 정한 순서
@@ -169,6 +169,14 @@ def _panel_style(t: theme.Theme) -> str:
         font-size: {px(11, s)}px;
     }}
     QPushButton#delete:hover {{ color: {t.text_warn}; }}
+    QPushButton#toggle {{
+        background: transparent;
+        color: {t.text_sub};
+        border: none;
+        padding: 0px;
+        font-size: {px(11, s)}px;
+    }}
+    QPushButton#toggle:hover {{ color: {t.accent}; }}
     QPushButton#chip {{
         background: transparent;
         font-family: {t.font_family};
@@ -378,39 +386,31 @@ class TodoRow(QWidget):
     drag_released = Signal()
     drag_canceled = Signal()
 
-    def __init__(
-        self,
-        item: dict,
-        depth: int,
-        reminders_provider,
-        snippets_provider,
-        tag_color,
-        context=False,
-        has_children=False,
-        parent=None,
-    ):
-        """tag_color: (태그 키) -> "#rrggbb" / None (태그 없음 또는 지워진 사용자 태그)
-        context: 검색 / 날짜별 보기에는 맞지 않지만 맞는 항목의 상위라서 보이는 행 (흐리게)
-        has_children: 하위가 있으면 ▸/▾ 접기 버튼을 보인다 (item["collapsed"] 가 방향을 정함)"""
+    def __init__(self, reminders_provider, snippets_provider, tag_color, parent=None):
+        """위젯만 만든다. 보여줄 항목은 set_state 로 정한다 (목록을 다시 만들 때 행을 재사용한다).
+        tag_color: (태그 키) -> "#rrggbb" / None (태그 없음 또는 지워진 사용자 태그)"""
         super().__init__(parent)
-        self.item = item
-        self.depth = depth  # 레벨 (최상위 0)
-        self.context = context
+        self.item = None
+        self.depth = 0  # 레벨 (최상위 0)
+        self.context = False
         self.mark_query = ""  # 검색 하이라이트할 검색어 (TodoPanel 이 정함)
         self.mark_level = 0.0  # 하이라이트 진하기 0~1 (0 이면 칠하지 않음)
         self._tag_color = tag_color
+        # 태그 막대에 마지막으로 칠한 색 (바뀔 때만 스타일시트를 다시 건다)
+        self._bar_color = ""
         self._editing = False
         self._hover = False
         self._press_pos = None  # 드래그 시작 판정용 누른 지점
         self._dragging = False
 
         layout = QHBoxLayout(self)
-        # 좌우 여백은 hover 배경이 체크박스/삭제 버튼에 붙지 않게
-        layout.setContentsMargins(4 + self.indent(), 2, 4, 2)
-        layout.setSpacing(6)
+        layout.setSpacing(6)  # 여백은 레벨에 따라 set_state 가 정한다
+        self._layout = layout
 
+        # 자식 위젯은 모두 이 행을 부모로 만든다 - 부모 없이 setVisible(True) 하면
+        # 레이아웃에 들어가기 전까지 최상위 창으로 떠서 화면 가운데가 깜빡인다 (그리고 느리다)
         # 접기/펼치기 버튼. 하위가 없어도 자리는 비워 둬서 체크박스 위치를 맞춘다
-        self.btn_toggle = QPushButton()
+        self.btn_toggle = QPushButton(self)
         self.btn_toggle.setObjectName("toggle")
         self.btn_toggle.setFixedSize(TOGGLE_SIZE, TOGGLE_SIZE)
         self.btn_toggle.setFocusPolicy(Qt.NoFocus)
@@ -418,26 +418,25 @@ class TodoRow(QWidget):
         self.btn_toggle.clicked.connect(
             lambda: self.collapse_toggled.emit(self.item["id"])
         )
-        self.btn_toggle.setVisible(has_children)
         policy = self.btn_toggle.sizePolicy()
         policy.setRetainSizeWhenHidden(True)
         self.btn_toggle.setSizePolicy(policy)
 
         # 태그 막대 (행 높이만큼) + 체크박스. 태그가 없어도 막대 자리는 비워 둔다
-        self.tag_bar = QFrame()
+        self.tag_bar = QFrame(self)
         self.tag_bar.setFixedWidth(TAG_BAR_WIDTH)
         lead = QHBoxLayout()
         lead.setSpacing(TAG_BAR_GAP)
 
-        self.check = QCheckBox()
+        self.check = QCheckBox(self)
         self.check.setCursor(Qt.PointingHandCursor)
-        self.check.setChecked(item["done"])
+        self.check.setFocusPolicy(Qt.NoFocus)
         self.check.toggled.connect(lambda on: self.toggled.emit(self.item["id"], on))
         lead.addWidget(self.btn_toggle, 0, Qt.AlignTop)
         lead.addWidget(self.tag_bar)
         lead.addWidget(self.check, 0, Qt.AlignTop)
 
-        self.label = QLabel()
+        self.label = QLabel(self)
         self.label.setTextFormat(Qt.RichText)
         # RichText 라벨은 기본값(링크 클릭)이면 마우스 이동을 삼켜서 행의 드래그가 시작되지 않는다
         self.label.setTextInteractionFlags(Qt.NoTextInteraction)
@@ -446,15 +445,16 @@ class TodoRow(QWidget):
         self.label.setToolTip("클릭하여 선택 · 더블클릭하여 수정 · 드래그하여 이동")
         self.label.installEventFilter(self)
 
-        self.editor = TodoInput(reminders_provider, snippets_provider)
+        self.editor = TodoInput(reminders_provider, snippets_provider, self)
         self.editor.hide()
         self.editor.returnPressed.connect(self._commit_edit)
         self.editor.focus_lost.connect(self._commit_edit)
         self.editor.escaped.connect(self._cancel_edit)
 
-        self.btn_delete = QPushButton("✕")
+        self.btn_delete = QPushButton("✕", self)
         self.btn_delete.setObjectName("delete")
         self.btn_delete.setFixedSize(16, 16)
+        self.btn_delete.setFocusPolicy(Qt.NoFocus)
         self.btn_delete.setCursor(Qt.PointingHandCursor)
         self.btn_delete.setToolTip("삭제")
         self.btn_delete.clicked.connect(lambda: self.deleted.emit(self.item["id"]))
@@ -469,6 +469,20 @@ class TodoRow(QWidget):
         layout.addWidget(self.editor, 1)
         layout.addWidget(self.btn_delete, 0, Qt.AlignTop)
 
+    def set_state(self, item: dict, depth: int, context=False, has_children=False):
+        """보여줄 항목과 자리를 (다시) 정하고 그린다.
+        context: 검색 / 날짜별 보기에는 맞지 않지만 맞는 항목의 상위라서 보이는 행 (흐리게)
+        has_children: 하위가 있으면 ▸/▾ 접기 버튼을 보인다 (item["collapsed"] 가 방향을 정함)"""
+        self.item = item
+        self.depth = depth
+        self.context = context
+        # 좌우 여백은 hover 배경이 체크박스/삭제 버튼에 붙지 않게
+        self._layout.setContentsMargins(4 + self.indent(), 2, 4, 2)
+        self.btn_toggle.setVisible(has_children)
+        # 표시만 맞춘다 - toggled 가 다시 완료 처리를 부르지 않게
+        self.check.blockSignals(True)
+        self.check.setChecked(item["done"])
+        self.check.blockSignals(False)
         self.render()
 
     def indent(self) -> int:
@@ -484,15 +498,12 @@ class TodoRow(QWidget):
         collapsed = self.item.get("collapsed")
         self.btn_toggle.setText("▸" if collapsed else "▾")
         self.btn_toggle.setToolTip("하위 펼치기" if collapsed else "하위 접기")
-        self.btn_toggle.setStyleSheet(
-            f"QPushButton {{ background: transparent; border: none; padding: 0;"
-            f" color: {t.text_sub}; font-size: {px(11, s)}px; }}"
-            f"QPushButton:hover {{ color: {t.accent}; }}"
-        )
-        self.tag_bar.setStyleSheet(
-            f"background: {tag_color or 'transparent'}; border: none;"
-            f" border-radius: {TAG_BAR_WIDTH // 2}px;"
-        )
+        if tag_color != self._bar_color:
+            self._bar_color = tag_color
+            self.tag_bar.setStyleSheet(
+                f"background: {tag_color or 'transparent'}; border: none;"
+                f" border-radius: {TAG_BAR_WIDTH // 2}px;"
+            )
         emoji_style = f"font-size:{px(EMOJI_PX, s)}px;"
         marks, mark_style = (), ""
         if self.mark_level > 0 and not self.context:
@@ -546,6 +557,10 @@ class TodoRow(QWidget):
 
     def _finish_edit(self):
         self._editing = False
+        if self.editor.hasFocus():
+            # 포커스를 가진 편집칸을 숨기면 Qt 가 포커스를 다음 위젯으로 넘기며 목록을 그쪽으로
+            # 스크롤한다 (맨 위로 튀기도 함). 먼저 목록(부모 container)으로 돌려 둔다
+            self.parentWidget().setFocus(Qt.OtherFocusReason)
         self.editor.hide()
         self.label.show()
 
@@ -629,7 +644,7 @@ class TodoRow(QWidget):
 class TodoPanel(QWidget):
     """TODO 목록 + 입력창. 상태는 todo_store 로 바로바로 저장한다. (선택 상태는 저장하지 않음)"""
 
-    export_requested = Signal(bool)  # 우클릭 "TODO 내보내기" - True 면 보관 항목 전체
+    export_requested = Signal(bool)  # 우클릭 "내보내기" - True 면 보관 항목 전체
 
     def __init__(
         self, snippets_provider, custom_tags_provider, add_custom_tag, parent=None
@@ -787,9 +802,7 @@ class TodoPanel(QWidget):
             todo_tree.move(self._items, item["id"], parent_id, None)
             todo_tree.expand_ancestors(self._items, item["id"])  # 접힌 상위면 펼쳐서 보이게
         self._save_and_rebuild()
-        # 레이아웃이 갱신된 뒤에 새 항목이 보이도록 스크롤
-        row = next(row for row in self._rows if row.item is item)
-        QTimer.singleShot(0, lambda: self.scroll.ensureWidgetVisible(row))
+        self._reveal(next(row for row in self._rows if row.item is item))
 
     def toggle_collapse(self, item_id: str):
         """▸/▾ 버튼: 하위를 접거나 펼친다 (숨은 하위는 _rebuild 가 선택에서 뺀다)"""
@@ -939,6 +952,13 @@ class TodoPanel(QWidget):
                 todo_filter.counts(self._items, self.filter_bar.query(), now)
             )
 
+    def _reveal(self, row: "TodoRow"):
+        """row 가 보이도록 스크롤한다. 목록을 막 다시 만들었으면 스크롤 범위가 아직 옛 크기라서
+        (레이아웃 요청이 대기 중) 레이아웃을 지금 끝낸 뒤에 맞춘다 - 맨 아래 행이 범위 밖으로 잘리지 않게"""
+        self.list_layout.activate()
+        QApplication.sendPostedEvents(None, QEvent.LayoutRequest)
+        self.scroll.ensureWidgetVisible(row)
+
     def _save_and_rebuild(self):
         todo_tree.detach_orphans(
             self._items
@@ -952,11 +972,9 @@ class TodoPanel(QWidget):
         return (item["done"], due is None, due or datetime.min.replace(tzinfo=UTC))
 
     def _rebuild(self):
-        self._end_drag()  # 드래그 중이던 행이 사라지므로 (리마인더 팝업에서 완료 등)
-        for row in self._rows:
-            self.list_layout.removeWidget(row)
-            row.deleteLater()
-        self._rows = []
+        """목록을 지금 상태로 맞춘다. 있던 항목의 행은 다시 쓰고(상태만 갱신) 새 항목만 행을 만든다.
+        체크 / 접기마다 행을 모두 새로 만들면 항목이 많을 때 눈에 띄게 느려진다."""
+        self._end_drag()  # 드래그 중이던 행이 사라질 수 있으므로 (리마인더 팝업에서 완료 등)
 
         # 하위는 상위 바로 밑에. 형제끼리 미완료 -> 완료 순, 각각 리마인더 일시가 빠른 순
         # 리마인더 없는 항목은 그 뒤에 self._items 순서(= 드래그로 정한 순서) 그대로 (안정 정렬)
@@ -973,31 +991,32 @@ class TodoPanel(QWidget):
             self._shown_ids, context = self._visible(now)
             ordered = [pair for pair in ordered if pair[0]["id"] in self._shown_ids]
         self._update_counts(now)
-        for idx, (item, depth) in enumerate(ordered):
-            row = TodoRow(
+
+        old = {row.item["id"]: row for row in self._rows}
+        self._rows = []
+        for item, depth in ordered:
+            row = old.pop(item["id"], None) or self._new_row()
+            row.mark_query = self._mark_query
+            row.mark_level = self._mark_level
+            row.set_state(
                 item,
                 depth,
-                self.reminders,
-                self._snippets_provider,
-                self._tag_color,
                 context=item["id"] in context,
                 has_children=item["id"] in parents,
             )
-            if self._mark_level > 0:
-                row.mark_query = self._mark_query
-                row.mark_level = self._mark_level
-                row.render()
-            row.toggled.connect(self.set_done)
-            row.deleted.connect(self.delete_item)
-            row.edited.connect(self.edit_item)
-            row.collapse_toggled.connect(self.toggle_collapse)
-            row.clicked.connect(self._on_row_clicked)
-            row.drag_started.connect(self._begin_drag)
-            row.drag_moved.connect(self._update_drag)
-            row.drag_released.connect(self._finish_drag)
-            row.drag_canceled.connect(self._end_drag)
-            self.list_layout.insertWidget(idx, row)
             self._rows.append(row)
+        for row in old.values():  # 지워지거나 보관되거나 숨은 항목
+            self._drop_row(row)
+        # 화면 순서대로 놓는다 (자리가 바뀐 행만 옮김)
+        for idx, row in enumerate(self._rows):
+            placed = self.list_layout.itemAt(idx)
+            if placed is None or placed.widget() is not row:
+                self.list_layout.removeWidget(row)
+                self.list_layout.insertWidget(idx, row)
+            if row.isHidden():
+                # 새 행은 지금 보여야 첫 레이아웃 계산에 들어간다. 레이아웃의 지연 표시를 기다리면
+                # 그 사이 목록 높이가 잠깐 줄어 스크롤 범위가 0 이 되고 위치가 맨 위로 잘린다
+                row.show()
 
         self.empty_label.setText(
             EMPTY_FILTERED_TEXT if self._shown_ids is not None else EMPTY_TEXT
@@ -1009,6 +1028,33 @@ class TodoPanel(QWidget):
         if self._anchor_id not in ids:
             self._anchor_id = None
         self._apply_selection()
+
+    def _new_row(self) -> "TodoRow":
+        row = TodoRow(
+            self.reminders,
+            self._snippets_provider,
+            self._tag_color,
+            parent=self.container,
+        )
+        row.toggled.connect(self.set_done)
+        row.deleted.connect(self.delete_item)
+        row.edited.connect(self.edit_item)
+        row.collapse_toggled.connect(self.toggle_collapse)
+        row.clicked.connect(self._on_row_clicked)
+        row.drag_started.connect(self._begin_drag)
+        row.drag_moved.connect(self._update_drag)
+        row.drag_released.connect(self._finish_drag)
+        row.drag_canceled.connect(self._end_drag)
+        return row
+
+    def _drop_row(self, row: "TodoRow"):
+        focus = QApplication.focusWidget()
+        if focus is not None and row.isAncestorOf(focus):
+            # 포커스를 가진 행을 숨기면 Qt 가 다음 위젯으로 포커스를 넘기며 목록을 스크롤한다
+            self.container.setFocus(Qt.OtherFocusReason)
+        row.hide()
+        self.list_layout.removeWidget(row)
+        row.deleteLater()
 
     # ==================================================
     # 선택
@@ -1110,7 +1156,7 @@ class TodoPanel(QWidget):
         menu.addSeparator()
         act_clear = menu.addAction("완료 항목 정리", self.clear_done)
         act_clear.setEnabled(self.has_done())
-        export_menu = menu.addMenu("TODO 내보내기")
+        export_menu = menu.addMenu("내보내기")
         export_menu.setStyleSheet(menu.styleSheet())
         act_active = export_menu.addAction(
             "화면 목록…", lambda: self.export_requested.emit(False)
