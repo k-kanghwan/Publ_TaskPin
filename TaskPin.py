@@ -53,6 +53,9 @@ FINISH_VERBS = {task_store.COMPLETED: "완료", task_store.RELEASED: "해제"}
 class TaskPinApp(TrayApp):
     # 단일 인스턴스 ID - 디버그는 설치본이 실행 중이어도 같이 뜨도록 분리
     APP_ID = f"{getpass.getuser()}_TaskPin" + ("_debug" if DEBUG else "")
+    # 디버그 실행은 아이콘 색을 달리해 트레이에서 설치본과 구별한다 (빌드에는 넣지 않음)
+    if DEBUG:
+        TRAY_ICON = "ico/02_graphite-lime/icon.svg"
 
     def __init__(self):
         super().__init__()
