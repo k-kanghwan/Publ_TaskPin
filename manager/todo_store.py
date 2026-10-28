@@ -7,6 +7,7 @@ TodoPanel 은 메모리 목록을 통째로 save_todos() 에 넘긴다. 저장�
 맞추고, "완료 항목 정리"로 보관한(archived_at) 행은 건드리지 않는다.
 상위/하위 계층은 parent_id 로, 형제 사이 순서는 position 으로 저장한다.
 색 태그는 tag (TAGS 중 하나 / 사용자 태그 키 / None) 로 저장한다. 색 값은 UI(todo_panel)와 config 가 정한다.
+항목이 속한 페이지(엑셀 시트처럼 독립된 목록)는 page_id 로 저장한다 (manager/todo_pages).
 """
 
 import html
@@ -31,6 +32,7 @@ EMOJI_RE = re.compile(f"[{_EMOJI_CHARS}][️‍{_EMOJI_CHARS}]*")
 # 우패널 우클릭 "태그" 의 기본 색 (표시 순서). 사용자가 추가한 태그는 config.json custom_tags
 TAGS = ("red", "orange", "yellow", "green", "blue", "gray")
 TAG_MAX_LEN = 64
+DEFAULT_PAGE_ID = 1  # 첫 페이지 (스키마 v9 가 만든다)
 
 _COLUMNS = (
     "id",
@@ -42,6 +44,7 @@ _COLUMNS = (
     "parent_id",
     "tag",
     "collapsed",
+    "page_id",
 )
 
 
@@ -98,12 +101,12 @@ def save_todos(items: list) -> None:
             )
             c.executemany(
                 f"INSERT INTO todos ({', '.join(_COLUMNS)}, position)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
                 " ON CONFLICT(id) DO UPDATE SET"
                 " text = excluded.text, done = excluded.done, created = excluded.created,"
                 " snooze_until = excluded.snooze_until, fired = excluded.fired,"
                 " parent_id = excluded.parent_id, tag = excluded.tag,"
-                " collapsed = excluded.collapsed,"
+                " collapsed = excluded.collapsed, page_id = excluded.page_id,"
                 " position = excluded.position",
                 [
                     (
@@ -116,6 +119,7 @@ def save_todos(items: list) -> None:
                         item.get("parent_id"),
                         item.get("tag"),
                         int(bool(item.get("collapsed"))),
+                        item.get("page_id", DEFAULT_PAGE_ID),
                         pos,
                     )
                     for pos, item in enumerate(items)
@@ -139,7 +143,7 @@ def archive_items(ids: list) -> None:
         print(f"TODO 보관 실패: {e}")
 
 
-def new_item(text: str) -> dict:
+def new_item(text: str, page_id: int = DEFAULT_PAGE_ID) -> dict:
     return {
         "id": uuid.uuid4().hex,
         "text": text,
@@ -150,6 +154,7 @@ def new_item(text: str) -> dict:
         "parent_id": None,  # 상위 항목 id (계층은 manager/todo_tree 참고)
         "tag": None,  # 색 태그 (TAGS 중 하나)
         "collapsed": False,  # True 면 하위 항목을 숨김 (manager/todo_tree.flatten)
+        "page_id": page_id,  # 속한 페이지 (manager/todo_pages)
     }
 
 
@@ -159,6 +164,9 @@ def normalize(item: dict) -> dict:
     base.update(item)
     base["done"] = bool(base["done"])
     base["collapsed"] = bool(base["collapsed"])
+    page_id = base["page_id"]
+    if type(page_id) is not int:  # bool 은 int 의 하위 타입이므로 정확히 int 만
+        base["page_id"] = DEFAULT_PAGE_ID
     # 기본 태그(TAGS) 또는 사용자 태그 키(widget_config.custom_tags). 지워진 사용자 태그는 표시만 안 된다
     tag = base["tag"]
     if not (isinstance(tag, str) and 0 < len(tag) <= TAG_MAX_LEN):

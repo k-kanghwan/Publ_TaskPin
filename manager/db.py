@@ -88,6 +88,19 @@ CREATE TABLE todo_deletions (
 PRAGMA user_version = 8;
 """
 
+# user_version 8 -> 9: TODO 페이지 (엑셀 시트처럼 페이지마다 독립된 목록 - manager/todo_pages)
+# 지금까지의 할 일은 모두 첫 페이지로
+_SCHEMA_V9 = """
+CREATE TABLE todo_pages (
+    id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    name     TEXT NOT NULL,
+    position INTEGER NOT NULL
+);
+INSERT INTO todo_pages (id, name, position) VALUES (1, '페이지 1', 0);
+ALTER TABLE todos ADD COLUMN page_id INTEGER NOT NULL DEFAULT 1;
+PRAGMA user_version = 9;
+"""
+
 _MIGRATIONS = (
     (1, _SCHEMA_V1),
     (2, _SCHEMA_V2),
@@ -97,6 +110,7 @@ _MIGRATIONS = (
     (6, _SCHEMA_V6),
     (7, _SCHEMA_V7),
     (8, _SCHEMA_V8),
+    (9, _SCHEMA_V9),
 )
 
 _conn = None

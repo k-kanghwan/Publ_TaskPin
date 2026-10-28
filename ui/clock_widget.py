@@ -622,8 +622,10 @@ class ClockWidget(QWidget):
             self._add_custom_tag,
             lambda: widget_config.undo_limit(self._cfg),
             self._confirm_todo_delete,
+            page_id=self._cfg.get("todo_page"),
         )
         self.todo_panel.export_requested.connect(self._export_todos)
+        self.todo_panel.page_changed.connect(self._save_todo_page)
 
         # 세로 모드에서 폭을 바꾸면 업무명 배지 말줄임을 다시 (자식을 다 만든 뒤에 건다)
         self._left_col.installEventFilter(self)
@@ -988,6 +990,8 @@ class ClockWidget(QWidget):
             "todo_focus": self.todo_panel.focus_input,
             "todo_edit": self.todo_panel.edit_current,
             "todo_search": self.todo_panel.open_search,
+            "todo_page_prev": lambda: self.todo_panel.step_page(-1),
+            "todo_page_next": lambda: self.todo_panel.step_page(1),
             "settings": self.settings_requested.emit,
         }
         for action, keys in mapping.items():
@@ -1022,6 +1026,11 @@ class ClockWidget(QWidget):
         tag_id = widget_config.add_custom_tag(self._cfg, name, color)
         widget_config.save_config(self._cfg)
         return tag_id
+
+    def _save_todo_page(self, page_id: int):
+        """마지막으로 본 TODO 페이지 - 다음 실행 때 그 페이지부터 보여준다."""
+        self._cfg["todo_page"] = page_id
+        widget_config.save_config(self._cfg)
 
     def _confirm_todo_delete(self) -> bool:
         """행의 ✕: 지우기 전에 묻는다. "다시 묻지 않음"을 켜고 삭제하면 설정에 남겨 다음부터 묻지 않는다

@@ -2,6 +2,7 @@
 
 이름과 색을 고른다. 색은 미리 고른 색 중에서 또는 "직접…" 으로 색 선택 창에서.
 저장은 부르는 쪽이 한다(widget_config.add_custom_tag).
+색 칸 없이(with_color=False) TODO 페이지 이름 바꾸기에도 쓴다.
 
 키보드
   - Enter : 추가, Esc : 취소
@@ -46,6 +47,9 @@ class TagDialog(QDialog):
         ok_text: str = "추가",
         name: str = "",
         color: str = "",
+        with_color: bool = True,
+        placeholder: str = "이름 (예: Work)",
+        max_length: int = widget_config.CUSTOM_TAG_NAME_MAX,
         parent=None,
     ):
         super().__init__(parent, Qt.Dialog | Qt.FramelessWindowHint)
@@ -89,8 +93,8 @@ class TagDialog(QDialog):
         root.addWidget(title_label)
 
         self.name_edit = QLineEdit(name)
-        self.name_edit.setMaxLength(widget_config.CUSTOM_TAG_NAME_MAX)
-        self.name_edit.setPlaceholderText("이름 (예: Work)")
+        self.name_edit.setMaxLength(max_length)
+        self.name_edit.setPlaceholderText(placeholder)
         self.name_edit.textChanged.connect(self._update_ok)
         root.addWidget(self.name_edit)
 
@@ -111,6 +115,7 @@ class TagDialog(QDialog):
         row.addWidget(self._custom)
         row.addStretch(1)
         root.addWidget(swatches)
+        swatches.setVisible(with_color)
 
         buttons = QHBoxLayout()
         buttons.setSpacing(8)

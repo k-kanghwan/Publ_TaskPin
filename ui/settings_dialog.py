@@ -4,7 +4,7 @@
   - Keyboard Shortcuts : 위젯 단축키. 다른 동작과 겹치면 저장하지 않고 경고
   - Snippets           : `:트리거:` -> 문구 목록. 빈 칸 / 중복 트리거는 저장하지 않고 표시만
   - Appearance         : 테마 / 강조색 / 배경색 / 글자도 함께 투명 / 폰트, 좌·우패널 글자 크기, TODO 글자색 /
-                         완료 항목 취소선 / 행 구분선,
+                         완료 항목 취소선 / 행 구분선 / 페이지 표시 위치,
                          리마인더 알림 창 폭 / 글자 크기(실제 크기 예시 포함),
                          사용자 태그(이름 / 색 변경, 추가, 삭제 - config.json custom_tags).
                          바꾸면 appearance_changed 로 위젯에 바로 반영한다.
@@ -74,6 +74,8 @@ SHORTCUT_ROWS = [
     ("todo_focus", "할 일 추가", "할 일 입력칸으로 커서 이동"),
     ("todo_edit", "할 일 수정", "선택한 할 일을 그 자리에서 수정합니다"),
     ("todo_search", "할 일 검색", "검색 · 날짜별 보기 줄을 엽니다"),
+    ("todo_page_prev", "이전 페이지", "할 일 목록을 앞 페이지로 넘깁니다"),
+    ("todo_page_next", "다음 페이지", "할 일 목록을 뒤 페이지로 넘깁니다"),
     ("settings", "설정 열기", "이 설정창을 엽니다"),
 ]
 
@@ -83,6 +85,13 @@ ON_OFF_OPTIONS = [(False, "끔"), (True, "켬")]
 SCALE_NAMES = {90: "작게", 100: "보통", 115: "크게", 130: "아주 크게"}
 POPUP_WIDTH_NAMES = {220: "좁게", 260: "보통", 320: "넓게", 380: "아주 넓게"}
 POPUP_PREVIEW_TEXT = "회의자료 준비하기 (예시)"
+# 값은 widget_config.PAGE_BAR_POSITIONS 와 같다
+PAGE_BAR_OPTIONS = [
+    ("top", "위"),
+    ("bottom", "아래"),
+    ("left", "왼쪽"),
+    ("right", "오른쪽"),
+]
 ACCENT_SWATCHES = [
     ("#4a7bd0", "파랑"),
     ("#3fa7a0", "청록"),
@@ -701,6 +710,16 @@ class SettingsDialog(QWidget):
         self._add_row(
             card_layout, "행 구분선", "할 일 사이에 옅은 가로선을 긋습니다", box
         )
+        box, self._page_bar_group = self._segmented(
+            PAGE_BAR_OPTIONS, lambda v: self._set_appearance("page_bar", v)
+        )
+        # 버튼이 4개라 보조설명은 줄바꿈해서 카드 폭을 넓히지 않게 한다 (넓어지면 오른쪽이 잘린다)
+        self._add_row(
+            card_layout,
+            "페이지 표시 위치",
+            "위 · 아래: 이름 + 점, 왼쪽 · 오른쪽: 점만",
+            box,
+        ).setWordWrap(True)
 
         # ---- 리마인더 알림 창 ----
         card_layout = self._add_group(groups, "알림 창 (리마인더)")
@@ -945,6 +964,9 @@ class SettingsDialog(QWidget):
         self._todo_color_button.set_color(a["todo_text_color"], look.text_main)
         self._strike_group.button(int(a["todo_strike"])).setChecked(True)
         self._row_lines_group.button(int(a["todo_row_lines"])).setChecked(True)
+        self._page_bar_group.button(
+            [value for value, _ in PAGE_BAR_OPTIONS].index(a["page_bar"])
+        ).setChecked(True)
         self._left_scale_group.button(
             widget_config.LEFT_SCALES.index(a["left_scale"])
         ).setChecked(True)

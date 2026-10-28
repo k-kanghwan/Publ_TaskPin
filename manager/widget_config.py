@@ -24,6 +24,8 @@ DEFAULT_SHORTCUTS = {
     "todo_focus": "A",  # 할 일 입력칸으로 커서 이동
     "todo_edit": "F2",  # 선택한 할 일을 그 자리에서 수정
     "todo_search": "Ctrl+F",  # 할 일 검색 / 날짜별 보기 줄 열기
+    "todo_page_prev": "Ctrl+PgUp",  # 할 일 이전 페이지 (엑셀 시트 이동과 같음)
+    "todo_page_next": "Ctrl+PgDown",  # 할 일 다음 페이지
     "settings": "Ctrl+,",  # 설정 열기
 }
 
@@ -35,6 +37,8 @@ TODO_SCALES = (90, 100, 115, 130)
 # 리마인더 알림 창 폭(px)과 글자 배율(%) - 높이는 내용에 맞춘다
 POPUP_WIDTHS = (220, 260, 320, 380)
 POPUP_SCALES = (90, 100, 115, 130)
+# TODO 페이지 표시(현재 이름 + 점) 위치 - 왼쪽 / 오른쪽은 점만 세로로
+PAGE_BAR_POSITIONS = ("top", "bottom", "left", "right")
 DEFAULT_APPEARANCE = {
     "theme": "dark",
     "accent": "#4a7bd0",  # 강조색 (버튼 / 체크박스 / Task 배지 / 선택 표시)
@@ -45,6 +49,7 @@ DEFAULT_APPEARANCE = {
     "todo_text_color": "",  # TODO 글자색
     "todo_strike": True,  # 완료한 할 일에 취소선
     "todo_row_lines": False,  # 할 일 행 사이 구분선
+    "page_bar": "top",  # TODO 페이지 표시 위치 (PAGE_BAR_POSITIONS)
     "fade_text": False,  # 투명도 슬라이더가 글자까지 투명하게 할지 (False: 배경만)
     "popup_width": 260,  # 리마인더 알림 창 폭(px)
     "popup_scale": 100,  # 리마인더 알림 창 글자 배율(%)
@@ -75,6 +80,7 @@ DEFAULT_CONFIG = {
     # 행의 ✕ 로 할 일을 지울 때 확인 창 (확인 창의 "다시 묻지 않음" -> False, 설정창 Application)
     "confirm_delete": True,
     "undo_limit": DEFAULT_UNDO_LIMIT,  # 되돌릴 수 있는 최근 삭제 수 (UNDO_LIMITS 중 하나)
+    "todo_page": None,  # 마지막으로 본 TODO 페이지 id (없는 id 면 첫 페이지)
 }
 CUSTOM_TAG_PREFIX = "custom-"  # 사용자 태그 id (todos.tag 에 저장되는 값)
 CUSTOM_TAG_NAME_MAX = 20
@@ -192,6 +198,11 @@ def appearance(cfg: dict) -> dict:
         "todo_text_color": _color(saved.get("todo_text_color"), ""),
         "todo_strike": _bool(saved.get("todo_strike"), default["todo_strike"]),
         "todo_row_lines": _bool(saved.get("todo_row_lines"), default["todo_row_lines"]),
+        "page_bar": (
+            saved.get("page_bar")
+            if saved.get("page_bar") in PAGE_BAR_POSITIONS
+            else default["page_bar"]
+        ),
         "fade_text": saved.get("fade_text") is True,
         "popup_width": _scale(
             saved.get("popup_width"), POPUP_WIDTHS, default["popup_width"]

@@ -120,6 +120,7 @@ def test_appearance_keeps_valid_values():
         "todo_text_color": "#ffffff",
         "todo_strike": False,
         "todo_row_lines": True,
+        "page_bar": "left",
         "fade_text": True,
         "popup_width": 380,
         "popup_scale": 130,
@@ -143,6 +144,7 @@ def test_appearance_replaces_broken_values():
         "todo_text_color": "#12345",
         "todo_strike": 0,  # bool 만 받는다
         "todo_row_lines": "on",
+        "page_bar": "middle",  # 정해진 위치만
         "fade_text": "yes",  # bool 만 받는다
         "popup_width": 300,  # 정해진 폭만
         "popup_scale": 200,
