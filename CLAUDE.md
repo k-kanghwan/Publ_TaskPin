@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 프로젝트 상태
 
-- 현재 버전은 `version.py`의 `VERSION`(지금 0.1.15). 초기 구현 계획은 `.claude/plans/init-todo.md`, 요구사항 원본은 `PRD.md`이고, 기능 판단은 PRD를 따른다.
+- 현재 버전은 `version.py`의 `VERSION`(지금 0.1.16). 초기 구현 계획은 `.claude/plans/init-todo.md`, 요구사항 원본은 `PRD.md`이고, 기능 판단은 PRD를 따른다.
 - 앱 표시명은 **Task알림**(창 제목·exe 표시명). 폴더명·자동 실행 레지스트리 키·단일 인스턴스 ID·mutex 같은 내부 식별자는 ASCII **TaskPin**을 쓴다.
 - 앱 아이콘은 `ico/01_original_navy-coral/`의 `icon.svg`(트레이·창)와 `icon.ico`(exe/설치본)다. SVG를 고쳤을 때만 `python tools/make_ico.py`로 같은 폴더의 `icon.ico`를 다시 만든다. `img/image.png`는 참고 앱 화면이라 PRD의 FE 변경사항이 반영되지 않았다.
 - 스택: Python 3.11.4 이상, PySide6, SQLite(내장 `sqlite3`), Nuitka standalone + Inno Setup 설치본. 버전은 Semantic Versioning.
@@ -36,7 +36,7 @@ python tools/build_installer.py              # Nuitka 빌드 -> ISCC -> dist 확
 ## 구조
 
 - `TaskPin.py` — `TaskPinApp(TrayApp)`: 위젯 연결, 1초 tick(현재시간·남은시간·Task 종료 트레이 알림 1회), Task 등록·수정·완료·해제
-- `manager/` — Qt 없는 로직: `task_clock`(15분 단위·남은시간 계산), `task_store`/`todo_store`(SQLite), `todo_tree`(TODO 상위/하위), `todo_filter`(검색·날짜별 보기), `todo_export`(TODO → Markdown 체크리스트), `db`(연결 1개, `PRAGMA user_version` 마이그레이션), `widget_config`(config.json·단축키 기본값), `snippets`(`:트리거:` 치환), `paths`, `os_win`
+- `manager/` — Qt 없는 로직: `task_clock`(15분 단위·남은시간 계산), `task_store`/`todo_store`(SQLite), `todo_tree`(TODO 상위/하위·삭제 자리 되돌리기), `todo_trash`(지운 TODO 이력), `todo_filter`(검색·날짜별 보기), `todo_export`(TODO → Markdown 체크리스트), `db`(연결 1개, `PRAGMA user_version` 마이그레이션), `widget_config`(config.json·단축키 기본값), `snippets`(`:트리거:` 치환), `paths`, `os_win`
 - `ui/` — `clock_widget`(좌측 Task 패널 + TODO 배치, "멍청한 뷰"), `task_picker`(등록/수정 팝업), `confirm_dialog`(완료/해제 확인 창), `tag_dialog`(사용자 태그 추가), `color_dialog`(색 선택 창), `todo_panel`/`reminder_*`(참고 소스 이식), `settings_dialog`(설정창), `text_input`(이모지 패널 입력 보정·스니펫), `tray_app`, `theme`(런타임 테마: `current()`/`build()`)
 - `tools/` — `dev_run`(F5 저장 시 재시작), `build_installer`(빌드부터 설치본까지 한 번에), `make_ico`(SVG → ico)
 
@@ -68,12 +68,12 @@ python tools/build_installer.py              # Nuitka 빌드 -> ISCC -> dist 확
   - 등록 창(`TaskPicker`)은 `Qt.Popup`이 아니라 활성화되는 Tool 창이다. Windows에서 Popup은 전경 창이 되지 않아 IME가 붙지 않는다(한글 입력 불가).
   - 등록 전에는 시작이 `--:--`. 종료 = 시작 + 소요 시간. 남은시간이 0을 지나면 초과 시간을 `+`로 표시한다.
 - 더블클릭으로 편집할 수 있는 곳은 사용자 이름 하나뿐이다.
-- 우클릭 메뉴는 패널마다 다르다. 좌패널(`ClockWidget.contextMenuEvent`): 가로/세로 모드·잠금·자동 실행·설정·위젯 숨기기·프로그램 종료. 우패널(`TodoPanel.contextMenuEvent`, 위로 올려 보내지 않음): 검색·모두 접기·모두 펼치기·완료 항목 정리·내보내기·추가·삭제·태그. 내보내기는 cfg(`export_dir`)가 필요해 `TodoPanel.export_requested`로 위젯에 맡긴다.
+- 우클릭 메뉴는 패널마다 다르다. 좌패널(`ClockWidget.contextMenuEvent`): 가로/세로 모드·잠금·자동 실행·설정·위젯 숨기기·프로그램 종료. 우패널(`TodoPanel.contextMenuEvent`, 위로 올려 보내지 않음): 검색·모두 접기·모두 펼치기·완료 항목 정리·내보내기·추가·삭제·삭제 이력·태그. 내보내기는 cfg(`export_dir`)가 필요해 `TodoPanel.export_requested`로 위젯에 맡긴다.
 - 설정창(`ui/settings_dialog.py`)은 좌패널 우클릭 "설정"과 Ctrl+,로 연다(트레이 메뉴에는 넣지 않음). 탭은 Keyboard Shortcuts / Snippets / Appearance / Application이다. 확인 버튼 없이 바꾸는 즉시 저장한다.
   - 단축키(기본 E: [등록/해제] 버튼과 같음, R: 수정, C: 완료, A: 할 일 입력칸 포커스, F2: 선택한 할 일 수정, Ctrl+F: 할 일 검색, Ctrl+,: 설정)는 `QShortcut(Qt.WindowShortcut)`이라 위젯 창이 활성일 때만 동작한다. 글자 키는 입력칸이 ShortcutOverride로 먼저 가져가므로 입력 중에는 글자로 들어간다. 새로 생긴 동작의 기본 키가 사용자가 이미 다른 동작에 쓰는 키면 비워 둔다(`widget_config.shortcuts`).
   - Appearance: 테마(다크/라이트/시스템), 강조색, 배경색, 폰트, 좌·우패널 글자 배율(`widget_config.LEFT_SCALES`/`TODO_SCALES`), TODO 글자색, 완료 항목 취소선(`todo_strike`, 기본 켬), 행 구분선(`todo_row_lines`, 기본 끔), 리마인더 알림 창 폭·글자 배율(`widget_config.POPUP_WIDTHS`/`POPUP_SCALES` → `theme.popup_width`/`popup_scale`), "글자도 함께 투명"(`fade_text`, 기본 끔: 투명도 슬라이더가 배경만 반투명하게 칠하고, 켜면 `setWindowOpacity`로 창 전체). 배경색을 고르면 글자색은 테마 대신 배경 밝기를 따른다. 단, 우클릭 메뉴 색(`theme.MENU_FIELDS`)은 배경색과 관계없이 테마 설정을 따른다(다크면 늘 어둡게). `theme.menu_style`을 위젯·설정창·등록 창 스타일시트에도 넣어 입력칸의 기본 우클릭 메뉴까지 같은 색으로 칠하고, 트레이 메뉴는 `TaskPinApp._apply_theme`이 칠한다. 알림 창 항목 아래에는 `ReminderPopup(preview=True)`를 실제 팝업과 같은 위젯 테마·폭·글자 크기로 넣고, Appearance 값이 바뀔 때마다 다시 만든다. 팝업 높이는 `adjustSize()`가 아니라 `heightForWidth(폭)`으로 정해 예시와 실제 크기가 같다. 설정창은 테마(다크/라이트)와 강조색만 따르고(`settings_dialog._settings_theme`), 제목줄도 `os_win.set_dark_title_bar(hwnd, dark)`로 맞춘다.
   - 테마 반영: `theme.build(appearance)` → `theme.set_current()` 후 `ClockWidget.apply_appearance()`(→ `TodoPanel.apply_appearance()`)로 다시 입힌다. 팝업은 만들 때 `theme.current()`를 읽는다. 스타일에 색을 쓸 때는 `ui.theme` 상수를 import하지 말고 `theme.current()`에서 읽고, 흰색 반투명은 `t.overlay(alpha)`로 쓴다(라이트에서는 검정).
-  - Application: 설정 내보내기(폴더를 고르면 cfg를 `TaskPin-config-YYYYMMDD.json`으로 그대로 저장, `widget_config.export_config`) / 가져오기(`widget_config.read_import`가 알려진 키만 기본값 위에 덮어씀 → 확인 창 → `config_imported`). 가져오면 `TaskPinApp.apply_imported_config`가 위젯·설정창이 함께 쓰는 cfg dict를 **제자리에서** 바꾸고(`clear()` + `update()`) 테마·단축키·`ClockWidget.reload_config()`(방향·크기·위치·잠금·투명도·이름·표시)·`SettingsDialog.reload_values()`로 다시 적용한다. TODO/Task 기록(DB)은 들어가지 않는다.
+  - Application: "TODO" 그룹(✕ 버튼 삭제 확인 `confirm_delete`, 되돌릴 수 있는 삭제 수 `undo_limit` = `widget_config.UNDO_LIMITS`)과 "설정 파일" 그룹. 설정 내보내기(폴더를 고르면 cfg를 `TaskPin-config-YYYYMMDD.json`으로 그대로 저장, `widget_config.export_config`) / 가져오기(`widget_config.read_import`가 알려진 키만 기본값 위에 덮어씀 → 확인 창 → `config_imported`). 가져오면 `TaskPinApp.apply_imported_config`가 위젯·설정창이 함께 쓰는 cfg dict를 **제자리에서** 바꾸고(`clear()` + `update()`) 테마·단축키·`ClockWidget.reload_config()`(방향·크기·위치·잠금·투명도·이름·표시)·`SettingsDialog.reload_values()`로 다시 적용한다. TODO/Task 기록(DB)은 들어가지 않는다.
   - 스니펫은 TODO 입력/수정칸과 Task 업무명에서 `:트리거:`를 치면 문구로 바꾼다. textEdited 안에서 바로 고치면 Ctrl+Z가 듣지 않으므로 `QTimer.singleShot(0)`으로 미뤄서 바꾼다.
 - 이모지
   - Qt 6.8은 `WM_IME_CHAR`/`WM_CHAR`의 서로게이트 쌍을 버린다. 그래서 Win+. 이모지 패널로 고른 🚀 같은 이모지가 들어가지 않는다. `ui/text_input.ImeCharFilter`(앱 전체 네이티브 이벤트 필터)가 이 메시지를 대신 받아 IME 확정 문자열로 넣는다.
@@ -100,8 +100,13 @@ python tools/build_installer.py              # Nuitka 빌드 -> ISCC -> dist 확
 
 - 사용자 데이터 위치: `%APPDATA%\TaskPin\`
   - `config.json` — 위젯 설정(위치·크기·투명도·모드 등), 사용자 이름, `shortcuts`(동작별 QKeySequence PortableText), `snippets`(`[[":idea:", "💡"], ...]`), `appearance`(`widget_config.appearance()`가 깨진 값을 기본값으로 채움), `export_dir`(TODO·설정 내보내기 마지막 폴더), `custom_tags`(사용자 TODO 태그). 크기는 세로 모드 `vertical_width`·`height`, 가로 모드 `width`·`horizontal_height`를 따로 저장한다. 세로 모드는 폭 280~364(1.3배)·높이 최소~583(486의 1.2배), 가로 모드는 폭 540~810·높이 최소~1.5배. 높이는 하단 핸들, 폭은 우측 핸들로 조절하고, 좌측 칼럼은 가로 모드에서만 폭이 고정이다
-  - `taskpin.db` — SQLite: TODO(계층·태그·접힘 포함), 정리된 완료 항목, Task 등록 정보(업무명·상세 업무·시간·완료/해제)
+  - `taskpin.db` — SQLite: TODO(계층·태그·접힘 포함), 정리된 완료 항목, 지운 TODO 이력(`todo_deletions`, 스키마 v8), Task 등록 정보(업무명·상세 업무·시간·완료/해제)
 - "완료 항목 정리"(`TodoPanel.clear_done`)는 행을 지우지 않고 보관 상태로 바꾼다.
+- TODO 삭제(행의 ✕ / 우클릭 "삭제")는 모두 `TodoPanel._delete`를 거쳐 되돌릴 수 있게 남긴다.
+  - 항목마다 지우기 전에 `todo_tree.removal`로 자리(상위·바로 뒤 형제·한 단계 올라갈 하위)를 남기고, 지울 때의 항목 전체(JSON 스냅샷)와 함께 `todo_trash.record`에 한 묶음(batch)으로 기록한다.
+  - 우클릭 "삭제 이력"은 최근 `undo_limit`번의 삭제 중 되돌리지 않은 묶음을 최신 순으로 보여준다. 누르면 묶음을 거꾸로 `todo_tree.restore` 한다(상위·뒤 형제가 없어졌으면 최상위·맨 뒤, 올라갔던 하위는 아직 그 자리에 있을 때만 다시 하위로). 되돌려도 이력 행은 지우지 않고 `restored_at`만 남긴다.
+  - 행의 ✕는 `ClockWidget._confirm_todo_delete`로 먼저 묻는다(`ConfirmDialog(remember_text="다시 묻지 않음")`). 체크하고 삭제하면 cfg `confirm_delete=False`, 설정창 Application에서 다시 켠다. 우클릭 "삭제"는 묻지 않는다.
+  - PySide6: `menu.addMenu("제목")`으로 만든 서브메뉴에 `addAction(글자, 함수)`를 넣고 그 서브메뉴 참조가 사라지면(헬퍼 함수가 끝나면) 서브메뉴가 지워진다. 헬퍼에서 서브메뉴를 만들 때는 `QMenu("제목", menu)` + `menu.addMenu(sub)`로 부모를 준다.
 - "TODO 내보내기"(우패널 우클릭 서브메뉴: 화면 목록 / 보관 항목 전체)는 Markdown 체크리스트(.md, UTF-8)로 저장한다. 하위는 2칸 들여쓰기, 보관 항목은 보관 날짜별 섹션. 보관 항목은 섹션마다 상위 사슬을 함께 쓴다(`todo_export._with_ancestors`) - 상위가 화면 목록에 남아 있으면(미완료) `- [ ]`로, 다른 날짜에 보관됐으면 그 섹션에도 다시 나온다. 그래야 하위가 다른 항목의 하위나 최상위처럼 보이지 않는다. 텍스트를 그대로 써서 `(@...)` 리마인더 토큰이 Obsidian에서도 읽힌다.
 - 참고 소스처럼 `os.chdir(BASE_DIR)` 후 CWD 기준 `src/*`에 쓰면 안 된다. 자동 실행 시 CWD는 system32이고, 설치 폴더(`%LOCALAPPDATA%\Programs\TaskPin`)는 재설치·제거 때 바뀐다.
 - 번들 리소스(아이콘 등)는 `paths.resource_path()`(`__file__` 기준)로 찾는다. 컴파일 여부는 `"__compiled__" in globals()`, exe 경로는 `sys.argv[0]` 기준. PyInstaller의 `sys._MEIPASS`는 쓰지 않는다.
