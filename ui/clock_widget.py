@@ -57,7 +57,7 @@ from ui.confirm_dialog import ConfirmDialog
 from ui.painted import EditableLabel
 from ui.reminder_popup import ReminderPopup
 from ui.theme import CORNER_RADIUS, px
-from ui.todo_panel import NAV_BLOCKING_MODIFIERS, TodoPanel
+from ui.todo_panel import TodoPanel
 
 # ========= ========= 테마 ========= =========
 WINDOW_OPACITY = 1.0  # 설정에 값이 없을 때의 불투명도 (= 투명도 0%)
@@ -988,6 +988,9 @@ class ClockWidget(QWidget):
             shortcut.setEnabled(False)
             shortcut.deleteLater()
         self._shortcuts = []
+        # 목록 키(위 / 아래 / 접기 / 펼치기)는 창 단축키로 걸지 않는다 - 입력칸의 화살표를 가로채지 않게
+        # 목록에 포커스가 있을 때(또는 포커스 위젯이 없을 때)만 TodoPanel 이 받는다
+        self.todo_panel.set_nav_keys(mapping)
 
         handlers = {
             "task_register": self._on_task_button,
@@ -1081,13 +1084,10 @@ class ClockWidget(QWidget):
         painter.fillPath(path, bg)
 
     def keyPressEvent(self, event):
-        """포커스 위젯이 없을 때(좌패널을 클릭한 뒤 등) 받은 ↑↓ / Home / End 같은 목록 키는
+        """포커스 위젯이 없을 때(좌패널을 클릭한 뒤 등) 받은 위 / 아래 / Home / End 같은 목록 키는
         TODO 목록으로 넘겨 바로 할 일을 고르게 한다."""
-        if (
-            QApplication.focusWidget() in (None, self)
-            and not event.modifiers() & NAV_BLOCKING_MODIFIERS
-            and self.todo_panel.handle_nav_key(event.key())
-        ):
+        idle = QApplication.focusWidget() in (None, self)
+        if idle and self.todo_panel.handle_nav_key(event.key(), event.modifiers()):
             return
         super().keyPressEvent(event)
 

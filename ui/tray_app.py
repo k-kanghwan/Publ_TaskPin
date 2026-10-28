@@ -15,9 +15,6 @@ from PySide6.QtWidgets import QApplication, QMenu, QMessageBox, QSystemTrayIcon,
 from manager import os_win, paths
 
 
-TRAY_ICON = "ico/01_original_navy-coral/icon.svg"
-
-
 def notify_running_instance(app_id) -> bool:
     """이미 실행 중인 앱이 있으면 창을 띄우라고 알리고 True 를 반환한다."""
     socket = QLocalSocket()
@@ -50,6 +47,8 @@ def ensure_single_instance(app_id):
 
 class TrayApp(QWidget):
     APP_ID = f"{getpass.getuser()}_trayapp__"  # 싱글 인스턴스 실행
+    # 트레이 / 창 아이콘 (resource_path 기준) - TaskPinApp 이 디버그 실행에서 바꾼다
+    TRAY_ICON = "ico/01_original_navy-coral/icon.svg"
 
     def __init__(self):
         super().__init__()
@@ -63,7 +62,7 @@ class TrayApp(QWidget):
             QMessageBox.critical(None, "오류", "시스템 트레이를 사용할 수 없습니다.")
             sys.exit(1)
 
-        icon_path = paths.resource_path(TRAY_ICON)
+        icon_path = paths.resource_path(self.TRAY_ICON)
         icon = QIcon(icon_path)
         if icon.isNull():
             QMessageBox.critical(None, "오류", f"아이콘 파일이 없습니다: {icon_path}")

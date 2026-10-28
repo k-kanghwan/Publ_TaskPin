@@ -10,12 +10,15 @@
   선택 테두리는 목록(container)이 그린다 - 화면에서 이어진 선택 행끼리는 테두리 하나로 묶는다.
   하위 레벨 가이드 선(강조색)과 행 구분선(설정)도 목록이 그린다.
   선택한 채로 입력하면 마지막으로 클릭한 항목의 하위로 들어간다.
-- 키보드: ↑↓ 선택 이동(선택이 없으면 보이는 영역 가운데부터) / Home·End 처음·끝 /
-  ← 접기·상위로 / → 펴기·첫 하위로 / Delete 삭제 / F2(설정 단축키) 수정. 목록의 화살표 스크롤 대신 선택을 옮긴다.
+- 키보드: ↑↓ 선택 이동(선택이 없으면 보이는 영역 가운데부터) / ← 접기·상위로 / → 펴기·첫 하위로
+  / 맨 위·맨 아래(gg / Shift+G) - 모두 설정 단축키(set_nav_keys)
+  / Home·End 처음·끝 / Delete 삭제 / F2(설정 단축키) 수정.
+  목록의 화살표 스크롤 대신 선택을 옮긴다.
 - 드래그로 순서/레벨 변경: 행 가운데에 놓으면 그 항목의 하위로, 행 사이에 놓으면 그 자리로.
   선택한 행을 끌면 선택 항목이 모두 함께 옮겨진다.
   (계층 규칙은 manager/todo_tree 참고 - 상위를 완료 / 해제하면 하위도 함께, 상위를 지우면 하위는 한 단계 위로)
-- 우클릭 메뉴: 검색 / 모두 접기·펼치기 / 완료 항목 정리 / 내보내기 / 추가 / 삭제 / 삭제 이력 / 태그(체크박스 왼쪽 색 막대)
+- 우클릭 메뉴(구분선으로 묶음): 검색·페이지로 이동 / 모두 접기·펼치기 / 추가·삭제·삭제 이력 /
+  태그(체크박스 왼쪽 색 막대) / 완료 항목 정리·내보내기
   삭제는 되돌릴 수 있게 삭제 이력에 남는다 (manager/todo_trash). ✕ / 우클릭 "삭제" 는 지우기 전에 묻는다(설정).
   여러 개를 선택한 채 우클릭하면 선택 항목 전체에 적용된다.
   태그는 기본 6색 + 사용자 태그(config.json custom_tags, "+ 태그 추가…" / 설정창에서 관리)
@@ -36,6 +39,7 @@ from datetime import UTC, datetime
 
 from PySide6.QtCore import (
     QEvent,
+    QKeyCombination,
     QPoint,
     QPointF,
     QRectF,
@@ -44,7 +48,16 @@ from PySide6.QtCore import (
     QVariantAnimation,
     Signal,
 )
-from PySide6.QtGui import QColor, QCursor, QIcon, QPainter, QPainterPath, QPen, QPixmap
+from PySide6.QtGui import (
+    QColor,
+    QCursor,
+    QIcon,
+    QKeySequence,
+    QPainter,
+    QPainterPath,
+    QPen,
+    QPixmap,
+)
 from PySide6.QtWidgets import (
     QApplication,
     QButtonGroup,
@@ -60,7 +73,14 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from manager import todo_filter, todo_pages, todo_store, todo_trash, todo_tree
+from manager import (
+    todo_filter,
+    todo_pages,
+    todo_store,
+    todo_trash,
+    todo_tree,
+    widget_config,
+)
 from ui import painted, theme
 from ui.confirm_dialog import ConfirmDialog
 from ui.page_bar import PageBar
@@ -114,11 +134,17 @@ HIGHLIGHT_COLOR = "#f5cc45"  # 태그 Yellow 와 같은 색
 HIGHLIGHT_ALPHA = 150  # 가장 진할 때의 불투명도 (0~255)
 HIGHLIGHT_HOLD_MS = 2000
 HIGHLIGHT_FADE_MS = 600
-# 목록 키보드 이동 (TodoPanel.handle_nav_key) - 목록 스크롤 대신 선택을 옮긴다
-NAV_KEYS = (Qt.Key_Up, Qt.Key_Down, Qt.Key_Left, Qt.Key_Right, Qt.Key_Home, Qt.Key_End)
-NAV_BLOCKING_MODIFIERS = (
-    Qt.ShiftModifier | Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier
-)
+# 목록 키보드 이동 (TodoPanel.handle_nav_key) - 목록 스크롤 대신 선택을 옮긴다.
+# 위 / 아래 / 접기 / 펼치기 / 맨 위 / 맨 아래는 설정 단축키(widget_config.LIST_SHORTCUTS),
+# 이 키들은 고정 (조합 키 없이)
+FIXED_NAV_KEYS = {
+    Qt.Key_Home: "todo_first",
+    Qt.Key_End: "todo_last",
+    Qt.Key_Delete: "delete",
+}
+NAV_PENDING = "pending"  # 두 키 단축키("G, G")의 첫 키를 받아 다음 키를 기다리는 중
+NAV_SEQUENCE_MS = 1000  # 두 키 단축키의 다음 키를 기다리는 시간
+MODIFIER_KEYS = (Qt.Key_Shift, Qt.Key_Control, Qt.Key_Alt, Qt.Key_Meta)
 NAV_SCROLL_MARGIN = 8  # 키보드로 옮긴 행 위아래로 남길 여유(px)
 HISTORY_TEXT_PX = 180  # 우클릭 "삭제 이력" 항목의 본문 폭 (넘치면 말줄임)
 
@@ -707,6 +733,13 @@ class TodoPanel(QWidget):
         self._add_custom_tag = add_custom_tag
         self._undo_limit_provider = undo_limit_provider
         self._confirm_delete = confirm_delete
+        self._nav_keys = {}  # 목록 키 {(키 조합, ...): 동작} - set_nav_keys (설정 단축키)
+        self._nav_pending = ()  # 두 키 단축키에서 지금까지 누른 키
+        self._nav_timer = QTimer(self)
+        self._nav_timer.setSingleShot(True)
+        self._nav_timer.setInterval(NAV_SEQUENCE_MS)
+        self._nav_timer.timeout.connect(self._clear_nav_pending)
+        self.set_nav_keys(widget_config.DEFAULT_SHORTCUTS)
         # 페이지 (엑셀 시트처럼 독립된 목록). self._items 는 모든 페이지의 할 일이다 -
         # 리마인더 알림 / 팝업 완료는 모든 페이지에, 화면 / 검색 / 정리 / 내보내기는 지금 페이지에
         self._pages = todo_pages.load()
@@ -1503,7 +1536,11 @@ class TodoPanel(QWidget):
         menu = QMenu(self)
         menu.setStyleSheet(theme.menu_style(t))
 
+        # 연관된 것끼리 묶는다: 찾기·이동 / 접기 / 추가·삭제 / 태그 / 정리·내보내기
         menu.addAction("검색", self.open_search)
+        self._add_move_page_menu(menu)
+        menu.addSeparator()
+
         page_items = self._page_items()
         parents = {item.get("parent_id") for item in page_items}
         folds = [
@@ -1516,9 +1553,20 @@ class TodoPanel(QWidget):
         )
         act_unfold.setEnabled(any(folds))
         menu.addSeparator()
+
+        menu.addAction("추가", self.focus_input)
+        act_delete = menu.addAction("삭제", self.delete_selected)
+        act_delete.setEnabled(bool(self._selected))
+        self._add_history_menu(menu)
+        menu.addSeparator()
+
+        self._add_tag_menu(menu, t)
+        menu.addSeparator()
+
         act_clear = menu.addAction("완료 항목 정리", self.clear_done)
         act_clear.setEnabled(self.has_done())
-        export_menu = menu.addMenu("내보내기")
+        export_menu = QMenu("내보내기", menu)  # 부모를 준다 - _add_history_menu 참고
+        menu.addMenu(export_menu)
         export_menu.setStyleSheet(menu.styleSheet())
         act_active = export_menu.addAction(
             "화면 목록…", lambda: self.export_requested.emit(False)
@@ -1528,17 +1576,15 @@ class TodoPanel(QWidget):
             "보관 항목 전체…", lambda: self.export_requested.emit(True)
         )
         act_archived.setEnabled(bool(todo_store.load_archived()))
-        menu.addSeparator()
 
-        menu.addAction("추가", self.focus_input)
-        act_delete = menu.addAction("삭제", self.delete_selected)
-        act_delete.setEnabled(bool(self._selected))
-        self._add_history_menu(menu)
-        self._add_move_page_menu(menu)
+        menu.exec(event.globalPos())
 
+    def _add_tag_menu(self, menu: QMenu, t: theme.Theme):
+        """우클릭 "태그" 서브메뉴: 기본 6색 -> 태그 없음 -> 사용자 태그 -> + 태그 추가"""
         # 선택 항목들의 지금 태그는 메뉴 한 칸을 강조색 테두리로 감싼다 (checked 항목).
         # 다른 칸도 같은 두께의 투명 테두리를 둬서 글자 위치가 어긋나지 않게 하고, 체크 표시는 숨긴다
-        tag_menu = menu.addMenu("태그")
+        tag_menu = QMenu("태그", menu)  # 부모를 준다 - _add_history_menu 참고
+        menu.addMenu(tag_menu)
         tag_menu.setStyleSheet(
             menu.styleSheet()
             + f"""
@@ -1570,8 +1616,6 @@ class TodoPanel(QWidget):
         for tag in self._custom_tags_provider():
             add_tag_action(_tag_icon(tag["color"]), tag["name"], tag["id"])
         tag_menu.addAction("+ 태그 추가…", self._create_tag)
-
-        menu.exec(event.globalPos())
 
     def _add_history_menu(self, menu: QMenu):
         """우클릭 "삭제 이력" 서브메뉴: 최근 n번의 삭제 중 되돌리지 않은 묶음 (최신 순).
@@ -1827,8 +1871,7 @@ class TodoPanel(QWidget):
             elif (
                 event.type() == QEvent.KeyPress
                 and self.container.hasFocus()  # 행 편집칸에서 올라온 키는 그대로 둔다
-                and not event.modifiers() & NAV_BLOCKING_MODIFIERS
-                and self.handle_nav_key(event.key())
+                and self.handle_nav_key(event.key(), event.modifiers())
             ):
                 return True  # 스크롤 영역의 화살표 스크롤 대신 선택을 옮긴다 (Delete 는 삭제)
         return super().eventFilter(obj, event)
@@ -1836,34 +1879,82 @@ class TodoPanel(QWidget):
     # ==================================================
     # 키보드 이동
     # ==================================================
-    def handle_nav_key(self, key) -> bool:
+    def set_nav_keys(self, mapping: dict):
+        """설정 단축키 중 목록 키(위 / 아래 / 접기 / 펼치기 / 맨 위 / 맨 아래).
+        mapping: {동작: PortableText} ("" 이면 끔, "G, G" 처럼 두 키도 됨)"""
+        self._nav_keys = {}
+        for action in widget_config.LIST_SHORTCUTS:
+            sequence = QKeySequence(mapping.get(action, ""), QKeySequence.PortableText)
+            if not sequence.isEmpty():
+                combos = tuple(sequence[i].toCombined() for i in range(sequence.count()))
+                self._nav_keys[combos] = action
+        self._clear_nav_pending()
+
+    def _clear_nav_pending(self):
+        self._nav_pending = ()
+        self._nav_timer.stop()
+
+    def _nav_action(self, key, modifiers) -> str:
+        """누른 키의 목록 동작. "" 이면 목록 키가 아니고, NAV_PENDING 이면 두 키 단축키의 첫 키라
+        다음 키를 기다린다 (NAV_SEQUENCE_MS 안에). 방향키는 숫자패드 표시를 떼고 비교한다."""
+        if key in MODIFIER_KEYS:
+            return ""  # Shift+G 의 Shift 만 눌렸을 때 - 기다리던 키를 지우지 않는다
+        modifiers = Qt.KeyboardModifiers(modifiers) & ~Qt.KeypadModifier
+        try:
+            combo = QKeyCombination(modifiers, Qt.Key(key)).toCombined()
+        except ValueError:  # Qt.Key 에 없는 키 코드
+            self._clear_nav_pending()
+            return ""
+        # 기다리던 키에 이어서, 아니면 이 키부터 새로 맞춰 본다
+        tries = [(*self._nav_pending, combo), (combo,)] if self._nav_pending else [(combo,)]
+        for pressed in tries:
+            action = self._nav_keys.get(pressed)
+            if action is not None:
+                self._clear_nav_pending()
+                return action
+            if any(
+                len(keys) > len(pressed) and keys[: len(pressed)] == pressed
+                for keys in self._nav_keys
+            ):
+                self._nav_pending = pressed
+                self._nav_timer.start()
+                return NAV_PENDING
+        self._clear_nav_pending()
+        if modifiers == Qt.NoModifier:
+            return FIXED_NAV_KEYS.get(key, "")
+        return ""
+
+    def handle_nav_key(self, key, modifiers=Qt.NoModifier) -> bool:
         """목록 키보드 이동. 처리했으면 True
-        ↑↓: 위 / 아래 행 (선택이 없으면 보이는 영역 가운데 행부터), Home / End: 처음 / 마지막 행
-        ←: 펼친 상위면 접고, 아니면 상위 행으로 / →: 접힌 상위면 펴고, 펼쳤으면 첫 하위 행으로
-        (검색 / 날짜별 보기 중에는 접힘을 무시하므로 ← / → 는 이동만 한다)
+        위 / 아래(기본 ↑↓): 위 / 아래 행 (선택이 없으면 보이는 영역 가운데 행부터)
+        접기(기본 ←): 펼친 상위면 접고, 아니면 상위 행으로 / 펼치기(기본 →): 접힌 상위면 펴고, 펼쳤으면 첫 하위 행으로
+        (검색 / 날짜별 보기 중에는 접힘을 무시하므로 접기 / 펼치기는 이동만 한다)
+        맨 위 / 맨 아래(기본 gg / Shift+G, 고정 Home / End): 처음 / 마지막 행
         Delete: 선택 항목 삭제 (확인 창은 설정에 따름)"""
-        if key == Qt.Key_Delete:
-            self.container.setFocus(Qt.OtherFocusReason)
-            self._delete_by_key()
-            return True
-        if key not in NAV_KEYS:
+        action = self._nav_action(key, modifiers)
+        if not action:
             return False
         # 이후 키도 목록이 받도록 (입력칸 Esc 뒤 / 포커스 위젯이 없을 때 넘어온 경우)
         self.container.setFocus(Qt.OtherFocusReason)
+        if action == NAV_PENDING:
+            return True
+        if action == "delete":
+            self._delete_by_key()
+            return True
         if not self._rows:
             return True
         current = self._current_row()
-        if key == Qt.Key_Home:
+        if action == "todo_first":
             target = self._rows[0]
-        elif key == Qt.Key_End:
+        elif action == "todo_last":
             target = self._rows[-1]
         elif current is None:
             target = self._middle_row()
-        elif key in (Qt.Key_Up, Qt.Key_Down):
-            idx = self._rows.index(current) + (-1 if key == Qt.Key_Up else 1)
+        elif action in ("todo_up", "todo_down"):
+            idx = self._rows.index(current) + (-1 if action == "todo_up" else 1)
             target = self._rows[min(max(idx, 0), len(self._rows) - 1)]
         else:
-            target = self._tree_step(current, expand=key == Qt.Key_Right)
+            target = self._tree_step(current, expand=action == "todo_expand")
         if target is not None:
             self._select_only(target.item["id"])
             self._reveal(target, NAV_SCROLL_MARGIN)
