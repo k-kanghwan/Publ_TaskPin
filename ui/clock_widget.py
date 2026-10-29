@@ -9,8 +9,10 @@ Priv_dtcal/dtcal_poc.py 에서 검증된 기법을 이식:
 위젯은 시그널로 요청만 올려보낸 뒤 apply_task() / set_clock() 으로 값을 받아 그린다.
 (사용자 이름 / TODO / 위젯 설정은 위젯이 직접 저장한다)
 
-단축키(설정창 Keyboard Shortcuts 탭)는 위젯 창이 활성일 때만 동작한다. E/C/A 같은 글자 키는
+단축키(설정창 Keyboard Shortcuts 탭)는 위젯 창이 활성일 때만 동작한다. E/C/A 같은 글자 키와 Enter 는
 입력칸이 먼저 가져가므로(ShortcutOverride) 할 일이나 이름을 입력하는 중에는 글자로 들어간다.
+투명도는 설정창 Appearance 의 슬라이더로 정한다 (config opacity).
+Task 등록 / 수정 창이 떠 있는 동안에는 투명한 막(_InputBlocker)이 위젯을 덮어 끌어 옮기기만 된다.
 """
 
 import os
@@ -28,6 +30,7 @@ from PySide6.QtCore import (
 )
 from PySide6.QtGui import (
     QColor,
+    QContextMenuEvent,
     QFontMetrics,
     QKeySequence,
     QPainter,
@@ -41,12 +44,10 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
-    QLineEdit,
     QMenu,
     QMessageBox,
     QPushButton,
     QSizePolicy,
-    QSlider,
     QVBoxLayout,
     QWidget,
 )
@@ -56,15 +57,11 @@ from ui import painted, theme
 from ui.confirm_dialog import ConfirmDialog
 from ui.painted import EditableLabel
 from ui.reminder_popup import ReminderPopup
+from ui.text_input import LineEdit
 from ui.theme import CORNER_RADIUS, px
 from ui.todo_panel import TodoPanel
 
 # ========= ========= 테마 ========= =========
-WINDOW_OPACITY = 1.0  # 설정에 값이 없을 때의 불투명도 (= 투명도 0%)
-OPACITY_MIN = 0.2  # 이보다 낮으면 위젯이 사라져 조작 불가
-TRANSPARENCY_MAX = round((1 - OPACITY_MIN) * 100)  # 슬라이더 최대 투명도(%) = 80
-SLIDER_HANDLE = 12  # 투명도 슬라이더 핸들 지름(px) - 홈(4px)보다 크다
-SLIDER_HEIGHT = SLIDER_HANDLE + 4  # 핸들이 잘리지 않는 슬라이더 높이
 # 세로 모드: 폭 280 ~ 364(1.3배), 높이 최소 ~ 583
 WIDGET_WIDTH = 280
 WIDGET_MIN_HEIGHT = 324
@@ -99,6 +96,7 @@ USER_NAME_MAX_LEN = 20
 TASK_BADGE_H_SPACE = 2 * 8 + 2 * 1  # 좌우 padding + border (말줄임 폭 계산용)
 # 업무명 배지 위 상세업무 - 세로 모드 최대 줄 수 (가로 모드는 남는 높이만큼)
 TASK_DETAIL_MAX_LINES = 3
+FIXED_EDIT_KEY = "F2"  # 할 일 수정 고정 키 (설정 단축키 todo_edit 와 함께 - 기본 Enter)
 # ========= ========= ========= ========= =========
 
 
@@ -252,7 +250,7 @@ class _ResizeGrip(QWidget):
         painter.fillPath(path, theme.current().overlay_color(90))
 
 
-class _NameEdit(QLineEdit):
+class _NameEdit(LineEdit):
     """사용자 이름 편집칸 (Enter / 포커스 이동: 저장, Esc: 취소)"""
 
     escaped = Signal()
@@ -269,6 +267,49 @@ class _NameEdit(QLineEdit):
         self.focus_lost.emit()
 
 
+class _InputBlocker(QWidget):
+    """Task 등록 / 수정 창이 떠 있는 동안 위젯 전체를 덮는 투명한 막.
+    누르고 끌면 위젯 창 이동만 된다(누름 / 이동 / 뗌을 부모 ClockWidget 으로 넘김).
+    항목 클릭 / 우클릭 / 휠 / 키 입력 / 창 단축키는 막는다. 누름을 떼면 released 로 알려 등록 창을 다시 앞으로."""
+
+    released = Signal()
+
+    def __init__(self, parent: QWidget):
+        super().__init__(parent)
+        # 누르면 포커스를 가져와 키 입력이 아래 입력칸 / 목록으로 가지 않게 한다
+        self.setFocusPolicy(Qt.ClickFocus)
+        self.hide()
+
+    def event(self, event):
+        kind = event.type()
+        if kind == QEvent.ShortcutOverride:
+            event.accept()  # 창 단축키(E / C / A ...) 대신 이 막이 받아서 버린다
+            return True
+        if kind in (QEvent.KeyPress, QEvent.KeyRelease):
+            return True
+        return super().event(event)
+
+    def mousePressEvent(self, event):
+        event.ignore()  # 부모(ClockWidget)가 창 이동을 시작한다
+
+    def mouseMoveEvent(self, event):
+        event.ignore()
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.released.emit()
+        event.ignore()  # 부모가 옮긴 위치를 저장한다
+
+    def mouseDoubleClickEvent(self, event):
+        event.accept()
+
+    def wheelEvent(self, event):
+        event.accept()
+
+    def contextMenuEvent(self, event):
+        event.accept()  # 부모로 올라가 좌패널 메뉴가 뜨지 않게
+
+
 class ClockWidget(QWidget):
     """바탕화면에 상주하는 Task 시간 + TODO 위젯"""
 
@@ -280,6 +321,8 @@ class ClockWidget(QWidget):
     quit_requested = Signal()
     visibility_changed = Signal(bool)
     reminder_due = Signal(str, str)  # item id, 본문
+    # Task 등록 / 수정 창이 떠 있는 동안 위젯을 눌렀다 뗌 - TaskPinApp 이 그 창을 다시 앞으로 올린다
+    blocked_clicked = Signal()
 
     def __init__(self, cfg: dict, force_on_top: bool = False):
         super().__init__()
@@ -309,12 +352,16 @@ class ClockWidget(QWidget):
         self.setAttribute(Qt.WA_TranslucentBackground, True)
         # 표시(시작/위젯 보이기)만으로 활성화되어 앞으로 튀어나오지 않게 - 클릭했을 때만 앞으로
         self.setAttribute(Qt.WA_ShowWithoutActivating, True)
-        # 투명도는 오직 투명도 슬라이더로만 정한다 (배경색 자체는 불투명) - apply_appearance 의 _apply_opacity
+        # 투명도는 오직 설정창의 투명도 슬라이더(cfg opacity)로만 정한다 (배경색 자체는 불투명)
+        # - apply_appearance / apply_opacity 의 _apply_opacity
 
         self._build_ui()
         self._grip_v = _ResizeGrip(self, vertical=True)  # 하단: 높이
         self._grip_h = _ResizeGrip(self, vertical=False)  # 우측: 폭 (가로 모드만)
         self._set_grips_enabled(not self._locked)
+        # Task 등록 / 수정 창이 떠 있는 동안 위젯을 덮는 막 (set_input_blocked)
+        self._blocker = _InputBlocker(self)
+        self._blocker.released.connect(self.blocked_clicked.emit)
         # 3) 크기 범위 / 조절 방향은 모드별로 (세로: 높이만, 가로: 폭과 높이)
         self._orientation = None
         self._apply_orientation(self._cfg_orientation())
@@ -327,13 +374,6 @@ class ClockWidget(QWidget):
         self.reminder_timer.timeout.connect(self.check_reminders)
         self.reminder_timer.start(REMINDER_CHECK_MS)
         QTimer.singleShot(REMINDER_STARTUP_DELAY_MS, self.check_reminders)
-
-    def _cfg_opacity(self) -> float:
-        try:
-            value = float(self._cfg.get("opacity", WINDOW_OPACITY))
-        except (TypeError, ValueError):
-            value = WINDOW_OPACITY
-        return min(1.0, max(OPACITY_MIN, value))
 
     def _cfg_height(self) -> int:
         min_height = self._min_height()
@@ -581,27 +621,6 @@ class ClockWidget(QWidget):
         self.btn_task_clear.clicked.connect(self.task_clear_requested.emit)
         controls.addLayout(buttons)
 
-        # ---- 투명도 슬라이더 (슬라이더 값 = 투명도 % = 100 - 불투명도 %) ----
-        opacity_row = QHBoxLayout()
-        opacity_row.setSpacing(8)
-        self.opacity_caption = QLabel("투명도")
-
-        self.opacity_slider = QSlider(Qt.Horizontal)
-        self.opacity_slider.setRange(0, TRANSPARENCY_MAX)
-        self.opacity_slider.setValue(round((1 - self._cfg_opacity()) * 100))
-        self.opacity_slider.setCursor(Qt.PointingHandCursor)
-
-        self.opacity_value = QLabel(f"{self.opacity_slider.value()}%")
-        self.opacity_value.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-
-        self.opacity_slider.valueChanged.connect(self._on_opacity_changed)
-        self.opacity_slider.sliderReleased.connect(self._save_opacity)
-
-        opacity_row.addWidget(self.opacity_caption)
-        opacity_row.addWidget(self.opacity_slider, 1)
-        opacity_row.addWidget(self.opacity_value)
-        controls.addLayout(opacity_row)
-
         self._left_layout.addWidget(info_box)
         self._left_layout.addWidget(self.task_detail_label)
         self._left_layout.addWidget(controls_box)
@@ -649,26 +668,6 @@ class ClockWidget(QWidget):
                 color: {t.text_main};
                 font-family: {t.font_family};
             }}
-            QSlider:horizontal {{
-                /* 기본 높이는 화면 배율이 클수록 줄어(175% 에서 13px) 핸들 위아래가 잘린다 */
-                min-height: {SLIDER_HEIGHT}px;
-            }}
-            QSlider::groove:horizontal {{
-                height: 4px;
-                background: {t.overlay(50)};
-                border-radius: 2px;
-            }}
-            QSlider::sub-page:horizontal {{
-                background: {t.overlay(120)};
-                border-radius: 2px;
-            }}
-            QSlider::handle:horizontal {{
-                width: {SLIDER_HANDLE}px;
-                height: {SLIDER_HANDLE}px;
-                margin: -{(SLIDER_HANDLE - 4) // 2}px 0;
-                background: {t.text_main};
-                border-radius: {SLIDER_HANDLE // 2}px;
-            }}
             """
         )
         painted.set_boxes(self, [(QPushButton, None, painted.button_box(t))])
@@ -712,9 +711,6 @@ class ClockWidget(QWidget):
         badge_border.setAlpha(170)
         painted.set_box(self.task_title_label, painted.box(6, badge_bg, badge_border))
         self.task_detail_label.setStyleSheet(sub_style)
-        self.opacity_caption.setStyleSheet(sub_style)
-        self.opacity_value.setStyleSheet(sub_style)
-        self.opacity_value.setFixedWidth(px(34, s))
         for line in self._separators:
             line.setStyleSheet(f"background: {t.line}; border: none;")
         self.todo_panel.apply_appearance()
@@ -815,8 +811,12 @@ class ClockWidget(QWidget):
         return line
 
     def _opacity(self) -> float:
-        """슬라이더의 불투명도 (슬라이더 값은 투명도 %)"""
-        return 1 - self.opacity_slider.value() / 100
+        """설정의 불투명도 (설정창 투명도 슬라이더 = 100 - 불투명도 %)"""
+        return widget_config.opacity(self._cfg)
+
+    def apply_opacity(self):
+        """설정창 투명도 슬라이더가 바뀜 (저장은 설정창이 한다)"""
+        self._apply_opacity()
 
     def _apply_opacity(self):
         """글자도 함께 투명(Appearance fade_text): 창 전체 불투명도
@@ -824,18 +824,6 @@ class ClockWidget(QWidget):
         fade_text = theme.current().fade_text
         self.setWindowOpacity(self._opacity() if fade_text else 1.0)
         self.update()
-
-    def _on_opacity_changed(self, transparency: int):
-        self._apply_opacity()
-        self.opacity_value.setText(f"{transparency}%")
-        # 드래그 중에는 저장하지 않고(sliderReleased 에서 저장), 키보드/클릭 조작만 즉시 저장
-        if not self.opacity_slider.isSliderDown():
-            self._save_opacity()
-
-    def _save_opacity(self):
-        # 설정에는 기존 호환을 위해 불투명도로 저장 (부동소수 오차 방지 round)
-        self._cfg["opacity"] = round(1 - self.opacity_slider.value() / 100, 2)
-        widget_config.save_config(self._cfg)
 
     def save_size(self):
         """조절한 크기 저장 - 모드마다 폭과 높이를 따로 저장한다"""
@@ -850,6 +838,20 @@ class ClockWidget(QWidget):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self._place_grip()
+
+    def set_input_blocked(self, blocked: bool):
+        """Task 등록 / 수정 창이 떠 있는 동안 위젯을 투명한 막으로 덮는다 (끌어 옮기기만 된다).
+        막이 포커스를 가져가 이 창을 다시 활성화해도 단축키 / 키 입력이 아래로 가지 않는다."""
+        if blocked:
+            self._blocker.setGeometry(self.rect())
+            self._blocker.show()
+            self._blocker.raise_()
+            self._blocker.setFocus(Qt.OtherFocusReason)
+        elif not self._blocker.isHidden():
+            if self._blocker.hasFocus() or self.focusWidget() is self._blocker:
+                # 포커스를 가진 위젯을 숨기면 Qt 가 다음 위젯으로 넘기며 목록을 스크롤한다 - 목록으로 먼저
+                self.todo_panel.container.setFocus(Qt.OtherFocusReason)
+            self._blocker.hide()
 
     def _place_grip(self):
         """하단(높이) / 우측(폭) 핸들. 둥근 모서리 구간은 비워 둔다."""
@@ -867,6 +869,10 @@ class ClockWidget(QWidget):
         )
         self._grip_v.raise_()
         self._grip_h.raise_()
+        blocker = getattr(self, "_blocker", None)  # 처음 배치할 때는 아직 없다
+        if blocker is not None and not blocker.isHidden():
+            blocker.setGeometry(self.rect())
+            blocker.raise_()  # 막은 크기 조절 핸들보다도 위 (크기 조절도 막는다)
 
     def _set_grips_enabled(self, enabled: bool):
         for grip in (self._grip_v, self._grip_h):
@@ -997,7 +1003,9 @@ class ClockWidget(QWidget):
             "task_edit": self._on_edit_shortcut,
             "task_clear": self._on_clear_shortcut,
             "todo_focus": self.todo_panel.focus_input,
-            "todo_edit": self.todo_panel.edit_current,
+            "todo_edit": lambda: self.todo_panel.edit_current(
+                rename_page=mapping.get("todo_edit") == FIXED_EDIT_KEY
+            ),
             "todo_search": self.todo_panel.open_search,
             "todo_page_prev": lambda: self.todo_panel.step_page(-1),
             "todo_page_next": lambda: self.todo_panel.step_page(1),
@@ -1010,6 +1018,23 @@ class ClockWidget(QWidget):
             shortcut = QShortcut(sequence, self)
             shortcut.setContext(Qt.WindowShortcut)
             shortcut.activated.connect(handlers[action])
+            self._shortcuts.append(shortcut)
+        # 할 일 수정은 F2 가 고정 키로 늘 된다 (선택이 없으면 페이지 이름 바꾸기). 다른 동작이 F2 로 시작하면
+        # 같은 키의 단축키가 둘이 되어 둘 다 듣지 않으므로 그때는 걸지 않는다
+        fixed = QKeySequence(FIXED_EDIT_KEY, QKeySequence.PortableText)
+        if not any(
+            QKeySequence(keys, QKeySequence.PortableText).matches(fixed)
+            != QKeySequence.NoMatch
+            or fixed.matches(QKeySequence(keys, QKeySequence.PortableText))
+            != QKeySequence.NoMatch
+            for keys in mapping.values()
+            if keys
+        ):
+            shortcut = QShortcut(fixed, self)
+            shortcut.setContext(Qt.WindowShortcut)
+            shortcut.activated.connect(
+                lambda: self.todo_panel.edit_current(rename_page=True)
+            )
             self._shortcuts.append(shortcut)
 
     def _has_task(self) -> bool:
@@ -1147,7 +1172,15 @@ class ClockWidget(QWidget):
     # 우클릭 컨텍스트 메뉴
     # ==================================================
     def contextMenuEvent(self, event):
-        """좌패널(Task) 메뉴. TODO 목록 위에서는 TodoPanel 이 자기 메뉴를 띄운다."""
+        """좌패널(Task) 메뉴. TODO 목록 위에서는 TodoPanel 이 자기 메뉴를 띄운다.
+        포커스 위젯이 없을 때 누른 메뉴 키는 고른 할 일이 있으면 그 할 일의 메뉴를 띄운다
+        (↑↓ 같은 목록 키를 목록으로 넘기는 것과 같이)."""
+        if (
+            event.reason() == QContextMenuEvent.Keyboard
+            and self.todo_panel.has_current()
+        ):
+            self.todo_panel.show_current_menu()
+            return
         menu = QMenu(self)
         menu.setStyleSheet(theme.menu_style(theme.current()))
 
@@ -1185,12 +1218,13 @@ class ClockWidget(QWidget):
     def _export_todos(self, archived: bool):
         """우패널 "내보내기": TODO 를 Markdown 체크리스트 파일로 저장한다. 마지막 저장 폴더를 기억한다."""
         now = datetime.now()
+        page_name = self.todo_panel.page_name()  # 화면 목록은 지금 페이지 (제목 / 파일 이름에 넣는다)
         if archived:
             text = todo_export.archived_to_markdown(
                 todo_store.load_archived(), now, self.todo_panel.items()
             )
         else:
-            text = todo_export.to_markdown(self.todo_panel.items(), now)
+            text = todo_export.to_markdown(self.todo_panel.items(), now, page_name)
 
         folder = self._cfg.get("export_dir") or QStandardPaths.writableLocation(
             QStandardPaths.DocumentsLocation
@@ -1199,7 +1233,9 @@ class ClockWidget(QWidget):
             self,
             "TODO 내보내기",
             os.path.normpath(
-                os.path.join(folder, todo_export.default_filename(archived, now))
+                os.path.join(
+                    folder, todo_export.default_filename(archived, now, page_name)
+                )
             ),
             "Markdown (*.md)",
         )
@@ -1258,11 +1294,6 @@ class ClockWidget(QWidget):
         (테마 / 단축키는 TaskPinApp 이 apply_appearance / apply_shortcuts 로 따로 건다)"""
         self._locked = bool(self._cfg.get("locked", False))
         self._set_grips_enabled(not self._locked)
-
-        self.opacity_slider.blockSignals(True)  # 슬라이더 변경이 다시 저장하지 않도록
-        self.opacity_slider.setValue(round((1 - self._cfg_opacity()) * 100))
-        self.opacity_slider.blockSignals(False)
-        self.opacity_value.setText(f"{self.opacity_slider.value()}%")
         self._apply_opacity()
         self.set_user_name(self._cfg.get("user_name", ""))
 
@@ -1288,6 +1319,12 @@ class ClockWidget(QWidget):
     # ==================================================
     # 리마인더
     # ==================================================
+    def reload_data(self):
+        """설정창 "모든 데이터 초기화" 뒤: 떠 있는 리마인더 알림을 닫고 할 일 목록을 DB 에서 다시 읽는다."""
+        for popup in list(self._popups):
+            popup.close()
+        self.todo_panel.reload()
+
     def check_reminders(self):
         """시각이 된 리마인더를 팝업 + reminder_due 시그널로 알린다."""
         now = datetime.now().astimezone()

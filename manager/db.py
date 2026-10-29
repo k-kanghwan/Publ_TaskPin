@@ -2,13 +2,20 @@
 
 연결은 하나만 열어 앱이 끝날 때까지 쓴다. 모든 작업은 UI 스레드에서만 한다.
 스키마 버전은 PRAGMA user_version 으로 관리한다.
+"모든 데이터 초기화"(설정창 Application)는 지우기 전에 같은 폴더에 백업 파일을 남긴다 (reset_all).
 """
 
 import sqlite3
+from datetime import datetime
 
 from manager import paths
 
 DB_NAME = "taskpin.db"
+BACKUP_PREFIX = "taskpin-backup"  # 초기화 전 백업: taskpin-backup-YYYYMMDD-HHMMSS.db
+# 초기화로 비우는 테이블 (스키마 / user_version 은 그대로)
+DATA_TABLES = ("todos", "tasks", "todo_deletions", "todo_pages")
+# 초기화 뒤 남기는 첫 페이지 (스키마 v9 가 만드는 것과 같다)
+FIRST_PAGE_SQL = "INSERT INTO todo_pages (id, name, position) VALUES (1, '페이지 1', 0)"
 
 # user_version 0 -> 1
 _SCHEMA_V1 = """
@@ -135,6 +142,40 @@ def close():
     if _conn is not None:
         _conn.close()
         _conn = None
+
+
+def backup(path: str) -> None:
+    """지금 DB 를 path 에 그대로 복사한다 (sqlite backup - 일관된 사본). 실패하면 sqlite3.Error"""
+    target = sqlite3.connect(path)
+    try:
+        conn().backup(target)
+    finally:
+        target.close()
+
+
+def wipe() -> None:
+    """모든 데이터를 지우고 첫 페이지("페이지 1")만 남긴다. 번호(AUTOINCREMENT)도 처음부터.
+    VACUUM 으로 지운 내용이 파일의 빈 공간에 남지 않게 한다. 실패하면 sqlite3.Error"""
+    c = conn()
+    with c:
+        for table in DATA_TABLES:
+            c.execute(f"DELETE FROM {table}")
+        c.execute("DELETE FROM sqlite_sequence")
+        c.execute(FIRST_PAGE_SQL)
+    c.execute("VACUUM")
+
+
+def backup_path(now: datetime) -> str:
+    return paths.data_path(f"{BACKUP_PREFIX}-{now:%Y%m%d-%H%M%S}.db")
+
+
+def reset_all(now: datetime) -> str:
+    """ "모든 데이터 초기화": 데이터 폴더에 백업을 남긴 뒤 비운다. 백업 경로를 돌려준다.
+    백업하지 못하면 지우지 않는다 (sqlite3.Error / OSError 를 그대로 던짐)."""
+    path = backup_path(now)
+    backup(path)
+    wipe()
+    return path
 
 
 def _migrate(c: sqlite3.Connection):

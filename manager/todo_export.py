@@ -2,21 +2,32 @@
 
 하위 항목은 레벨마다 공백 2칸 들여쓴다(CommonMark / Obsidian 중첩 목록).
 텍스트는 그대로 쓰므로 `(@YYYY-MM-DD HH:mm)` 리마인더 토큰도 obsidian-reminder 에서 그대로 읽힌다.
+구분선 할 일은 Markdown 가로줄(---)로 쓴다.
 """
 
+import re
 from datetime import datetime
 
-from manager import todo_tree
+from manager import todo_store, todo_tree
 
 TITLE = "Task알림 TODO"
 STAMP_FMT = "%Y-%m-%d %H:%M"
+# 파일 이름에 쓸 수 없는 글자 (Windows)
+_UNSAFE_FILENAME_RE = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
+
+
+def _line(item: dict, level: int) -> str:
+    indent = "  " * level
+    if todo_store.is_separator(item["text"]):
+        return indent + "---"
+    return indent + ("- [x] " if item["done"] else "- [ ] ") + item["text"]
 
 
 def _checklist(items: list) -> list:
-    """[(item, 레벨)] 을 체크리스트 줄로"""
+    """[(item, 레벨)] 을 체크리스트 줄로. 접힌 항목의 하위도 모두 쓴다 (접힘은 화면 표시일 뿐)"""
     return [
-        "  " * level + ("- [x] " if item["done"] else "- [ ] ") + item["text"]
-        for item, level in todo_tree.flatten(items)
+        _line(item, level)
+        for item, level in todo_tree.flatten(items, hide_collapsed=False)
     ]
 
 
@@ -24,9 +35,19 @@ def _header(subtitle: str, now: datetime) -> list:
     return [f"# {TITLE} — {subtitle}", f"내보낸 시각: {now.strftime(STAMP_FMT)}", ""]
 
 
-def to_markdown(items: list, now: datetime) -> str:
-    """화면 목록 (상위/하위 계층 그대로)"""
-    return "\n".join(_header("화면 목록", now) + _checklist(items)) + "\n"
+def to_markdown(items: list, now: datetime, page_name: str = "") -> str:
+    """화면 목록 (상위/하위 계층 그대로). page_name: 내보내는 페이지 이름 (제목에 넣는다)"""
+    subtitle = f"{page_name} · 화면 목록" if page_name else "화면 목록"
+    return "\n".join(_header(subtitle, now) + _checklist(items)) + "\n"
+
+
+def to_text(items: list, sort_key=None) -> str:
+    """클립보드용 Markdown 체크리스트 (`- [ ] 할 일`, 하위는 2칸 들여쓰기, 구분선은 ---).
+    리마인더 토큰도 그대로 - Obsidian 등에 붙여넣으면 그대로 체크리스트가 된다."""
+    return "\n".join(
+        _line(item, level)
+        for item, level in todo_tree.flatten(items, sort_key, hide_collapsed=False)
+    )
 
 
 def _with_ancestors(group: list, by_id: dict) -> list:
@@ -66,6 +87,15 @@ def archived_to_markdown(items: list, now: datetime, active: list = ()) -> str:
     return "\n".join(lines).rstrip("\n") + "\n"
 
 
-def default_filename(archived: bool, now: datetime) -> str:
+def filename_part(name: str) -> str:
+    """파일 이름에 넣을 수 있게 고친 이름 (쓸 수 없는 글자는 _, 앞뒤 공백 / 마침표는 뺀다)"""
+    return _UNSAFE_FILENAME_RE.sub("_", " ".join(name.split())).strip(" .")
+
+
+def default_filename(archived: bool, now: datetime, page_name: str = "") -> str:
+    """보관 항목은 모든 페이지라 페이지 이름을 넣지 않는다."""
     kind = "TODO-보관" if archived else "TODO"
+    page = "" if archived else filename_part(page_name)
+    if page:
+        kind += f"-{page}"
     return f"TaskPin-{kind}-{now.strftime('%Y%m%d')}.md"

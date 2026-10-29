@@ -63,13 +63,19 @@ def test_from_config_defaults_when_missing():
 # 설정 (단축키 / 기본값)
 # ==================================================
 def test_shortcuts_fill_missing_and_broken():
-    cfg = {"shortcuts": {"task_register": "F2", "task_clear": None, "todo_focus": ""}}
+    cfg = {
+        "shortcuts": {"task_register": "F2", "task_clear": None, "todo_focus": ""},
+    }
     assert widget_config.shortcuts(cfg) == {
         "task_register": "F2",
         "task_edit": "R",
         "task_clear": "C",
         "todo_focus": "",  # 빈 문자열은 해제
-        "todo_edit": "",  # 새 동작의 기본 키(F2)를 사용자가 이미 쓰고 있어 비워 둠
+        "todo_edit": "Return",
+        "todo_delete": "Del",
+        "todo_cut": "Ctrl+X",
+        "todo_copy": "Ctrl+C",
+        "todo_paste": "Ctrl+V",
         "todo_up": "Up",
         "todo_down": "Down",
         "todo_collapse": "Left",
@@ -101,12 +107,30 @@ def test_todo_search_default_yields_to_user_key():
     assert result["todo_search"] == ""
 
 
-def test_todo_edit_default_is_f2_unless_taken():
-    # v0.1.14 에 생긴 할 일 수정(F2)
-    assert widget_config.shortcuts({"shortcuts": {}})["todo_edit"] == "F2"
-    result = widget_config.shortcuts({"shortcuts": {"task_edit": "F2"}})
-    assert result["task_edit"] == "F2"
+def test_todo_edit_default_is_enter_unless_taken():
+    # 할 일 수정: v0.1.22 부터 기본 Enter (F2 는 고정 키 - ClockWidget.apply_shortcuts)
+    assert widget_config.shortcuts({"shortcuts": {}})["todo_edit"] == "Return"
+    result = widget_config.shortcuts({"shortcuts": {"task_edit": "Return"}})
+    assert result["task_edit"] == "Return"
     assert result["todo_edit"] == ""
+    # 이미 저장한 값은 그대로 둔다
+    saved = widget_config.shortcuts({"shortcuts": {"todo_edit": "F2"}})
+    assert saved["todo_edit"] == "F2"
+
+
+def test_edit_list_keys_default_unless_taken():
+    # v0.1.22 에 생긴 삭제 / 잘라내기 / 복사 / 붙여넣기 (목록 키)
+    result = widget_config.shortcuts({"shortcuts": {}})
+    assert [result[a] for a in ("todo_delete", "todo_cut", "todo_copy", "todo_paste")] == [
+        "Del",
+        "Ctrl+X",
+        "Ctrl+C",
+        "Ctrl+V",
+    ]
+    assert set(widget_config.LIST_SHORTCUTS) >= {"todo_delete", "todo_paste"}
+    result = widget_config.shortcuts({"shortcuts": {"todo_search": "Ctrl+C"}})
+    assert result["todo_search"] == "Ctrl+C"
+    assert result["todo_copy"] == ""
 
 
 def test_load_config_does_not_share_defaults(tmp_path, monkeypatch):

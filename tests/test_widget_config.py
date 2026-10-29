@@ -102,6 +102,28 @@ def test_confirm_delete_and_undo_limit():
     )
 
 
+def test_app_icon():
+    assert widget_config.app_icon({}) == "dark"
+    assert widget_config.app_icon({"app_icon": "light"}) == "light"
+    for broken in ("blue", 1, None, ["light"]):
+        assert widget_config.app_icon({"app_icon": broken}) == "dark"
+
+
+def test_opacity_and_transparency():
+    assert widget_config.opacity({}) == 1.0
+    assert widget_config.opacity({"opacity": 0.65}) == 0.65
+    assert widget_config.opacity({"opacity": 0.05}) == widget_config.OPACITY_MIN
+    for broken in ("0.5", None, True, [1]):
+        assert widget_config.opacity({"opacity": broken}) == 1.0
+    assert widget_config.transparency({"opacity": 0.65}) == 35
+
+    cfg = {}
+    widget_config.set_transparency(cfg, 35)
+    assert cfg["opacity"] == 0.65
+    widget_config.set_transparency(cfg, 95)  # 최대 투명도까지만
+    assert cfg["opacity"] == round(1 - widget_config.TRANSPARENCY_MAX / 100, 2)
+
+
 def test_appearance_defaults():
     assert widget_config.appearance({}) == widget_config.DEFAULT_APPEARANCE
     assert widget_config.appearance({"appearance": "broken"}) == (
@@ -120,6 +142,7 @@ def test_appearance_keeps_valid_values():
         "todo_text_color": "#ffffff",
         "todo_strike": False,
         "todo_row_lines": True,
+        "todo_guides": False,
         "page_bar": "left",
         "fade_text": True,
         "popup_width": 380,
@@ -144,6 +167,7 @@ def test_appearance_replaces_broken_values():
         "todo_text_color": "#12345",
         "todo_strike": 0,  # bool 만 받는다
         "todo_row_lines": "on",
+        "todo_guides": None,
         "page_bar": "middle",  # 정해진 위치만
         "fade_text": "yes",  # bool 만 받는다
         "popup_width": 300,  # 정해진 폭만

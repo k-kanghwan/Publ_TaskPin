@@ -34,8 +34,12 @@ def _words(query: str) -> list:
 
 
 def matches(item: dict, query: str) -> bool:
-    """검색어의 단어가 모두 본문(리마인더 토큰 제외)에 들어 있는지. 빈 검색어는 모두 맞다."""
-    body = todo_store.strip_reminder(item.get("text", "")).casefold()
+    """검색어의 단어가 모두 본문(리마인더 토큰 제외)에 들어 있는지. 빈 검색어는 모두 맞다.
+    구분선("---")은 검색어로는 걸리지 않는다 ("-" 를 찾을 때 구분선이 모두 맞지 않게)"""
+    text = item.get("text", "")
+    if todo_store.is_separator(text):
+        return not _words(query)
+    body = todo_store.strip_reminder(text).casefold()
     return all(word in body for word in _words(query))
 
 

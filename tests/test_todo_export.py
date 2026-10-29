@@ -118,3 +118,42 @@ def test_load_archived_excludes_active(temp_db):
     assert [item["id"] for item in loaded] == [items[0]["id"]]
     assert loaded[0]["archived_at"]
     assert loaded[0]["done"] is True
+
+
+def test_markdown_page_name_in_header_and_filename():
+    lines = todo_export.to_markdown([], NOW, "Dev").splitlines()
+    assert lines[0] == "# Task알림 TODO — Dev · 화면 목록"
+    assert todo_export.default_filename(False, NOW, "Dev") == (
+        "TaskPin-TODO-Dev-20261023.md"
+    )
+    # 파일 이름에 쓸 수 없는 글자는 _ (보관 항목은 모든 페이지라 이름을 넣지 않는다)
+    assert todo_export.default_filename(False, NOW, ' 업무 / 2:3? ') == (
+        "TaskPin-TODO-업무 _ 2_3_-20261023.md"
+    )
+    assert todo_export.default_filename(True, NOW, "Dev") == (
+        "TaskPin-TODO-보관-20261023.md"
+    )
+    assert todo_export.default_filename(False, NOW, " .. ") == "TaskPin-TODO-20261023.md"
+
+
+def test_markdown_separator_and_collapsed_children():
+    parent = _item("상위")
+    parent["collapsed"] = True  # 접혀 있어도 하위를 쓴다
+    child = _item("하위", parent=parent)
+    sep = _item("-----")
+    last = _item("끝")
+    assert _body(todo_export.to_markdown([parent, child, sep, last], NOW)) == [
+        "- [ ] 상위",
+        "  - [ ] 하위",
+        "---",
+        "- [ ] 끝",
+    ]
+
+
+def test_to_text_for_clipboard_is_markdown_checklist():
+    parent = _item("상위 (@2026-10-24 09:00)")
+    child = _item("하위", done=True, parent=parent)
+    sep = _item("---")
+    assert todo_export.to_text([parent, child, sep]) == (
+        "- [ ] 상위 (@2026-10-24 09:00)\n  - [x] 하위\n---"
+    )

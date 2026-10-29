@@ -10,6 +10,7 @@
 # nuitka-project: --windows-console-mode=disable
 # nuitka-project: --windows-icon-from-ico={MAIN_DIRECTORY}/ico/01_original_navy-coral/icon.ico
 # nuitka-project: --include-data-files={MAIN_DIRECTORY}/ico/01_original_navy-coral/icon.svg=ico/01_original_navy-coral/icon.svg
+# nuitka-project: --include-data-files={MAIN_DIRECTORY}/ico/03_light-indigo/icon.svg=ico/03_light-indigo/icon.svg
 # nuitka-project: --product-name=Task알림
 # nuitka-project: --product-version={APP_VERSION}
 # nuitka-project: --file-description=Task알림
@@ -48,6 +49,11 @@ from version import VERSION
 DEBUG = os.environ.get("TASKPIN_DEBUG") == "1"
 # Task 를 내리는 방식별 화면 문구 (task_store.COMPLETED / RELEASED)
 FINISH_VERBS = {task_store.COMPLETED: "완료", task_store.RELEASED: "해제"}
+# 설정창 Application "앱 아이콘" (widget_config.APP_ICONS) -> 트레이 / 창 아이콘 (resource_path 기준)
+APP_ICONS = {
+    "dark": "ico/01_original_navy-coral/icon.svg",
+    "light": "ico/03_light-indigo/icon.svg",
+}
 
 
 class TaskPinApp(TrayApp):
@@ -73,6 +79,7 @@ class TaskPinApp(TrayApp):
         # ==========================
         # 바탕화면 위젯
         self.widget_cfg = widget_config.load_config()
+        self._apply_app_icon()
         # 등록된 명령이 낡았으면 갱신 (디버그에서는 설치본 exe 등록값을 python 명령으로 덮어쓰지 않도록 건너뜀)
         if not DEBUG:
             os_win.sync_autostart_command()
@@ -99,6 +106,8 @@ class TaskPinApp(TrayApp):
         self.widget.reminder_due.connect(
             lambda _id, text: self.send_message_info("⏰ 리마인더", text)
         )
+        # 등록 / 수정 창이 떠 있는 동안 막힌 위젯을 누르면 그 창을 다시 앞으로
+        self.widget.blocked_clicked.connect(self._raise_picker)
         # "시스템" 테마: Windows 앱 모드가 바뀌면 따라간다
         QGuiApplication.styleHints().colorSchemeChanged.connect(
             self._on_color_scheme_changed
@@ -186,12 +195,15 @@ class TaskPinApp(TrayApp):
         return True
 
     def _show_picker(self, picker: TaskPicker, anchor):
+        """등록 / 수정 창을 띄우는 동안 위젯은 끌어 옮기기만 된다 (항목 클릭 / 우클릭 / 단축키 막음)."""
         self._picker = picker
         picker.closed.connect(self._on_picker_closed)
+        self.widget.set_input_blocked(True)
         picker.popup_for(anchor)
 
     def _on_picker_closed(self):
         self._picker = None
+        self.widget.set_input_blocked(False)
 
     def _keep_task_draft(self, title: str, detail: str):
         """등록 창을 확인 없이 닫음: 적던 내용을 다음 등록 때까지 남긴다 (둘 다 비었으면 비운다)."""
@@ -295,11 +307,25 @@ class TaskPinApp(TrayApp):
             self._settings.shortcuts_changed.connect(self.widget.apply_shortcuts)
             self._settings.appearance_changed.connect(self.apply_appearance)
             self._settings.config_imported.connect(self.apply_imported_config)
+            self._settings.app_icon_changed.connect(self._apply_app_icon)
+            self._settings.opacity_changed.connect(self.widget.apply_opacity)
+            self._settings.data_reset.connect(self.reload_data)
             self._settings.destroyed.connect(self._on_settings_destroyed)
         self._settings.show_front()
 
     def _on_settings_destroyed(self):
         self._settings = None
+
+    def reload_data(self):
+        """설정창 "모든 데이터 초기화" 뒤 (DB 는 이미 비었음): 메모리의 Task / 할 일 상태를 비운다.
+        열린 등록 / 수정 창은 닫고 임시저장한 업무명도 버린다."""
+        if self._picker is not None:
+            self._picker.close()
+        self._task_draft = ("", "")
+        self._task = None
+        self._notified_task_ids.clear()
+        self.widget.reload_data()
+        self.tick_widget()
 
     def _apply_theme(self):
         """설정의 Appearance 값으로 현재 테마와 앱 기본 글꼴(툴팁 등)을 건다."""
@@ -310,6 +336,12 @@ class TaskPinApp(TrayApp):
         if appearance["font_family"]:
             font.setFamilies([appearance["font_family"], self._base_font.family()])
         QApplication.setFont(font)
+
+    def _apply_app_icon(self):
+        """설정의 앱 아이콘(다크 / 라이트)으로 트레이 / 창 아이콘을 바꾼다.
+        디버그 실행은 설치본과 구별하도록 늘 TRAY_ICON(graphite-lime)을 쓴다."""
+        if not DEBUG:
+            self.set_icon(APP_ICONS[widget_config.app_icon(self.widget_cfg)])
 
     def apply_appearance(self):
         """설정창 Appearance 변경: 위젯을 다시 입힌다. 팝업은 다음에 띄울 때부터 따른다."""
@@ -322,6 +354,7 @@ class TaskPinApp(TrayApp):
         self.widget_cfg.update(new)
         widget_config.save_config(self.widget_cfg)
         self.apply_appearance()
+        self._apply_app_icon()
         self.widget.apply_shortcuts(widget_config.shortcuts(self.widget_cfg))
         self.widget.reload_config()
         if self._settings is not None:

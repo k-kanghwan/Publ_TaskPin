@@ -8,12 +8,24 @@ Qt 스타일시트의 border-radius 는 안티앨리어싱 없이 그려져 둥�
 - set_boxes(root, 규칙) / set_box(위젯, Box) : 버튼 / 입력칸 / 배지 / 카드의 둥근 배경과 테두리.
   스타일시트는 배경을 transparent, 테두리를 같은 두께의 transparent 로 두고(글자 자리 유지)
   위젯이 그리기 전에(Paint 이벤트 필터) 상태(마우스 올림 / 누름 / 체크 / 포커스 / 사용 불가)에 맞는 색으로 칠한다.
+- alarm_pixmap / alarm_img : 리마인더 알람 시계 아이콘 (⏰ 이모지 대신 - 강조색 등 테마 색으로 그린다)
 """
 
+import math
 from dataclasses import dataclass
 
-from PySide6.QtCore import QEvent, QObject, QPointF, QRectF, QSize, Qt
-from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen
+from PySide6.QtCore import (
+    QBuffer,
+    QByteArray,
+    QEvent,
+    QIODevice,
+    QObject,
+    QPointF,
+    QRectF,
+    QSize,
+    Qt,
+)
+from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import (
     QAbstractButton,
     QApplication,
@@ -327,9 +339,12 @@ class _Polisher(QObject):
             _resolve(obj)
         elif kind == QEvent.ParentChange and isinstance(obj, QWidget):
             # 부모 없이 만들어 크기를 잰(= 이미 Polish 된) 뒤 레이아웃에 넣는 위젯은 이때 규칙을 찾는다
-            _resolve(obj)
-            for child in obj.findChildren(QWidget):
-                _resolve(child)
+            # (그 위젯이 아직 Polish 전이어도 자식은 Polish 됐을 수 있다 - 설정창 행의 키 입력칸 등).
+            # 아직 Polish 전인 위젯은 곧 Polish 때 찾으므로 건너뛴다 - 부모를 주고 만드는 위젯(목록 행 등)은
+            # 자식이 없을 때 부모가 정해지므로 거의 비용이 들지 않는다
+            for widget in [obj, *obj.findChildren(QWidget)]:
+                if widget.testAttribute(Qt.WA_WState_Polished):
+                    _resolve(widget)
         return False
 
 
@@ -390,3 +405,60 @@ def set_box(widget: QWidget, look):
     _install()
     widget._painted_own = True
     _apply(widget, look)
+
+
+# ==================================================
+# 리마인더 알람 시계 아이콘
+# ==================================================
+_ALARM_URIS = {}  # (색, 크기, 배율) -> data URI (행마다 같은 그림을 다시 만들지 않게)
+
+
+def alarm_pixmap(color: str, size: int, ratio: float = 1.0) -> QPixmap:
+    """알람 시계: 둥근 시계판 + 바늘 + 위쪽 양옆의 종(시계판 둘레의 호) + 다리. 선 하나 색으로 그린다.
+    ratio: 화면 배율 (그 배율의 실제 픽셀로 그려 흐리거나 깨지지 않게)"""
+    n = float(size)
+    pixmap = QPixmap(max(1, round(n * ratio)), max(1, round(n * ratio)))
+    pixmap.setDevicePixelRatio(ratio)
+    pixmap.fill(Qt.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.Antialiasing)
+    pen = QPen(QColor(color), max(1.2, n * 0.11))
+    pen.setCapStyle(Qt.RoundCap)
+    pen.setJoinStyle(Qt.RoundJoin)
+    painter.setPen(pen)
+    painter.setBrush(Qt.NoBrush)
+
+    center = QPointF(n * 0.5, n * 0.56)
+    face = n * 0.33
+    painter.drawEllipse(center, face, face)
+    painter.drawLine(center, center + QPointF(0, -face * 0.58))  # 분침 (12시)
+    painter.drawLine(center, center + QPointF(face * 0.45, 0))  # 시침 (3시)
+
+    # 종: 시계판 바깥 둘레의 짧은 호 (10시 반 / 1시 반 방향). 각도는 3시 방향부터 반시계, 1/16도
+    ring = face + n * 0.17
+    bound = QRectF(center.x() - ring, center.y() - ring, ring * 2, ring * 2)
+    for start in (25, 120):
+        painter.drawArc(bound, start * 16, 35 * 16)
+    # 다리: 시계판 아래 양옆으로 짧게
+    for degrees in (225, 315):
+        angle = math.radians(degrees)
+        direction = QPointF(math.cos(angle), -math.sin(angle))
+        painter.drawLine(
+            center + direction * (face + n * 0.02), center + direction * (face + n * 0.14)
+        )
+    painter.end()
+    return pixmap
+
+
+def alarm_img(color: str, size: int, ratio: float = 1.0) -> str:
+    """RichText 라벨용 <img> (알람 시계, data URI). 크기는 논리 px"""
+    key = (color, size, round(ratio, 2))
+    uri = _ALARM_URIS.get(key)
+    if uri is None:
+        data = QByteArray()
+        buffer = QBuffer(data)
+        buffer.open(QIODevice.WriteOnly)
+        alarm_pixmap(color, size, ratio).toImage().save(buffer, "PNG")
+        uri = "data:image/png;base64," + bytes(data.toBase64()).decode("ascii")
+        _ALARM_URIS[key] = uri
+    return f'<img src="{uri}" width="{size}" height="{size}">'

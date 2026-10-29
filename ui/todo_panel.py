@@ -4,24 +4,31 @@
 - 입력 중 `(@` 를 치면 리마인더 피커가 떠서 `(@YYYY-MM-DD HH:mm)` 토큰을 넣는다
 - 입력 중 `:idea:` 같은 스니펫 트리거를 치면 설정한 문구(💡)로 바뀐다 (설정창 Snippets 탭)
 - 체크하면 목록 아래로 (취소선은 Appearance 설정), 우클릭 메뉴 "완료 항목 정리" 로 일괄 보관(DB 에는 남음)
-- ▸ 로 펼치면 펼친 하위 마지막 행까지 보이게 스크롤한다 (하위가 화면보다 길면 상위를 맨 위에 둔다)
+- 하이픈만 3개 이상("---") 적은 할 일은 구분선(가로선)으로 그린다 (우클릭 "아래에 구분선 추가")
+- 꺾쇠(›/⌄, 직접 그림)로 펼치면 펼친 하위 마지막 행까지 보이게 스크롤한다 (하위가 화면보다 길면 상위를 맨 위에 둔다)
 - 더블클릭으로 그 자리에서 수정 (Enter/포커스 이동: 저장, Esc: 취소)
 - 클릭으로 선택 (Ctrl: 하나씩 추가/빼기, Shift: 범위). 빈 곳 클릭 / Esc 로 해제.
   선택 테두리는 목록(container)이 그린다 - 화면에서 이어진 선택 행끼리는 테두리 하나로 묶는다.
-  하위 레벨 가이드 선(강조색)과 행 구분선(설정)도 목록이 그린다.
-  선택한 채로 입력하면 마지막으로 클릭한 항목의 하위로 들어간다.
-- 키보드: ↑↓ 선택 이동(선택이 없으면 보이는 영역 가운데부터) / ← 접기·상위로 / → 펴기·첫 하위로
-  / 맨 위·맨 아래(gg / Shift+G) - 모두 설정 단축키(set_nav_keys)
-  / Home·End 처음·끝 / Delete 삭제 / F2(설정 단축키) 수정.
-  목록의 화살표 스크롤 대신 선택을 옮긴다.
+  하위 레벨 가이드 선(강조색, 설정)과 행 구분선(설정)도 목록이 그린다.
+  선택한 채로 입력하면 마지막으로 클릭한 항목의 하위로 들어간다 (구분선을 골랐으면 그 바로 아래로).
+- 키보드: ↑↓ 선택 이동(선택이 없으면 마지막으로 고른 행, 없으면 보이는 영역 가운데부터) / ← 접기·상위로
+  / → 펴기·첫 하위로 / 맨 위·맨 아래(gg / Shift+G) / 삭제·잘라내기·복사·붙여넣기 - 모두 설정 단축키(set_nav_keys)
+  / 고정 키(FIXED_NAV_KEYS): ↑↓←→ · Home/End · Delete · Ctrl+X/C/V / 수정은 고정 F2(선택이 없으면 페이지 이름)
+  + 설정 단축키(기본 Enter, 창 단축키 - ClockWidget.apply_shortcuts).
+  목록의 화살표 스크롤 대신 선택을 옮긴다. 메뉴 키(Shift+F10)는 지금 행 아래에 우클릭 메뉴를 띄운다.
+- 잘라내기 / 복사 / 붙여넣기: 복사는 하위와 함께 사본을 담고(붙여넣을 때마다 새 할 일), 잘라내기는 흐리게
+  표시해 두었다가 붙여넣으면 그 자리로 옮긴다 (다른 페이지로도). 지금 행 바로 아래에 넣는다.
+  붙여넣으면 원래 레벨을 지킨다 (지금 행보다 깊으면 한 단계 아래까지). 시스템 클립보드에도 Markdown 체크리스트로 넣는다.
 - 드래그로 순서/레벨 변경: 행 가운데에 놓으면 그 항목의 하위로, 행 사이에 놓으면 그 자리로.
-  선택한 행을 끌면 선택 항목이 모두 함께 옮겨진다.
+  선택한 행을 끌면 선택 항목이 모두 함께 옮겨진다. Ctrl 을 누른 채 놓으면 복사(+ 표시), Shift / 그냥은 이동.
   (계층 규칙은 manager/todo_tree 참고 - 상위를 완료 / 해제하면 하위도 함께, 상위를 지우면 하위는 한 단계 위로)
-- 우클릭 메뉴(구분선으로 묶음): 검색·페이지로 이동 / 모두 접기·펼치기 / 추가·삭제·삭제 이력 /
-  태그(체크박스 왼쪽 색 막대) / 완료 항목 정리·내보내기
+- 우클릭 메뉴(구분선으로 묶음): 검색·페이지로 이동 / 모두 접기·펼치기 / 추가·아래에 구분선 추가·삭제·삭제 이력 /
+  잘라내기·복사·붙여넣기 / 태그(체크박스 왼쪽 색 막대) / 완료 항목 정리·내보내기
   삭제는 되돌릴 수 있게 삭제 이력에 남는다 (manager/todo_trash). ✕ / 우클릭 "삭제" 는 지우기 전에 묻는다(설정).
   여러 개를 선택한 채 우클릭하면 선택 항목 전체에 적용된다.
   태그는 기본 6색 + 사용자 태그(config.json custom_tags, "+ 태그 추가…" / 설정창에서 관리)
+- 행은 항목 id 로 기억해 두고 다시 쓴다 (다른 페이지 / 접힘 / 거름으로 숨은 행도 지우지 않음 - 페이지를 넘길 때
+  행을 새로 만들지 않게). 지워지거나 보관된 항목의 행만 지운다.
 - 페이지(엑셀 시트처럼 독립된 목록, manager/todo_pages): 위 / 아래 / 왼쪽 / 오른쪽의 페이지 표시(ui/page_bar)와
   Ctrl+PgUp / Ctrl+PgDown 으로 넘긴다. 화면 / 검색 / 정리 / 내보내기는 지금 페이지, 리마인더는 모든 페이지.
   우클릭 "페이지로 이동"으로 선택 항목을 다른 페이지로 옮긴다.
@@ -50,13 +57,16 @@ from PySide6.QtCore import (
 )
 from PySide6.QtGui import (
     QColor,
+    QContextMenuEvent,
     QCursor,
+    QGuiApplication,
     QIcon,
     QKeySequence,
     QPainter,
     QPainterPath,
     QPen,
     QPixmap,
+    QPolygonF,
 )
 from PySide6.QtWidgets import (
     QApplication,
@@ -74,6 +84,7 @@ from PySide6.QtWidgets import (
 )
 
 from manager import (
+    todo_export,
     todo_filter,
     todo_pages,
     todo_store,
@@ -87,7 +98,13 @@ from ui.page_bar import PageBar
 from ui.painted import CheckBox
 from ui.reminder_picker import ReminderPicker
 from ui.tag_dialog import TagDialog
-from ui.text_input import PreeditLineEdit, expand_snippet_later, py_cursor, utf16_pos
+from ui.text_input import (
+    LineEdit,
+    PreeditLineEdit,
+    expand_snippet_later,
+    py_cursor,
+    utf16_pos,
+)
 from ui.theme import px
 
 TRIGGER = "(@"
@@ -103,16 +120,22 @@ AUTO_SCROLL_MARGIN = (
 AUTO_SCROLL_MS = 30  # 자동 스크롤 주기 - 커서를 멈춰 두어도 계속 스크롤된다
 AUTO_SCROLL_MAX_STEP = 20  # 끝에서 멀리 벗어날수록 빠르게, 한 번에 최대 이만큼(px)
 DRAG_GHOST_OPACITY = 0.8  # 끌고 가는 행 그림
+DRAG_BADGE = 16  # 끌고 가는 그림의 개수 / 복사(+) 배지 높이(px)
 INDENT_STEP = 16  # 레벨 하나당 들여쓰기(px) - 체크박스 + 간격 (레벨 수 제한 없음)
 # 본문(12px) 크기의 컬러 이모지는 테두리가 뭉개지므로 행에서는 조금 크게 그린다
 EMOJI_PX = 14
+ALARM_PX = 11  # 리마인더 시각 앞 알람 시계 아이콘 (시각 글자 11px 과 같은 높이)
 TAG_BAR_WIDTH = 3  # 체크박스 왼쪽 태그 막대 (태그가 없어도 자리는 둔다)
-TOGGLE_SIZE = 14  # 하위 접기/펼치기 ▸/▾ 버튼 (하위가 없어도 자리는 둔다)
+TOGGLE_SIZE = 14  # 하위 접기/펼치기 꺾쇠 버튼 (하위가 없어도 자리는 둔다)
+TOGGLE_CHEVRON = 6  # 꺾쇠 길이(px) - 접힘 › / 펼침 ⌄
+TOGGLE_PEN = 1.5
 TAG_BAR_GAP = 3  # 태그 막대 - 체크박스 간격 (체크박스 - 글자 간격보다 가깝게)
 TAG_ICON_PX = 12
 ROW_PAD = 4  # 행 좌우 여백 - hover 배경이 체크박스 / 삭제 버튼에 붙지 않게
 GUIDE_ALPHA = 170  # 하위 레벨 가이드 선 (강조색, 1px) 불투명도
 ROW_LINE_ALPHA = 40  # 행 구분선 (설정) - 위젯 구분선(t.line)과 같은 덧칠
+SEPARATOR_ALPHA = 110  # 구분선 할 일("---")의 가로선 (테마의 덧칠 색)
+SEPARATOR_GAP = 4  # 구분선 가로선과 양옆(태그 막대 / ✕ 자리) 사이
 # 태그 (메뉴 이름, 색) - 키는 todo_store.TAGS 와 같다
 TAG_COLORS = {
     "red": ("Red", "#ec5f5d"),
@@ -134,18 +157,35 @@ HIGHLIGHT_COLOR = "#f5cc45"  # 태그 Yellow 와 같은 색
 HIGHLIGHT_ALPHA = 150  # 가장 진할 때의 불투명도 (0~255)
 HIGHLIGHT_HOLD_MS = 2000
 HIGHLIGHT_FADE_MS = 600
+
+
+def _combo(key, modifiers=Qt.NoModifier) -> int:
+    return QKeyCombination(modifiers, key).toCombined()
+
+
 # 목록 키보드 이동 (TodoPanel.handle_nav_key) - 목록 스크롤 대신 선택을 옮긴다.
-# 위 / 아래 / 접기 / 펼치기 / 맨 위 / 맨 아래는 설정 단축키(widget_config.LIST_SHORTCUTS),
-# 이 키들은 고정 (조합 키 없이)
+# 위 / 아래 / 접기 / 펼치기 / 맨 위 / 맨 아래 / 삭제 / 잘라내기 / 복사 / 붙여넣기는 설정 단축키
+# (widget_config.LIST_SHORTCUTS). 아래 고정 키는 설정과 관계없이 늘 동작한다 (설정 키를 바꾸면 둘 다 된다)
 FIXED_NAV_KEYS = {
-    Qt.Key_Home: "todo_first",
-    Qt.Key_End: "todo_last",
-    Qt.Key_Delete: "delete",
+    _combo(Qt.Key_Up): "todo_up",
+    _combo(Qt.Key_Down): "todo_down",
+    _combo(Qt.Key_Left): "todo_collapse",
+    _combo(Qt.Key_Right): "todo_expand",
+    _combo(Qt.Key_Home): "todo_first",
+    _combo(Qt.Key_End): "todo_last",
+    _combo(Qt.Key_Delete): "todo_delete",
+    _combo(Qt.Key_X, Qt.ControlModifier): "todo_cut",
+    _combo(Qt.Key_C, Qt.ControlModifier): "todo_copy",
+    _combo(Qt.Key_V, Qt.ControlModifier): "todo_paste",
 }
 NAV_PENDING = "pending"  # 두 키 단축키("G, G")의 첫 키를 받아 다음 키를 기다리는 중
 NAV_SEQUENCE_MS = 1000  # 두 키 단축키의 다음 키를 기다리는 시간
 MODIFIER_KEYS = (Qt.Key_Shift, Qt.Key_Control, Qt.Key_Alt, Qt.Key_Meta)
 NAV_SCROLL_MARGIN = 8  # 키보드로 옮긴 행 위아래로 남길 여유(px)
+# 시작하고 쉬는 동안 다른 페이지 / 접힌 하위의 행을 조금씩 미리 만들어 둔다 (처음 넘길 때도 빠르게)
+WARM_DELAY_MS = 1500
+WARM_BATCH = 8  # 한 번에 만들 행 수 (UI 가 멈춰 보이지 않을 만큼)
+WARM_STEP_MS = 15
 HISTORY_TEXT_PX = 180  # 우클릭 "삭제 이력" 항목의 본문 폭 (넘치면 말줄임)
 
 
@@ -207,14 +247,7 @@ def _panel_style(t: theme.Theme) -> str:
         font-size: {px(11, s)}px;
     }}
     QPushButton#delete:hover {{ color: {t.text_warn}; }}
-    QPushButton#toggle {{
-        background: transparent;
-        color: {t.text_sub};
-        border: none;
-        padding: 0px;
-        font-size: {px(11, s)}px;
-    }}
-    QPushButton#toggle:hover {{ color: {t.accent}; }}
+    QPushButton#toggle {{ background: transparent; border: none; padding: 0px; }}
     QPushButton#pageAdd {{
         background: transparent;
         color: {t.text_sub};
@@ -233,8 +266,9 @@ def _panel_style(t: theme.Theme) -> str:
 """
 
 
-class TodoInput(QLineEdit):
-    """`(@` 를 감지해 리마인더 피커를 띄우고, 스니펫 트리거를 문구로 바꾸는 입력창"""
+class TodoInput(LineEdit):
+    """`(@` 를 감지해 리마인더 피커를 띄우고, 스니펫 트리거를 문구로 바꾸는 입력창.
+    Enter 는 창 단축키보다 먼저 받는다 (할 일 수정 단축키를 Enter 로 바꿔도 추가 / 수정이 되게 - LineEdit)"""
 
     escaped = Signal()
     focus_lost = Signal()
@@ -418,6 +452,45 @@ class FilterBar(QWidget):
             self.close_requested.emit()
 
 
+class _ToggleButton(QPushButton):
+    """하위 접기 / 펼치기 버튼. ▸/▾ 같은 글자는 글꼴에 따라 이모지(▶️)로 바뀌거나 깨지므로 꺾쇠를 직접 그린다.
+    접힘: › (오른쪽) / 펼침: ⌄ (아래). 평소 흐린 글자색, 마우스를 올리면 강조색."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._collapsed = False
+        self.setAttribute(Qt.WA_Hover, True)
+
+    def set_collapsed(self, collapsed: bool):
+        if collapsed != self._collapsed:
+            self._collapsed = collapsed
+            self.update()
+
+    def enterEvent(self, event):
+        self.update()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self.update()
+        super().leaveEvent(event)
+
+    def paintEvent(self, event):
+        t = theme.current()
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        pen = QPen(QColor(t.accent if self.underMouse() else t.text_sub), TOGGLE_PEN)
+        pen.setCapStyle(Qt.RoundCap)
+        pen.setJoinStyle(Qt.RoundJoin)
+        painter.setPen(pen)
+        center = QRectF(self.rect()).center()
+        long, short = TOGGLE_CHEVRON / 2, TOGGLE_CHEVRON / 4
+        if self._collapsed:
+            points = [QPointF(-short, -long), QPointF(short, 0), QPointF(-short, long)]
+        else:
+            points = [QPointF(-long, -short), QPointF(0, short), QPointF(long, -short)]
+        painter.drawPolyline(QPolygonF([center + point for point in points]))
+
+
 class TodoRow(QWidget):
     toggled = Signal(str, bool)
     deleted = Signal(str)
@@ -439,6 +512,8 @@ class TodoRow(QWidget):
         self.item = None
         self.depth = 0  # 레벨 (최상위 0)
         self.context = False
+        self.separator = False  # 구분선 할 일 ("---") - 체크박스 / 글자 대신 가로선
+        self.cut = False  # 잘라낸 항목 (붙여넣기 전까지 흐리게, TodoPanel 이 정함)
         self.mark_query = ""  # 검색 하이라이트할 검색어 (TodoPanel 이 정함)
         self.mark_level = 0.0  # 하이라이트 진하기 0~1 (0 이면 칠하지 않음)
         self._tag_color = tag_color
@@ -459,7 +534,7 @@ class TodoRow(QWidget):
         # 자식 위젯은 모두 이 행을 부모로 만든다 - 부모 없이 setVisible(True) 하면
         # 레이아웃에 들어가기 전까지 최상위 창으로 떠서 화면 가운데가 깜빡인다 (그리고 느리다)
         # 접기/펼치기 버튼. 하위가 없어도 자리는 비워 둬서 체크박스 위치를 맞춘다
-        self.btn_toggle = QPushButton(self)
+        self.btn_toggle = _ToggleButton(self)
         self.btn_toggle.setObjectName("toggle")
         self.btn_toggle.setFixedSize(TOGGLE_SIZE, TOGGLE_SIZE)
         self.btn_toggle.setFocusPolicy(Qt.NoFocus)
@@ -492,7 +567,9 @@ class TodoRow(QWidget):
         self.label.setTextInteractionFlags(Qt.NoTextInteraction)
         self.label.setWordWrap(True)
         self.label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        self.label.setToolTip("클릭하여 선택 · 더블클릭하여 수정 · 드래그하여 이동")
+        self.label.setToolTip(
+            "클릭하여 선택 · 더블클릭하여 수정 · 드래그하여 이동 (Ctrl: 복사)"
+        )
 
         # 수정 입력칸은 처음 수정할 때 만든다 (행마다 미리 만들면 목록을 펼칠 때 느려진다)
         self.editor = None
@@ -517,12 +594,22 @@ class TodoRow(QWidget):
     def set_state(self, item: dict, depth: int, context=False, has_children=False):
         """보여줄 항목과 자리를 (다시) 정하고 그린다.
         context: 검색 / 날짜별 보기에는 맞지 않지만 맞는 항목의 상위라서 보이는 행 (흐리게)
-        has_children: 하위가 있으면 ▸/▾ 접기 버튼을 보인다 (item["collapsed"] 가 방향을 정함)"""
+        has_children: 하위가 있으면 접기 꺾쇠 버튼을 보인다 (item["collapsed"] 가 방향을 정함)
+        구분선 할 일은 체크박스 / 글자를 숨기고 paintEvent 가 가로선을 긋는다."""
         self.item = item
         self.depth = depth
         self.context = context
+        self.separator = todo_store.is_separator(item["text"])
         self._layout.setContentsMargins(ROW_PAD + self.indent(), 2, ROW_PAD, 2)
         self.btn_toggle.setVisible(has_children)
+        self.check.setVisible(not self.separator)
+        self.label.setVisible(not self.separator and not self._editing)
+        # 구분선은 숨긴 글자 칸이 자리를 지켜야 ✕ 가 오른쪽 끝에 남고 가로선이 행 끝까지 간다
+        # (구분선은 고치지 않으므로 편집칸과 자리를 나눌 일이 없다)
+        policy = self.label.sizePolicy()
+        if policy.retainSizeWhenHidden() != self.separator:
+            policy.setRetainSizeWhenHidden(self.separator)
+            self.label.setSizePolicy(policy)
         # 표시만 맞춘다 - toggled 가 다시 완료 처리를 부르지 않게
         self.check.blockSignals(True)
         self.check.setChecked(item["done"])
@@ -538,10 +625,11 @@ class TodoRow(QWidget):
         t = theme.current()
         s = t.todo_scale
         done = self.item["done"]
-        tag_color = self._tag_color(self.item.get("tag"))
-        collapsed = self.item.get("collapsed")
+        # 구분선에는 태그 막대를 칠하지 않는다
+        tag_color = None if self.separator else self._tag_color(self.item.get("tag"))
+        collapsed = bool(self.item.get("collapsed"))
         self.check.set_box_size(px(12, s) + 2)  # 네모 12px(글자 배율) + 테두리
-        self.btn_toggle.setText("▸" if collapsed else "▾")
+        self.btn_toggle.set_collapsed(collapsed)
         self.btn_toggle.setToolTip("하위 펼치기" if collapsed else "하위 접기")
         if tag_color != self._bar_color:
             self._bar_color = tag_color
@@ -551,6 +639,12 @@ class TodoRow(QWidget):
                 if tag_color
                 else ""
             )
+        line_style = f"font-family:{t.font_family}; font-size:{px(12, s)}px;"
+        if self.separator:
+            # 숨긴 글자 칸은 한 줄 높이만 - 행 높이가 보통 할 일과 같다. 가로선은 paintEvent
+            self.label.setText(f'<div style="{line_style}">&nbsp;</div>')
+            self.update()
+            return
         emoji_style = f"font-size:{px(EMOJI_PX, s)}px;"
         marks, mark_style = (), ""
         if self.mark_level > 0 and not self.context:
@@ -564,22 +658,29 @@ class TodoRow(QWidget):
             todo_store.to_html(self.item["text"], emoji_style, marks, mark_style)
             or "&nbsp;"
         )
-        color = t.text_sub if done or self.context else t.todo_color
+        if self.cut:
+            color = t.text_dim  # 잘라낸 항목 - 붙여넣으면 옮겨진다
+        else:
+            color = t.text_sub if done or self.context else t.todo_color
         html = f'<span style="color:{color};">{body}</span>'
         if done and t.todo_strike:
             html = f"<s>{html}</s>"
 
         due = todo_store.due_at(self.item)
         if due is not None:
-            chip_color = t.text_warn if (not done and due <= now) else t.text_sub
-            html += (
-                f'&nbsp;<span style="color:{chip_color}; font-size:{px(11, s)}px;">'
-                f"⏰&nbsp;{due:%m/%d %H:%M}</span>"
+            # 알람 시계는 강조색 (지났으면 경고색, 완료했으면 흐리게)
+            overdue = not done and due <= now
+            chip_color = t.text_warn if overdue else t.text_sub
+            icon_color = t.text_sub if done else (t.text_warn if overdue else t.accent)
+            icon = painted.alarm_img(
+                icon_color, px(ALARM_PX, s), self.devicePixelRatioF()
             )
-        self.label.setText(
-            f'<div style="font-family:{t.font_family}; font-size:{px(12, s)}px;">'
-            f"{html}</div>"
-        )
+            html += (
+                f"&nbsp;{icon}&nbsp;"
+                f'<span style="color:{chip_color}; font-size:{px(11, s)}px;">'
+                f"{due:%m/%d %H:%M}</span>"
+            )
+        self.label.setText(f'<div style="{line_style}">{html}</div>')
 
     # ---- 수정 ----
     @property
@@ -587,6 +688,8 @@ class TodoRow(QWidget):
         return self._editing
 
     def start_edit(self):
+        if self.separator:
+            return  # 구분선은 고치지 않는다 (지우고 다시 넣는다)
         if self.editor is None:
             self.editor = TodoInput(
                 self._reminders_provider, self._snippets_provider, self
@@ -628,8 +731,10 @@ class TodoRow(QWidget):
     # ---- 이벤트 ----
     def mouseDoubleClickEvent(self, event):
         # 글자 위 더블클릭으로 수정 (라벨은 마우스를 받지 않아 행으로 올라온다)
-        if not self._editing and self.label.geometry().contains(
-            event.position().toPoint()
+        if (
+            not self._editing
+            and not self.separator
+            and self.label.geometry().contains(event.position().toPoint())
         ):
             self.start_edit()
             return
@@ -674,7 +779,16 @@ class TodoRow(QWidget):
             self._stop_drag()
             self.drag_canceled.emit()
             return
+        if self._dragging and event.key() in (Qt.Key_Control, Qt.Key_Shift):
+            self.drag_moved.emit()  # 복사(Ctrl) / 이동 표시를 바로 바꾼다
+            return
         super().keyPressEvent(event)
+
+    def keyReleaseEvent(self, event):
+        if self._dragging and event.key() in (Qt.Key_Control, Qt.Key_Shift):
+            self.drag_moved.emit()
+            return
+        super().keyReleaseEvent(event)
 
     def _stop_drag(self):
         self._dragging = False
@@ -694,15 +808,27 @@ class TodoRow(QWidget):
 
     def paintEvent(self, event):
         # 선택 테두리는 TodoPanel._paint_selection 이 목록 위에 그린다 (이어진 행을 묶기 위해)
-        if not self._hover:
+        if not (self._hover or self.separator):
             return
+        t = theme.current()
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        path = QPainterPath()
-        path.addRoundedRect(
-            QRectF(self.rect().adjusted(self.indent(), 0, 0, 0)), ROW_RADIUS, ROW_RADIUS
-        )
-        painter.fillPath(path, theme.current().overlay_color(ROW_HOVER_ALPHA))
+        if self._hover:
+            path = QPainterPath()
+            path.addRoundedRect(
+                QRectF(self.rect().adjusted(self.indent(), 0, 0, 0)),
+                ROW_RADIUS,
+                ROW_RADIUS,
+            )
+            painter.fillPath(path, t.overlay_color(ROW_HOVER_ALPHA))
+        if self.separator:
+            # 태그 막대 자리 뒤부터 ✕ 자리 앞까지 (✕ 는 숨어도 자리를 둔다)
+            left = self.tag_bar.geometry().right() + 1 + SEPARATOR_GAP
+            right = self.btn_delete.geometry().left() - SEPARATOR_GAP
+            y = self.height() // 2 + 0.5  # 픽셀 가운데 - 1px 선이 흐려지지 않게
+            alpha = SEPARATOR_ALPHA // 2 if self.cut else SEPARATOR_ALPHA
+            painter.setPen(QPen(t.overlay_color(alpha), 1))
+            painter.drawLine(QPointF(left, y), QPointF(right, y))
 
 
 class TodoPanel(QWidget):
@@ -750,11 +876,19 @@ class TodoPanel(QWidget):
             if item["page_id"] not in page_ids:  # 페이지가 사라진 할 일은 첫 페이지로
                 item["page_id"] = page_ids[0]
         todo_tree.detach_orphans(self._items)
-        self._rows = []
+        self._rows = []  # 지금 보이는 행 (화면 순서)
+        # 항목 id -> 행. 다른 페이지 / 접힘 / 거름으로 숨은 행도 지우지 않고 다시 쓴다
+        # (페이지를 넘길 때마다 행을 새로 만들면 할 일이 많은 페이지에서 눈에 띄게 느리다)
+        self._row_cache = {}
         self._selected = set()  # 선택한 항목 id
         self._anchor_id = (
             None  # 마지막으로 클릭한 항목 (Shift 범위 기준 / 하위 추가 대상)
         )
+        # 페이지 id -> 마지막으로 고른 항목 (선택이 없을 때 ↑↓ 를 여기서 시작, 실행 중에만)
+        self._last_ids = {}
+        # 잘라내기 / 복사: {"cut": bool, "ids": 맨 위 항목 id (잘라내기), "items": 하위까지 사본}
+        self._clipboard = None
+        self._cut_ids = set()  # 잘라낸 항목 + 하위 (붙여넣기 전까지 흐리게)
         # 거르는 중에 보이는 항목 id (todo_filter.visible) / None 이면 전체
         self._shown_ids = None
 
@@ -763,6 +897,8 @@ class TodoPanel(QWidget):
         self._drag_moving = set()  # 옮길 항목 + 그 하위 (놓을 수 없는 자리)
         self._drag_target = None  # _drop_target 결과
         self._drag_ghost = None  # 커서를 따라다니는 행 그림
+        self._ghost_pixmaps = {}  # 복사(Ctrl) 여부 -> 그림 (+ 배지 유무)
+        self._drag_copy = False  # 지금 그림이 복사 표시인지
         self._drag_hotspot = QPoint()
         self._scroll_timer = QTimer(self)
         self._scroll_timer.setInterval(AUTO_SCROLL_MS)
@@ -808,6 +944,10 @@ class TodoPanel(QWidget):
         self.scroll.setFrameShape(QFrame.NoFrame)
         self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.scroll.setMinimumHeight(20)
+        # 스크롤 영역 / 스크롤바는 포커스를 받지 않는다 - 스크롤바를 끈 뒤 ↑↓ 가 목록 스크롤이 아니라
+        # 할 일 선택으로 가도록 (포커스는 목록(container)에 남거나, 없으면 위젯이 목록으로 넘긴다)
+        self.scroll.setFocusPolicy(Qt.NoFocus)
+        self.scroll.verticalScrollBar().setFocusPolicy(Qt.NoFocus)
         # 휠 / 자동 스크롤로 목록이 움직이면 놓을 자리 표시도 다시 계산
         self.scroll.verticalScrollBar().valueChanged.connect(self._update_drag)
 
@@ -841,6 +981,18 @@ class TodoPanel(QWidget):
 
         self.apply_appearance()
         self._rebuild()
+        QTimer.singleShot(WARM_DELAY_MS, self._warm_rows)
+
+    def _warm_rows(self):
+        """아직 행이 없는 항목(다른 페이지 / 접힌 하위)의 행을 WARM_BATCH 개씩 미리 만들어 숨겨 둔다.
+        행을 만들고 스타일을 입히는(polish) 일이 페이지를 처음 넘길 때 시간이 가장 많이 드는 부분이다."""
+        pending = [item for item in self._items if item["id"] not in self._row_cache]
+        for item in pending[:WARM_BATCH]:
+            row = self._row_cache[item["id"]] = self._new_row()
+            row.set_state(item, len(todo_tree.ancestors(self._items, item["id"])))
+            row.ensurePolished()  # 자식까지 - 보일 때 다시 하지 않는다
+        if len(pending) > WARM_BATCH:
+            QTimer.singleShot(WARM_STEP_MS, self._warm_rows)
 
     def apply_appearance(self):
         """현재 테마(theme.current())로 다시 입힌다. 글자 크기 / 색은 우패널 설정을 따른다."""
@@ -891,6 +1043,14 @@ class TodoPanel(QWidget):
         """지금 페이지 목록 사본 (내보내기 "화면 목록"용)"""
         return self._page_items()
 
+    def page_name(self) -> str:
+        """지금 페이지 이름 (내보내기 파일 이름 / 제목)"""
+        return self._current_page()["name"]
+
+    def has_current(self) -> bool:
+        """고른 할 일이 있는지 (메뉴 키로 그 행의 메뉴를 띄울 수 있는지)"""
+        return self._current_row() is not None
+
     def has_done(self) -> bool:
         return any(item["done"] for item in self._page_items())
 
@@ -937,18 +1097,200 @@ class TodoPanel(QWidget):
     # ==================================================
     def add_item(self, text: str):
         """선택한 항목이 있으면 그 하위 맨 뒤로 넣는다 (마지막으로 클릭한 항목 우선).
+        고른 항목이 구분선이면 하위가 아니라 그 바로 아래(같은 상위)에 넣는다.
         거르는 중이면 새 항목이 숨지 않도록 전체 보기로 돌아간다 (검색 줄은 열어 둔다)."""
-        self.filter_bar.reset()
-        self._stop_highlight()
+        self._show_all()
         item = todo_store.new_item(text, self._page_id)
+        anchor_id = self._add_parent_id()
+        if anchor_id is not None and todo_store.is_separator(
+            self._find(anchor_id)["text"]
+        ):
+            parent_id, before_id = self._below(anchor_id)
+        else:
+            parent_id, before_id = anchor_id, None
         self._items.append(item)
-        parent_id = self._add_parent_id()
-        if parent_id is not None:
+        if parent_id is not None or before_id is not None:
             # 완료된 상위 아래로 들어가면 상위는 다시 미완료가 된다 (todo_tree.move)
-            todo_tree.move(self._items, item["id"], parent_id, None)
+            todo_tree.move(self._items, item["id"], parent_id, before_id)
             todo_tree.expand_ancestors(self._items, item["id"])  # 접힌 상위면 펼쳐서 보이게
         self._save_and_rebuild()
         self._reveal(next(row for row in self._rows if row.item is item))
+
+    def add_separator_below(self, anchor_id=None):
+        """우클릭 "아래에 구분선 추가": 그 행 바로 아래(같은 상위)에 구분선을 넣고 고른다. 행이 없으면 맨 뒤에.
+        완료된 상위 아래면 구분선도 완료로 둔다 (구분선 때문에 상위가 미완료로 돌아가지 않게)."""
+        self._show_all()
+        item = todo_store.new_item(todo_store.SEPARATOR, self._page_id)
+        parent_id, before_id = (
+            self._below(anchor_id) if self._find(anchor_id) is not None else (None, None)
+        )
+        parent = self._find(parent_id)
+        if parent is not None:
+            item["done"] = parent["done"]
+        self._items.append(item)
+        if parent_id is not None or before_id is not None:
+            todo_tree.move(self._items, item["id"], parent_id, before_id)
+        self._save_and_rebuild()
+        self._select_only(item["id"])
+        self._reveal(next(row for row in self._rows if row.item is item))
+
+    def _below(self, item_id, skip=()):
+        """item_id 바로 아래(같은 상위) 자리: (상위 id, 이 형제 앞). 형제는 같은 페이지에서, skip 은 건너뛴다"""
+        item = self._find(item_id)
+        return item.get("parent_id"), todo_tree.next_sibling_id(
+            self._page_items(), item_id, skip
+        )
+
+    def _show_all(self):
+        """새로 넣은 항목이 숨지 않도록 전체 보기로 (검색 줄은 열어 둔다)"""
+        self.filter_bar.reset()
+        self._stop_highlight()
+
+    # ---- 잘라내기 / 복사 / 붙여넣기 ----
+    def copy_selected(self):
+        """복사(Ctrl+C / 설정 단축키): 선택 항목을 하위와 함께 사본으로 담는다 (붙여넣을 때마다 새 할 일)."""
+        self._take_selected(cut=False)
+
+    def cut_selected(self):
+        """잘라내기(Ctrl+X / 설정 단축키): 선택 항목(하위와 함께)을 흐리게 표시만 해 두고, 붙여넣으면 그 자리로
+        옮긴다 (다른 페이지로도). 붙여넣기 전에는 아무것도 바뀌지 않는다 - Esc / 다시 복사하면 풀린다."""
+        self._take_selected(cut=True)
+
+    def _take_selected(self, cut: bool):
+        """선택 항목을 앱 클립보드에: 하위까지 사본(items), 맨 위 id(ids)와 그때의 레벨(levels -
+        붙여넣을 때 원래 레벨을 지킨다)"""
+        ids = self._selected_ids()
+        if not ids:
+            return
+        roots = todo_tree.top_selected(self._items, ids)
+        self._set_clipboard(
+            {
+                "cut": cut,
+                "ids": roots,
+                "levels": {
+                    root_id: len(todo_tree.ancestors(self._items, root_id))
+                    for root_id in roots
+                },
+                "items": [dict(item) for item in todo_tree.subtrees(self._items, ids)],
+            }
+        )
+
+    def cancel_cut(self):
+        if self._cut_ids:
+            self._set_clipboard(None)
+
+    def _set_clipboard(self, clip):
+        """앱 클립보드를 바꾸고 잘라낸 표시를 맞춘다. 시스템 클립보드에도 Markdown 체크리스트로 넣는다
+        (`- [ ] 할 일` - 다른 앱에 붙여넣기)."""
+        self._clipboard = clip
+        self._cut_ids = (
+            {item["id"] for item in clip["items"]} if clip and clip["cut"] else set()
+        )
+        if clip is not None:
+            QApplication.clipboard().setText(
+                todo_export.to_text(clip["items"], self._sort_key)
+            )
+        for row in self._rows:
+            cut = row.item["id"] in self._cut_ids
+            if row.cut != cut:
+                row.cut = cut
+                row.render()
+
+    def _can_paste(self) -> bool:
+        clip = self._clipboard
+        if clip is None:
+            return False
+        return not clip["cut"] or any(self._find(i) for i in clip["ids"])
+
+    def paste(self):
+        """붙여넣기(Ctrl+V / 설정 단축키): 지금 행 바로 아래에, 원래 레벨을 지켜 넣고 고른다
+        (지금 행보다 깊으면 한 단계 아래까지 - todo_tree.paste_target). 선택이 없으면 최상위 맨 뒤.
+        복사한 항목은 새 할 일로, 잘라낸 항목은 하위와 함께 옮긴다 (다른 페이지에서 잘라냈으면 이 페이지로).
+        잘라낸 묶음 안에 붙여넣으면 그대로 두고 잘라내기만 푼다."""
+        clip = self._clipboard
+        if not self._can_paste():
+            return
+        row = self._current_row()
+        anchor_id = row.item["id"] if row is not None else None
+        if clip["cut"]:
+            roots = [i for i in clip["ids"] if self._find(i) is not None]
+            moving = {item["id"] for item in todo_tree.subtrees(self._items, roots)}
+            self._set_clipboard(None)  # 잘라낸 것은 한 번만 붙여넣는다
+            if anchor_id in moving:
+                return
+            # 자리는 옮기기 전에 정한다 (옮겨질 항목은 뒤 형제 / 첫 하위로 고르지 않음)
+            targets = self._paste_targets(anchor_id, clip, moving)
+            for item in self._items:
+                if item["id"] in moving:
+                    item["page_id"] = self._page_id
+            for root_id in roots:
+                todo_tree.move(self._items, root_id, *targets[root_id])
+        else:
+            targets = self._paste_targets(anchor_id, clip)
+            roots = self._insert_copies(clip["items"], targets.__getitem__)
+        self._show_all()
+        self._finish_insert(roots)
+
+    def _paste_targets(self, anchor_id, clip: dict, skip=()) -> dict:
+        """맨 위 항목 id -> (상위, 이 형제 앞). 각자 잘라내기 / 복사할 때의 레벨을 지킨다."""
+        page_items = self._page_items()
+        return {
+            root_id: todo_tree.paste_target(
+                page_items, anchor_id, clip["levels"].get(root_id, 0), skip
+            )
+            for root_id in clip["ids"]
+        }
+
+    def _insert_copies(self, batch: list, target_of) -> list:
+        """batch(하위까지 든 항목 사본)를 새 id 로 지금 페이지에 넣는다.
+        target_of: 원본 맨 위 항목 id -> (상위, 이 형제 앞). 맨 위 복사본 id 들을 돌려준다
+        (저장 / 다시 그리기는 부르는 쪽에서)."""
+        batch_ids = {item["id"] for item in batch}
+        originals = [item["id"] for item in batch if item.get("parent_id") not in batch_ids]
+        clones = todo_tree.clone(batch)
+        created = datetime.now().astimezone().strftime(todo_store.DATETIME_FMT)
+        for clone in clones:
+            clone["page_id"] = self._page_id
+            clone["created"] = created
+        roots = [clone["id"] for clone in clones if clone["parent_id"] is None]
+        self._items.extend(clones)
+        for original_id, root_id in zip(originals, roots):
+            # 완료된 상위 아래로 미완료가 들어가면 상위는 다시 미완료 (todo_tree.move 규칙)
+            todo_tree.move(self._items, root_id, *target_of(original_id))
+        return roots
+
+    def _finish_insert(self, roots: list):
+        """붙여넣기 / 복사 드래그 뒤: 저장하고 넣은 항목(맨 위)을 골라 보여준다."""
+        for root_id in roots:
+            todo_tree.expand_ancestors(self._items, root_id)  # 접힌 상위로 넣었으면 펼침
+        self._save_and_rebuild()
+        shown = [root_id for root_id in roots if self._find(root_id) is not None]
+        if not shown:
+            return
+        self._selected = set(shown)
+        self._anchor_id = shown[-1]  # 이어서 붙여넣으면 그 아래로
+        self._apply_selection()
+        row = self._current_row()
+        if row is not None:
+            self._reveal(row, NAV_SCROLL_MARGIN)
+
+    def reload(self):
+        """설정창 "모든 데이터 초기화" 뒤: DB 에서 페이지 / 할 일을 다시 읽어 첫 페이지를 보여준다.
+        선택 / 잘라내기 / 검색도 푼다 (행은 항목이 없어졌으므로 모두 지워진다)."""
+        self._end_drag()
+        self._pages = todo_pages.load()
+        self._page_id = self._pages[0]["id"]
+        self._items = todo_store.load_todos()
+        self._selected.clear()
+        self._anchor_id = None
+        self._last_ids.clear()
+        self._clipboard = None
+        self._cut_ids = set()
+        self._show_all()
+        self._rebuild()
+        self.scroll.verticalScrollBar().setValue(0)
+        self.page_bar.set_pages(self._pages, self._page_id)
+        self.page_changed.emit(self._page_id)
 
     def toggle_collapse(self, item_id: str):
         """▸/▾ 버튼: 하위를 접거나 펼친다 (숨은 하위는 _rebuild 가 선택에서 뺀다).
@@ -1207,7 +1549,8 @@ class TodoPanel(QWidget):
 
     def _rebuild(self):
         """목록을 지금 상태로 맞춘다. 있던 항목의 행은 다시 쓰고(상태만 갱신) 새 항목만 행을 만든다.
-        체크 / 접기마다 행을 모두 새로 만들면 항목이 많을 때 눈에 띄게 느려진다."""
+        체크 / 접기 / 페이지 넘기기마다 행을 모두 새로 만들면 항목이 많을 때 눈에 띄게 느려진다.
+        보이지 않게 된 행(다른 페이지 / 접힘 / 거름)은 숨겨 두고, 지워지거나 보관된 항목의 행만 지운다."""
         self._end_drag()  # 드래그 중이던 행이 사라질 수 있으므로 (리마인더 팝업에서 완료 등)
 
         # 하위는 상위 바로 밑에. 형제끼리 미완료 -> 완료 순, 각각 리마인더 일시가 빠른 순
@@ -1226,12 +1569,14 @@ class TodoPanel(QWidget):
             ordered = [pair for pair in ordered if pair[0]["id"] in self._shown_ids]
         self._update_counts(now)
 
-        old = {row.item["id"]: row for row in self._rows}
         self._rows = []
         for item, depth in ordered:
-            row = old.pop(item["id"], None) or self._new_row()
+            row = self._row_cache.get(item["id"])
+            if row is None:
+                row = self._row_cache[item["id"]] = self._new_row()
             row.mark_query = self._mark_query
             row.mark_level = self._mark_level
+            row.cut = item["id"] in self._cut_ids
             row.set_state(
                 item,
                 depth,
@@ -1239,8 +1584,16 @@ class TodoPanel(QWidget):
                 has_children=item["id"] in parents,
             )
             self._rows.append(row)
-        for row in old.values():  # 지워지거나 보관되거나 숨은 항목
-            self._drop_row(row)
+        shown = {row.item["id"] for row in self._rows}
+        alive = {item["id"] for item in self._items}
+        for item_id, row in list(self._row_cache.items()):
+            if item_id in shown:
+                continue
+            if item_id in alive:  # 다른 페이지 / 접힘 / 거름 - 다시 보일 때 쓴다
+                self._stash_row(row)
+            else:  # 지워지거나 보관된 항목
+                del self._row_cache[item_id]
+                self._drop_row(row)
         # 화면 순서대로 놓는다 (자리가 바뀐 행만 옮김)
         for idx, row in enumerate(self._rows):
             placed = self.list_layout.itemAt(idx)
@@ -1281,13 +1634,19 @@ class TodoPanel(QWidget):
         row.drag_canceled.connect(self._end_drag)
         return row
 
-    def _drop_row(self, row: "TodoRow"):
+    def _stash_row(self, row: "TodoRow"):
+        """지금은 보이지 않는 행을 숨겨 둔다 (레이아웃에서 빼고, 행은 그대로 둬서 다시 쓴다)."""
+        if row.isHidden():
+            return
         focus = QApplication.focusWidget()
         if focus is not None and row.isAncestorOf(focus):
             # 포커스를 가진 행을 숨기면 Qt 가 다음 위젯으로 포커스를 넘기며 목록을 스크롤한다
             self.container.setFocus(Qt.OtherFocusReason)
         row.hide()
         self.list_layout.removeWidget(row)
+
+    def _drop_row(self, row: "TodoRow"):
+        self._stash_row(row)
         row.deleteLater()
 
     # ==================================================
@@ -1441,6 +1800,9 @@ class TodoPanel(QWidget):
             self._apply_selection()
 
     def _apply_selection(self):
+        current = self._current_id()
+        if current is not None:  # 선택을 풀어도 ↑↓ 를 여기서 다시 시작한다
+            self._last_ids[self._page_id] = current
         self.container.update()  # 선택 테두리 (_paint_selection)
         # 선택한 채로 입력하면 하위로 들어간다는 것을 입력칸에 보여준다
         self.input.setPlaceholderText(
@@ -1470,7 +1832,8 @@ class TodoPanel(QWidget):
         painter.setRenderHint(QPainter.Antialiasing)
         if t.todo_row_lines:
             self._paint_row_lines(painter, t)
-        self._paint_guides(painter, t)
+        if t.todo_guides:
+            self._paint_guides(painter, t)
         self._paint_selection(painter, t)
         painter.end()
 
@@ -1526,12 +1889,32 @@ class TodoPanel(QWidget):
         return None
 
     def contextMenuEvent(self, event):
-        """우패널 메뉴. 선택하지 않은 행에서 열면 그 행만 선택하고, 빈 곳에서 열면 선택을 푼다."""
+        """우패널 메뉴. 선택하지 않은 행에서 열면 그 행만 선택하고, 빈 곳에서 열면 선택을 푼다.
+        메뉴 키 / Shift+F10 은 커서 자리가 아니라 지금 행에서 연다 (show_current_menu)."""
+        if event.reason() == QContextMenuEvent.Keyboard:
+            self.show_current_menu()
+            return
         row = self._row_at(event.globalPos())
         if row is None:
             self.clear_selection()
         elif row.item["id"] not in self._selected:
             self._select_only(row.item["id"])
+        self._show_menu(event.globalPos(), row)
+
+    def show_current_menu(self):
+        """메뉴 키: 지금 행(마지막으로 고른 행)을 보이게 하고 그 바로 아래에 메뉴를 띄운다.
+        (키보드 메뉴 이벤트의 위치는 목록 가운데라 그대로 쓰면 엉뚱한 행에서 열린다)
+        고른 행이 없으면 목록 왼쪽 위에 빈 곳 메뉴를 띄운다."""
+        row = self._current_row()
+        if row is not None:
+            self._reveal(row, NAV_SCROLL_MARGIN)
+            pos = row.mapToGlobal(QPoint(ROW_PAD + row.indent(), row.height()))
+        else:
+            pos = self.scroll.viewport().mapToGlobal(QPoint(ROW_PAD, ROW_PAD))
+        self._show_menu(pos, row)
+
+    def _show_menu(self, pos: QPoint, row):
+        """row: 메뉴를 연 행 (빈 곳이면 None) - "아래에 구분선 추가" 자리"""
         t = theme.current()
         menu = QMenu(self)
         menu.setStyleSheet(theme.menu_style(t))
@@ -1555,9 +1938,22 @@ class TodoPanel(QWidget):
         menu.addSeparator()
 
         menu.addAction("추가", self.focus_input)
+        anchor_id = row.item["id"] if row is not None else None
+        menu.addAction(
+            "아래에 구분선 추가", lambda: self.add_separator_below(anchor_id)
+        )
         act_delete = menu.addAction("삭제", self.delete_selected)
         act_delete.setEnabled(bool(self._selected))
         self._add_history_menu(menu)
+        menu.addSeparator()
+
+        # 탭 뒤는 메뉴 오른쪽에 흐리게 보이는 키 (고정 키 - 설정에서 다른 키를 더 정할 수 있다)
+        act_cut = menu.addAction("잘라내기\tCtrl+X", self.cut_selected)
+        act_copy = menu.addAction("복사\tCtrl+C", self.copy_selected)
+        for action in (act_cut, act_copy):
+            action.setEnabled(bool(self._selected))
+        act_paste = menu.addAction("붙여넣기\tCtrl+V", self.paste)
+        act_paste.setEnabled(self._can_paste())
         menu.addSeparator()
 
         self._add_tag_menu(menu, t)
@@ -1577,7 +1973,7 @@ class TodoPanel(QWidget):
         )
         act_archived.setEnabled(bool(todo_store.load_archived()))
 
-        menu.exec(event.globalPos())
+        menu.exec(pos)
 
     def _add_tag_menu(self, menu: QMenu, t: theme.Theme):
         """우클릭 "태그" 서브메뉴: 기본 6색 -> 태그 없음 -> 사용자 태그 -> + 태그 추가"""
@@ -1680,14 +2076,25 @@ class TodoPanel(QWidget):
         self._drag_target = None
 
         self._drag_hotspot = row.mapFromGlobal(QCursor.pos())
-        self._drag_ghost = self._make_ghost(row, len(self._drag_ids))
+        count = len(self._drag_ids)
+        self._ghost_pixmaps = {
+            copy: self._ghost_pixmap(row, count, copy) for copy in (False, True)
+        }
+        self._drag_copy = self._drag_copying()
+        self._drag_ghost = self._make_ghost(row, self._ghost_pixmaps[self._drag_copy])
         self._drag_ghost.move(QCursor.pos() - self._drag_hotspot)
         self._drag_ghost.show()
         self._scroll_timer.start()
         self._update_drag()
 
-    def _make_ghost(self, row: "TodoRow", count: int) -> QLabel:
-        """커서를 따라다니는 반투명 행 그림 (여러 개면 개수 배지)"""
+    @staticmethod
+    def _drag_copying() -> bool:
+        """Ctrl 을 누르고 있으면 놓을 때 복사 (Shift / 그냥은 이동)"""
+        return bool(QGuiApplication.queryKeyboardModifiers() & Qt.ControlModifier)
+
+    @staticmethod
+    def _ghost_pixmap(row: "TodoRow", count: int, copy: bool) -> QPixmap:
+        """끌고 가는 행 그림 (여러 개면 개수 배지, 복사면 + 배지)"""
         t = theme.current()
         shot = row.grab()
         ratio = shot.devicePixelRatio()
@@ -1701,15 +2108,23 @@ class TodoPanel(QWidget):
         painter.setBrush(QColor(t.bg))
         painter.drawRoundedRect(rect, ROW_RADIUS, ROW_RADIUS)
         painter.drawPixmap(0, 0, shot)
-        if count > 1:
-            badge = QRectF(row.width() - 26, 2, 22, 16)
-            painter.setPen(Qt.NoPen)
+        badges = (["+"] if copy else []) + ([str(count)] if count > 1 else [])
+        right = row.width() - 4
+        for text in reversed(badges):  # 오른쪽부터: 개수, 그 왼쪽에 +
+            width = 22 if text != "+" else DRAG_BADGE
+            badge = QRectF(right - width, 2, width, DRAG_BADGE)
             painter.setBrush(QColor(t.accent))
-            painter.drawRoundedRect(badge, 8, 8)
+            painter.setPen(Qt.NoPen)
+            painter.drawRoundedRect(badge, DRAG_BADGE / 2, DRAG_BADGE / 2)
             painter.setPen(QColor(t.on_accent))
-            painter.drawText(badge, Qt.AlignCenter, str(count))
+            painter.drawText(badge, Qt.AlignCenter, text)
+            right -= width + 4
         painter.end()
+        return pixmap
 
+    @staticmethod
+    def _make_ghost(row: "TodoRow", pixmap: QPixmap) -> QLabel:
+        """커서를 따라다니는 반투명 행 그림 창"""
         ghost = QLabel(
             None, Qt.ToolTip | Qt.FramelessWindowHint | Qt.WindowTransparentForInput
         )
@@ -1731,6 +2146,10 @@ class TodoPanel(QWidget):
             return
         pos = QCursor.pos()
         self._drag_ghost.move(pos - self._drag_hotspot)
+        copying = self._drag_copying()
+        if copying != self._drag_copy:  # Ctrl 을 누르거나 떼면 + 배지를 붙이거나 뗀다
+            self._drag_copy = copying
+            self._drag_ghost.setPixmap(self._ghost_pixmaps[copying])
         target = None
         if self._cursor_in_list():
             target = self._drop_target(self.container.mapFromGlobal(pos).y())
@@ -1738,11 +2157,13 @@ class TodoPanel(QWidget):
         self._show_drop_mark(target[2] if target is not None else None)
 
     def _finish_drag(self):
+        """놓음: Ctrl 을 누르고 있으면 복사, 아니면(Shift 포함) 이동"""
         ids, target = self._drag_ids, self._drag_target
+        action = self._copy_items if self._drag_copying() else self._move_items
         self._end_drag()
         if ids and target is not None:
             # 놓은 행이 이 시그널을 보내는 중이므로 행을 지우는(rebuild) 이동은 끝난 뒤에
-            QTimer.singleShot(0, lambda: self._move_items(ids, target[0], target[1]))
+            QTimer.singleShot(0, lambda: action(ids, target[0], target[1]))
 
     def _end_drag(self):
         """드래그 끝 / 취소(Esc)"""
@@ -1755,11 +2176,13 @@ class TodoPanel(QWidget):
         self._drag_ghost.hide()
         self._drag_ghost.deleteLater()
         self._drag_ghost = None
+        self._ghost_pixmaps = {}
         self._show_drop_mark(None)
 
     def _drop_target(self, y: int):
         """끌고 있는 항목들을 y 에 놓았을 때의 자리. 행 높이를 3등분해서
         위쪽(행 사이 여백 포함)은 그 행 앞, 가운데는 그 행의 하위 맨 뒤, 아래쪽은 다음 행 앞.
+        구분선 행은 하위를 두지 않으므로 가운데도 다음 행 앞이다.
 
         Returns
         -------
@@ -1787,7 +2210,7 @@ class TodoPanel(QWidget):
                     row.item["id"],
                     ("line", geo.top() - 1, row.depth),
                 )
-            if y < geo.bottom() - third:
+            if y < geo.bottom() - third and not row.separator:
                 return row.item["id"], None, ("box", row)
             if idx + 1 < len(rows):
                 nxt = rows[idx + 1]
@@ -1849,6 +2272,13 @@ class TodoPanel(QWidget):
                 todo_tree.expand_ancestors(self._items, item_id)  # 접힌 상위로 넣었으면 펼침
             self._save_and_rebuild()
 
+    def _copy_items(self, ids: list, parent_id, before_id):
+        """Ctrl 드래그: ids 를 하위와 함께 복사해 parent_id 아래 before_id 앞에 넣고 복사본을 고른다."""
+        batch = [dict(item) for item in todo_tree.subtrees(self._items, ids)]
+        if batch:
+            target = (parent_id, before_id)
+            self._finish_insert(self._insert_copies(batch, lambda _id: target))
+
     # ==================================================
     # 이벤트 / 입력칸
     # ==================================================
@@ -1867,6 +2297,7 @@ class TodoPanel(QWidget):
                 self.clear_selection()
             elif event.type() == QEvent.KeyPress and event.key() == Qt.Key_Escape:
                 self.clear_selection()
+                self.cancel_cut()
                 return True
             elif (
                 event.type() == QEvent.KeyPress
@@ -1880,8 +2311,8 @@ class TodoPanel(QWidget):
     # 키보드 이동
     # ==================================================
     def set_nav_keys(self, mapping: dict):
-        """설정 단축키 중 목록 키(위 / 아래 / 접기 / 펼치기 / 맨 위 / 맨 아래).
-        mapping: {동작: PortableText} ("" 이면 끔, "G, G" 처럼 두 키도 됨)"""
+        """설정 단축키 중 목록 키(삭제 / 잘라내기 / 복사 / 붙여넣기 / 위 / 아래 / 접기 / 펼치기 / 맨 위 / 맨 아래).
+        mapping: {동작: PortableText} ("" 이면 끔, "G, G" 처럼 두 키도 됨). 고정 키(FIXED_NAV_KEYS)는 따로 늘 된다."""
         self._nav_keys = {}
         for action in widget_config.LIST_SHORTCUTS:
             sequence = QKeySequence(mapping.get(action, ""), QKeySequence.PortableText)
@@ -1896,7 +2327,8 @@ class TodoPanel(QWidget):
 
     def _nav_action(self, key, modifiers) -> str:
         """누른 키의 목록 동작. "" 이면 목록 키가 아니고, NAV_PENDING 이면 두 키 단축키의 첫 키라
-        다음 키를 기다린다 (NAV_SEQUENCE_MS 안에). 방향키는 숫자패드 표시를 떼고 비교한다."""
+        다음 키를 기다린다 (NAV_SEQUENCE_MS 안에). 방향키는 숫자패드 표시를 떼고 비교한다.
+        설정 키에 없으면 고정 키(↑↓←→ / Home / End / Delete / Ctrl+X·C·V)를 본다."""
         if key in MODIFIER_KEYS:
             return ""  # Shift+G 의 Shift 만 눌렸을 때 - 기다리던 키를 지우지 않는다
         modifiers = Qt.KeyboardModifiers(modifiers) & ~Qt.KeypadModifier
@@ -1920,17 +2352,16 @@ class TodoPanel(QWidget):
                 self._nav_timer.start()
                 return NAV_PENDING
         self._clear_nav_pending()
-        if modifiers == Qt.NoModifier:
-            return FIXED_NAV_KEYS.get(key, "")
-        return ""
+        return FIXED_NAV_KEYS.get(combo, "")
 
     def handle_nav_key(self, key, modifiers=Qt.NoModifier) -> bool:
-        """목록 키보드 이동. 처리했으면 True
-        위 / 아래(기본 ↑↓): 위 / 아래 행 (선택이 없으면 보이는 영역 가운데 행부터)
-        접기(기본 ←): 펼친 상위면 접고, 아니면 상위 행으로 / 펼치기(기본 →): 접힌 상위면 펴고, 펼쳤으면 첫 하위 행으로
+        """목록 키보드 이동 / 편집. 처리했으면 True
+        위 / 아래(기본·고정 ↑↓): 위 / 아래 행 (선택이 없으면 마지막으로 고른 행, 없으면 보이는 영역 가운데 행부터)
+        접기(기본·고정 ←): 펼친 상위면 접고, 아니면 상위 행으로 / 펼치기(기본·고정 →): 접힌 상위면 펴고, 펼쳤으면 첫 하위 행으로
         (검색 / 날짜별 보기 중에는 접힘을 무시하므로 접기 / 펼치기는 이동만 한다)
         맨 위 / 맨 아래(기본 gg / Shift+G, 고정 Home / End): 처음 / 마지막 행
-        Delete: 선택 항목 삭제 (확인 창은 설정에 따름)"""
+        삭제(기본·고정 Delete): 선택 항목 삭제 (확인 창은 설정에 따름)
+        잘라내기 / 복사 / 붙여넣기(기본·고정 Ctrl+X / C / V)"""
         action = self._nav_action(key, modifiers)
         if not action:
             return False
@@ -1938,8 +2369,14 @@ class TodoPanel(QWidget):
         self.container.setFocus(Qt.OtherFocusReason)
         if action == NAV_PENDING:
             return True
-        if action == "delete":
-            self._delete_by_key()
+        edits = {
+            "todo_delete": self._delete_by_key,
+            "todo_cut": self.cut_selected,
+            "todo_copy": self.copy_selected,
+            "todo_paste": self.paste,
+        }
+        if action in edits:
+            edits[action]()
             return True
         if not self._rows:
             return True
@@ -1949,7 +2386,7 @@ class TodoPanel(QWidget):
         elif action == "todo_last":
             target = self._rows[-1]
         elif current is None:
-            target = self._middle_row()
+            target = self._last_row() or self._middle_row()
         elif action in ("todo_up", "todo_down"):
             idx = self._rows.index(current) + (-1 if action == "todo_up" else 1)
             target = self._rows[min(max(idx, 0), len(self._rows) - 1)]
@@ -1971,16 +2408,25 @@ class TodoPanel(QWidget):
             self._select_only(target.item["id"])
             self._reveal(target, NAV_SCROLL_MARGIN)
 
-    def _current_row(self):
-        """키보드 이동 / 수정의 기준 행: 마지막으로 고른 행 (선택이 없으면 None)"""
+    def _current_id(self):
+        """키보드 이동 / 수정의 기준 항목: 마지막으로 고른 항목 (선택이 없으면 None)"""
         if not self._selected:
             return None
-        current_id = (
-            self._anchor_id
-            if self._anchor_id in self._selected
-            else self._selected_ids()[0]
-        )
+        if self._anchor_id in self._selected:
+            return self._anchor_id
+        ids = self._selected_ids()
+        return ids[0] if ids else None
+
+    def _current_row(self):
+        current_id = self._current_id()
+        if current_id is None:
+            return None
         return next((row for row in self._rows if row.item["id"] == current_id), None)
+
+    def _last_row(self):
+        """이 페이지에서 마지막으로 골랐던 행 (선택을 푼 뒤 ↑↓ 의 시작점). 지금 안 보이면 None"""
+        last_id = self._last_ids.get(self._page_id)
+        return next((row for row in self._rows if row.item["id"] == last_id), None)
 
     def _middle_row(self):
         """목록에서 지금 보이는 영역의 가운데에 가장 가까운 행"""
@@ -2007,10 +2453,15 @@ class TodoPanel(QWidget):
             return next((r for r in self._rows if r.item["id"] == parent_id), None)
         return None
 
-    def edit_current(self):
-        """할 일 수정 단축키(F2): 지금 행(마지막으로 고른 행)을 그 자리에서 수정한다."""
+    def edit_current(self, rename_page: bool = False):
+        """할 일 수정(고정 F2 / 설정 단축키, 기본 Enter): 지금 행(마지막으로 고른 행)을 그 자리에서 수정한다.
+        rename_page: 고른 할 일이 없으면 지금 페이지 이름을 바꾼다 (F2 만 - Enter 로 이름 창이 뜨지 않게).
+        구분선은 고치지 않는다."""
         row = self._current_row()
-        if row is not None and not row.editing:
+        if row is None:
+            if rename_page:
+                self.rename_page()
+        elif not row.editing:
             self._reveal(row, NAV_SCROLL_MARGIN)
             row.start_edit()
 
