@@ -24,8 +24,18 @@ import sqlite3
 from dataclasses import replace
 from datetime import datetime
 
-from PySide6.QtCore import QSize, QStandardPaths, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QFontDatabase, QIcon, QKeySequence, QPixmap
+from PySide6.QtCore import QPointF, QRectF, QSize, QStandardPaths, Qt, Signal
+from PySide6.QtGui import (
+    QColor,
+    QFont,
+    QFontDatabase,
+    QIcon,
+    QKeySequence,
+    QPainter,
+    QPainterPath,
+    QPen,
+    QPixmap,
+)
 from PySide6.QtWidgets import (
     QButtonGroup,
     QComboBox,
@@ -61,6 +71,8 @@ TRIGGER_EDIT_WIDTH = 110
 FONT_COMBO_WIDTH = 190
 SWATCH_SIZE = 20
 COLOR_CHIP_SIZE = 12
+RESET_ICON_PX = 13  # 되돌리기(↶) 아이콘 크기(px) - 24칸 격자로 그린 모양을 이 크기로 줄인다
+RESET_ICON_PEN = 1.2
 OPACITY_SLIDER_WIDTH = 150
 SLIDER_HANDLE = 12  # 투명도 슬라이더 핸들 지름(px) - 홈(4px)보다 크다
 SLIDER_HEIGHT = SLIDER_HANDLE + 4  # 핸들이 잘리지 않는 슬라이더 높이
@@ -95,6 +107,7 @@ SHORTCUT_GROUPS = [
         [
             ("todo_focus", "할 일 추가", "할 일 입력칸으로 커서 이동"),
             ("todo_edit", "할 일 수정", "선택한 할 일을 수정합니다 (F2 도 됩니다)"),
+            ("todo_check", "할 일 체크", "선택한 할 일을 완료 / 해제합니다"),
             ("todo_delete", "할 일 삭제", "선택한 할 일을 삭제합니다 (Delete 도 됩니다)"),
             ("todo_cut", "잘라내기", "붙여넣으면 옮겨집니다 (Ctrl+X 도 됩니다)"),
             ("todo_copy", "복사", "하위와 함께 복사합니다 (Ctrl+C 도 됩니다)"),
@@ -318,6 +331,40 @@ def _set_invalid(edit: QLineEdit, invalid: bool):
     if edit.property("invalid") != invalid:
         edit.setProperty("invalid", invalid)
         edit.update()  # 테두리는 ui/painted 가 property("invalid") 를 보고 그린다
+
+
+class _ResetButton(QPushButton):
+    """되돌리기 버튼. ↺ 글자는 글꼴에 따라 모양이 깨지므로 왼쪽으로 굽은 화살표(↶)를 직접 그린다.
+    둥근 배경 / 테두리는 ui/painted 가 그리고(objectName "small"), 크기는 ↺ 글자 자리를 그대로 쓴다."""
+
+    def __init__(self, tooltip: str, parent=None):
+        super().__init__("↺", parent)  # 크기(sizeHint)만 글자로 정한다 - 그리지는 않는다
+        self.setObjectName("small")
+        self.setCursor(Qt.PointingHandCursor)
+        self.setToolTip(tooltip)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        pen = QPen(self.palette().color(self.foregroundRole()), RESET_ICON_PEN)
+        pen.setCapStyle(Qt.RoundCap)
+        pen.setJoinStyle(Qt.RoundJoin)
+        painter.setPen(pen)
+        # 24칸 격자의 모양을 가운데에 RESET_ICON_PX 크기로
+        scale = RESET_ICON_PX / 24
+        painter.translate(QRectF(self.rect()).center())
+        painter.scale(scale, scale)
+        painter.translate(-12, -12)
+        pen.setWidthF(RESET_ICON_PEN / scale)
+        painter.setPen(pen)
+        path = QPainterPath(QPointF(9, 14))  # 화살촉 <
+        path.lineTo(4, 9)
+        path.lineTo(9, 4)
+        path.moveTo(4, 9)  # 몸통: 오른쪽으로 나가 반원을 돌아 아래에서 왼쪽으로
+        path.lineTo(14.5, 9)
+        path.arcTo(QRectF(9, 9, 11, 11), 90, -180)
+        path.lineTo(11, 20)
+        painter.drawPath(path)
 
 
 class _ShortcutEdit(QKeySequenceEdit):
@@ -642,7 +689,7 @@ class SettingsDialog(QWidget):
             "Keyboard Shortcuts",
             "위젯을 클릭해 활성화한 상태에서 동작합니다. 입력칸에 커서가 있으면 글자 키는 글자로 입력됩니다. "
             "키를 두 번 이어 눌러 G, G (gg) 처럼 정할 수도 있습니다.\n"
-            "탐색 키와 삭제 · 잘라내기 · 복사 · 붙여넣기는 할 일 목록에 포커스가 있을 때만 동작합니다. "
+            "탐색 키와 체크 · 삭제 · 잘라내기 · 복사 · 붙여넣기는 할 일 목록에 포커스가 있을 때만 동작합니다. "
             "고정 키(바꿔도 함께 동작): ↑↓←→ · Home/End · Delete · Ctrl+X/C/V · F2 수정(선택이 없으면 "
             "페이지 이름) · Esc 선택 해제",
         )
@@ -662,10 +709,7 @@ class SettingsDialog(QWidget):
         edit.editingFinished.connect(
             lambda a=action: self._set_shortcut(a, self._shortcut_edits[a].keys())
         )
-        btn_reset = QPushButton("↺")
-        btn_reset.setObjectName("small")
-        btn_reset.setCursor(Qt.PointingHandCursor)
-        btn_reset.setToolTip(
+        btn_reset = _ResetButton(
             f"기본값({widget_config.DEFAULT_SHORTCUTS[action]})으로 되돌리기"
         )
         btn_reset.clicked.connect(
@@ -1042,10 +1086,7 @@ class SettingsDialog(QWidget):
 
     @staticmethod
     def _reset_button(slot) -> QPushButton:
-        btn = QPushButton("↺")
-        btn.setObjectName("small")
-        btn.setCursor(Qt.PointingHandCursor)
-        btn.setToolTip("테마 색으로 되돌리기")
+        btn = _ResetButton("테마 색으로 되돌리기")
         btn.clicked.connect(slot)
         return btn
 

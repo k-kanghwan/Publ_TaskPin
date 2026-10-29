@@ -12,7 +12,7 @@
   하위 레벨 가이드 선(강조색, 설정)과 행 구분선(설정)도 목록이 그린다.
   선택한 채로 입력하면 마지막으로 클릭한 항목의 하위로 들어간다 (구분선을 골랐으면 그 바로 아래로).
 - 키보드: ↑↓ 선택 이동(선택이 없으면 마지막으로 고른 행, 없으면 보이는 영역 가운데부터) / ← 접기·상위로
-  / → 펴기·첫 하위로 / 맨 위·맨 아래(gg / Shift+G) / 삭제·잘라내기·복사·붙여넣기 - 모두 설정 단축키(set_nav_keys)
+  / → 펴기·첫 하위로 / 맨 위·맨 아래(gg / Shift+G) / 체크(Space)·삭제·잘라내기·복사·붙여넣기 - 모두 설정 단축키(set_nav_keys)
   / 고정 키(FIXED_NAV_KEYS): ↑↓←→ · Home/End · Delete · Ctrl+X/C/V / 수정은 고정 F2(선택이 없으면 페이지 이름)
   + 설정 단축키(기본 Enter, 창 단축키 - ClockWidget.apply_shortcuts).
   목록의 화살표 스크롤 대신 선택을 옮긴다. 메뉴 키(Shift+F10)는 지금 행 아래에 우클릭 메뉴를 띄운다.
@@ -1335,6 +1335,28 @@ class TodoPanel(QWidget):
         selected = self._selected_ids()
         return selected[0] if selected else None
 
+    def toggle_selected(self):
+        """체크 단축키(기본 Space): 선택 항목을 완료 / 해제한다. 하나라도 미완료면 모두 완료,
+        모두 완료면 모두 해제 (구분선은 빼고, 상위 / 하위 규칙은 체크박스와 같다 - todo_tree.set_done).
+        완료 / 해제로 자리가 바뀌어도 지금 행을 화면에 남긴다."""
+        items = [self._find(item_id) for item_id in self._selected_ids()]
+        items = [
+            item
+            for item in items
+            if item is not None and not todo_store.is_separator(item["text"])
+        ]
+        if not items:
+            return
+        done = not all(item["done"] for item in items)
+        changed = False
+        for item in items:
+            changed = todo_tree.set_done(self._items, item["id"], done) or changed
+        if changed:
+            self._save_and_rebuild()
+            row = self._current_row()
+            if row is not None:
+                self._reveal(row, NAV_SCROLL_MARGIN)
+
     def set_done(self, item_id: str, done: bool):
         """완료하면 하위도 모두 완료, 해제하면 상위와 하위를 모두 해제"""
         if todo_tree.set_done(self._items, item_id, done):
@@ -2361,7 +2383,8 @@ class TodoPanel(QWidget):
         (검색 / 날짜별 보기 중에는 접힘을 무시하므로 접기 / 펼치기는 이동만 한다)
         맨 위 / 맨 아래(기본 gg / Shift+G, 고정 Home / End): 처음 / 마지막 행
         삭제(기본·고정 Delete): 선택 항목 삭제 (확인 창은 설정에 따름)
-        잘라내기 / 복사 / 붙여넣기(기본·고정 Ctrl+X / C / V)"""
+        잘라내기 / 복사 / 붙여넣기(기본·고정 Ctrl+X / C / V)
+        체크(기본 Space): 선택 항목 완료 / 해제"""
         action = self._nav_action(key, modifiers)
         if not action:
             return False
@@ -2374,6 +2397,7 @@ class TodoPanel(QWidget):
             "todo_cut": self.cut_selected,
             "todo_copy": self.copy_selected,
             "todo_paste": self.paste,
+            "todo_check": self.toggle_selected,
         }
         if action in edits:
             edits[action]()
