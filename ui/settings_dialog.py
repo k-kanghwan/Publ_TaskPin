@@ -127,6 +127,7 @@ SHORTCUT_ROWS = [row for _group, rows in SHORTCUT_GROUPS for row in rows]
 # Appearance 선택지 (값, 표시) - 값은 widget_config.THEMES / LEFT_SCALES / TODO_SCALES 와 같다
 THEME_OPTIONS = [("dark", "다크"), ("light", "라이트"), ("system", "시스템")]
 ON_OFF_OPTIONS = [(False, "끔"), (True, "켬")]
+APP_ICON_LABELS = ("다크", "라이트")  # widget_config.APP_ICONS 순서
 SCALE_NAMES = {90: "작게", 100: "보통", 115: "크게", 130: "아주 크게"}
 POPUP_WIDTH_NAMES = {220: "좁게", 260: "보통", 320: "넓게", 380: "아주 넓게"}
 POPUP_PREVIEW_TEXT = "회의자료 준비하기 (예시)"
@@ -417,6 +418,8 @@ class SettingsDialog(QWidget):
     appearance_changed = Signal()
     # 설정 가져오기 - 새 설정 dict. TaskPinApp 이 cfg 를 바꾸고 위젯 / 이 창에 다시 적용한다
     config_imported = Signal(dict)
+    # config 의 "app_icon" 이 바뀜 - TaskPinApp 이 트레이 / 창 아이콘을 바꾼다
+    app_icon_changed = Signal()
 
     def __init__(self, cfg: dict, version_text: str, parent=None):
         """cfg: 위젯과 같은 설정 dict (여기서 고친 값을 바로 저장한다)"""
@@ -1118,6 +1121,18 @@ class SettingsDialog(QWidget):
         section.setObjectName("section")
         layout.addWidget(section)
 
+        # ---- 앱: 트레이 / 창 아이콘 ----
+        card_layout = self._add_group(layout, "앱")
+        box, self._app_icon_group = self._segmented(
+            list(zip(widget_config.APP_ICONS, APP_ICON_LABELS)), self._set_app_icon
+        )
+        self._add_row(
+            card_layout,
+            "앱 아이콘",
+            "트레이와 창 아이콘 (exe · 바로가기 아이콘은 바뀌지 않습니다)",
+            box,
+        ).setWordWrap(True)
+
         # ---- TODO: 삭제 확인 / 되돌릴 수 있는 삭제 수 ----
         card_layout = self._add_group(layout, "TODO")
         box, self._confirm_delete_group = self._segmented(
@@ -1172,6 +1187,11 @@ class SettingsDialog(QWidget):
         self._refresh_application()
         return page
 
+    def _set_app_icon(self, value: str):
+        self._cfg["app_icon"] = value
+        widget_config.save_config(self._cfg)
+        self.app_icon_changed.emit()
+
     def _set_confirm_delete(self, on: bool):
         self._cfg["confirm_delete"] = on
         widget_config.save_config(self._cfg)
@@ -1182,6 +1202,9 @@ class SettingsDialog(QWidget):
 
     def _refresh_application(self):
         """저장된 값으로 Application 탭 표시를 맞춘다 (위젯의 확인 창에서 "다시 묻지 않음"을 켰을 수 있다)."""
+        self._app_icon_group.button(
+            widget_config.APP_ICONS.index(widget_config.app_icon(self._cfg))
+        ).setChecked(True)
         self._confirm_delete_group.button(
             int(widget_config.confirm_delete(self._cfg))
         ).setChecked(True)

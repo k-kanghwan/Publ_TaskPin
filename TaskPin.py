@@ -10,6 +10,7 @@
 # nuitka-project: --windows-console-mode=disable
 # nuitka-project: --windows-icon-from-ico={MAIN_DIRECTORY}/ico/01_original_navy-coral/icon.ico
 # nuitka-project: --include-data-files={MAIN_DIRECTORY}/ico/01_original_navy-coral/icon.svg=ico/01_original_navy-coral/icon.svg
+# nuitka-project: --include-data-files={MAIN_DIRECTORY}/ico/03_light-indigo/icon.svg=ico/03_light-indigo/icon.svg
 # nuitka-project: --product-name=Task알림
 # nuitka-project: --product-version={APP_VERSION}
 # nuitka-project: --file-description=Task알림
@@ -48,6 +49,11 @@ from version import VERSION
 DEBUG = os.environ.get("TASKPIN_DEBUG") == "1"
 # Task 를 내리는 방식별 화면 문구 (task_store.COMPLETED / RELEASED)
 FINISH_VERBS = {task_store.COMPLETED: "완료", task_store.RELEASED: "해제"}
+# 설정창 Application "앱 아이콘" (widget_config.APP_ICONS) -> 트레이 / 창 아이콘 (resource_path 기준)
+APP_ICONS = {
+    "dark": "ico/01_original_navy-coral/icon.svg",
+    "light": "ico/03_light-indigo/icon.svg",
+}
 
 
 class TaskPinApp(TrayApp):
@@ -73,6 +79,7 @@ class TaskPinApp(TrayApp):
         # ==========================
         # 바탕화면 위젯
         self.widget_cfg = widget_config.load_config()
+        self._apply_app_icon()
         # 등록된 명령이 낡았으면 갱신 (디버그에서는 설치본 exe 등록값을 python 명령으로 덮어쓰지 않도록 건너뜀)
         if not DEBUG:
             os_win.sync_autostart_command()
@@ -295,6 +302,7 @@ class TaskPinApp(TrayApp):
             self._settings.shortcuts_changed.connect(self.widget.apply_shortcuts)
             self._settings.appearance_changed.connect(self.apply_appearance)
             self._settings.config_imported.connect(self.apply_imported_config)
+            self._settings.app_icon_changed.connect(self._apply_app_icon)
             self._settings.destroyed.connect(self._on_settings_destroyed)
         self._settings.show_front()
 
@@ -311,6 +319,12 @@ class TaskPinApp(TrayApp):
             font.setFamilies([appearance["font_family"], self._base_font.family()])
         QApplication.setFont(font)
 
+    def _apply_app_icon(self):
+        """설정의 앱 아이콘(다크 / 라이트)으로 트레이 / 창 아이콘을 바꾼다.
+        디버그 실행은 설치본과 구별하도록 늘 TRAY_ICON(graphite-lime)을 쓴다."""
+        if not DEBUG:
+            self.set_icon(APP_ICONS[widget_config.app_icon(self.widget_cfg)])
+
     def apply_appearance(self):
         """설정창 Appearance 변경: 위젯을 다시 입힌다. 팝업은 다음에 띄울 때부터 따른다."""
         self._apply_theme()
@@ -322,6 +336,7 @@ class TaskPinApp(TrayApp):
         self.widget_cfg.update(new)
         widget_config.save_config(self.widget_cfg)
         self.apply_appearance()
+        self._apply_app_icon()
         self.widget.apply_shortcuts(widget_config.shortcuts(self.widget_cfg))
         self.widget.reload_config()
         if self._settings is not None:

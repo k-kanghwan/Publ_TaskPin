@@ -102,6 +102,13 @@ def test_confirm_delete_and_undo_limit():
     )
 
 
+def test_app_icon():
+    assert widget_config.app_icon({}) == "dark"
+    assert widget_config.app_icon({"app_icon": "light"}) == "light"
+    for broken in ("blue", 1, None, ["light"]):
+        assert widget_config.app_icon({"app_icon": broken}) == "dark"
+
+
 def test_appearance_defaults():
     assert widget_config.appearance({}) == widget_config.DEFAULT_APPEARANCE
     assert widget_config.appearance({"appearance": "broken"}) == (

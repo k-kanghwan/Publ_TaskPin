@@ -62,15 +62,11 @@ class TrayApp(QWidget):
             QMessageBox.critical(None, "오류", "시스템 트레이를 사용할 수 없습니다.")
             sys.exit(1)
 
-        icon_path = paths.resource_path(self.TRAY_ICON)
-        icon = QIcon(icon_path)
-        if icon.isNull():
+        self.tray = QSystemTrayIcon(self)
+        if not self.set_icon(self.TRAY_ICON):
+            icon_path = paths.resource_path(self.TRAY_ICON)
             QMessageBox.critical(None, "오류", f"아이콘 파일이 없습니다: {icon_path}")
             sys.exit(1)
-        QApplication.setWindowIcon(icon)
-
-        self.tray = QSystemTrayIcon(self)
-        self.tray.setIcon(icon)
 
         # 바탕화면 위젯 표시 토글 (연결은 TaskPinApp 에서 수행)
         self.action_toggle_widget = QAction("위젯 보이기", self)
@@ -86,6 +82,16 @@ class TrayApp(QWidget):
 
         self.tray.setContextMenu(self.tray_menu)
         self.tray.show()
+
+    def set_icon(self, rel_path: str) -> bool:
+        """트레이 / 창 아이콘을 바꾼다 (resource_path 기준). 파일이 없으면 그대로 두고 False.
+        자기 아이콘이 없는 열린 창도 QApplication.setWindowIcon 으로 바로 바뀐다."""
+        icon = QIcon(paths.resource_path(rel_path))
+        if icon.isNull():
+            return False
+        QApplication.setWindowIcon(icon)
+        self.tray.setIcon(icon)
+        return True
 
     def _on_instance_connected(self):
         sockets = []

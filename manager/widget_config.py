@@ -76,6 +76,8 @@ _COLOR_RE = re.compile(r"#[0-9a-fA-F]{6}")
 # 우패널 "삭제 이력"으로 되돌릴 수 있는 최근 삭제 수 (설정창 Application)
 UNDO_LIMITS = (5, 10, 20, 50)
 DEFAULT_UNDO_LIMIT = 10
+# 트레이 / 창 아이콘 (설정창 Application) - 첫 값이 기본. exe 아이콘은 빌드 때 정해져 바뀌지 않는다
+APP_ICONS = ("dark", "light")
 
 DEFAULT_CONFIG = {
     "pos": None,  # [x, y] / None 이면 우측 상단 배치
@@ -99,6 +101,7 @@ DEFAULT_CONFIG = {
     "confirm_delete": True,
     "undo_limit": DEFAULT_UNDO_LIMIT,  # 되돌릴 수 있는 최근 삭제 수 (UNDO_LIMITS 중 하나)
     "todo_page": None,  # 마지막으로 본 TODO 페이지 id (없는 id 면 첫 페이지)
+    "app_icon": APP_ICONS[0],  # 트레이 / 창 아이콘 (APP_ICONS 중 하나)
 }
 CUSTOM_TAG_PREFIX = "custom-"  # 사용자 태그 id (todos.tag 에 저장되는 값)
 CUSTOM_TAG_NAME_MAX = 20
@@ -147,6 +150,12 @@ def confirm_delete(cfg: dict) -> bool:
 def undo_limit(cfg: dict) -> int:
     """되돌릴 수 있는 최근 삭제 수. 정해진 값이 아니면 기본값"""
     return _scale(cfg.get("undo_limit"), UNDO_LIMITS, DEFAULT_UNDO_LIMIT)
+
+
+def app_icon(cfg: dict) -> str:
+    """트레이 / 창 아이콘. 정해진 값이 아니면 기본값(다크)"""
+    value = cfg.get("app_icon")
+    return value if value in APP_ICONS else APP_ICONS[0]
 
 
 def custom_tags(cfg: dict) -> list:
