@@ -943,6 +943,7 @@ class TodoPanel(QWidget):
         self.page_bar.add_requested.connect(self.add_page)
         self.page_bar.rename_requested.connect(self.rename_page)
         self.page_bar.move_requested.connect(self.move_page)
+        self.page_bar.page_moved.connect(self.move_page_to)
         self.page_bar.delete_requested.connect(self.delete_page)
         self.page_bar.set_pages(self._pages, self._page_id)
         self._page_bar_pos = None
@@ -1775,8 +1776,14 @@ class TodoPanel(QWidget):
         ids = self._page_ids()
         idx = ids.index(self._page_id)
         if 0 <= idx + step < len(ids):
-            ids.insert(idx + step, ids.pop(idx))
-            todo_pages.reorder(ids)
+            self.move_page_to(self._page_id, idx + step)
+
+    def move_page_to(self, page_id: int, index: int):
+        """페이지를 index 자리로 옮긴다 (칩 드래그)"""
+        ids = self._page_ids()
+        order = todo_pages.moved(ids, page_id, index)
+        if order != ids:
+            todo_pages.reorder(order)
             self._reload_pages()
 
     def delete_page(self):

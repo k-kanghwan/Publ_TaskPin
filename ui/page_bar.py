@@ -8,6 +8,8 @@
     칩이 폭을 넘치면 지금 페이지 칩이 보이게 옆으로 민다.
   - 왼쪽 / 오른쪽: 세로로 [점들][+]   (이름은 점의 툴팁)
   - 점: 지금 페이지는 강조색 알약, 나머지는 작은 점. 누르면 그 페이지로 (바뀔 때 알약이 옮겨 가며 늘었다 줄어든다)
+  - 칩을 끌면 브라우저 탭처럼 순서를 바꾼다 (나머지 칩이 비켜서고, 넘치면 끝에서 밀림, Esc 취소).
+    점은 끌지 않는다.
   - 휠: 앞 / 뒤 페이지, 우클릭: 새 페이지 / 이름 바꾸기 / 앞·뒤로 옮기기 / 페이지 삭제
     (다른 페이지 칩에서 우클릭하면 그 페이지로 넘어간 뒤 메뉴를 띄운다)
 """
@@ -19,6 +21,7 @@ from PySide6.QtCore import (
     QRectF,
     QSize,
     Qt,
+    QTimer,
     QVariantAnimation,
     Signal,
 )
@@ -32,6 +35,7 @@ from PySide6.QtGui import (
     QPixmap,
 )
 from PySide6.QtWidgets import (
+    QApplication,
     QBoxLayout,
     QMenu,
     QPushButton,
@@ -40,6 +44,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from manager import todo_pages
 from ui import theme
 from ui.theme import px
 
@@ -62,6 +67,9 @@ CHIP_HOVER_ALPHA = 110
 CHIP_FONT_PX = 11  # 우패널 글자 배율을 곱한다
 CHIP_COUNT_GAP = 5  # 칩 안 이름 - 할 일 수 배지 간격(px)
 COUNT_PAD_H = 4  # 할 일 수 배지 좌우 여백(px)
+CHIP_SLIDE_MS = 120  # 칩을 끌 때 나머지 칩이 비켜서는 시간
+DRAG_SCROLL_MS = 30  # 칩을 끌어 양 끝에 대면 이 간격으로 민다
+DRAG_SCROLL_STEP = 6  # 한 번에 미는 폭(px)
 
 
 class PageDots(QWidget):
@@ -199,10 +207,12 @@ class PageDots(QWidget):
 class PageTabs(QWidget):
     """모든 페이지 이름 칩 [페이지 1] [페이지 2] ... 지금 페이지는 강조색 테두리.
     누르면 그 페이지로, 더블클릭하면 이름 바꾸기. 칩이 폭을 넘치면 지금 페이지 칩이 보이게 옆으로 민다.
+    칩을 끌면 브라우저 탭처럼 커서를 따라가고 나머지 칩이 놓일 자리를 비켜 준다 (놓으면 page_moved).
     둥근 테두리는 스타일시트(border-radius)가 아니라 직접 그린다 (배율에 따라 모서리가 깨지지 않게)."""
 
     page_clicked = Signal(int)  # 페이지 id
     page_double_clicked = Signal(int)
+    page_moved = Signal(int, int)  # 칩을 끌어 놓음 - 페이지 id, 새 index
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -211,6 +221,25 @@ class PageTabs(QWidget):
         self._counts = {}  # 페이지 id -> 체크 안 한 할 일 수
         self._hover = None  # 마우스가 올라간 칩 index
         self._offset = 0.0  # 넘칠 때 왼쪽으로 민 만큼(px)
+        # 칩 드래그
+        # 드래그를 시작하기 전 누른 칩 (페이지 id, 누른 x - 내용 좌표, 누른 x - 위젯 좌표)
+        self._press = None
+        self._drag_id = None  # 끌고 있는 페이지 id
+        self._drag_from = 0  # 끌기 시작한 index
+        self._drag_slot = 0  # 지금 놓으면 갈 index
+        self._drag_grab = 0.0  # 칩 왼쪽 끝 ~ 커서
+        self._drag_x = 0.0  # 커서 x (이 위젯 좌표)
+        self._slide_from = {}  # 페이지 id -> 비켜서기 시작한 x
+        self._slide = 1.0  # 비켜서기 0 ~ 1
+        self._slide_anim = QVariantAnimation(self)
+        self._slide_anim.setDuration(CHIP_SLIDE_MS)
+        self._slide_anim.setStartValue(0.0)
+        self._slide_anim.setEndValue(1.0)
+        self._slide_anim.setEasingCurve(QEasingCurve.OutCubic)
+        self._slide_anim.valueChanged.connect(self._set_slide)
+        self._scroll_timer = QTimer(self)
+        self._scroll_timer.setInterval(DRAG_SCROLL_MS)
+        self._scroll_timer.timeout.connect(self._auto_scroll)
         self.setMouseTracking(True)
         self.setCursor(Qt.PointingHandCursor)
         # 남는 폭은 받되, 칩이 많아도 패널을 넓히지 않는다 (minimumSizeHint 폭 0)
@@ -219,6 +248,9 @@ class PageTabs(QWidget):
     def set_pages(self, pages: list, current_id: int):
         self._pages = list(pages)
         self._current = current_id
+        if self._drag_id is not None and self._drag_id not in self._ids():
+            self._end_drag()  # 끄는 중에 그 페이지가 없어짐
+        self._drag_slot = min(self._drag_slot, max(0, len(self._pages) - 1))
         self.updateGeometry()
         self._keep_current_visible()
         self.update()
@@ -256,19 +288,39 @@ class PageTabs(QWidget):
     def _chip_height(self) -> int:
         return self.fontMetrics().height() + CHIP_PAD_V * 2 + 2
 
-    def _rects(self) -> list:
-        """칩 자리 (민 만큼 옮기기 전)"""
+    def _ids(self) -> list:
+        return [page["id"] for page in self._pages]
+
+    def _widths(self) -> dict:
+        """페이지 id -> 칩 폭 (칩 사이 간격 제외)"""
         metrics = self.fontMetrics()
-        rects, x = [], 0.5  # 1px 테두리가 흐려지지 않게 반 픽셀
-        height = self._chip_height()
-        top = (self.height() - height) / 2 + 0.5
-        for name, count in zip(self._names(), self._count_texts()):
+        widths = {}
+        for page, name, count in zip(self._pages, self._names(), self._count_texts()):
             width = metrics.horizontalAdvance(name) + CHIP_PAD_H * 2 + 2
             if count:
                 width += CHIP_COUNT_GAP + self._badge_width(count)
-            rects.append(QRectF(x, top, width - 1, height - 1))
-            x += width + CHIP_GAP
-        return rects
+            widths[page["id"]] = width
+        return widths
+
+    @staticmethod
+    def _lefts(order: list, widths: dict) -> dict:
+        """order 순서로 늘어놓은 칩의 왼쪽 x (페이지 id -> x, 민 만큼 옮기기 전)"""
+        lefts, x = {}, 0.5  # 1px 테두리가 흐려지지 않게 반 픽셀
+        for page_id in order:
+            lefts[page_id] = x
+            x += widths[page_id] + CHIP_GAP
+        return lefts
+
+    def _rects(self) -> list:
+        """칩 자리 (민 만큼 옮기기 전)"""
+        ids, widths = self._ids(), self._widths()
+        lefts = self._lefts(ids, widths)
+        height = self._chip_height()
+        top = (self.height() - height) / 2 + 0.5
+        return [
+            QRectF(lefts[page_id], top, widths[page_id] - 1, height - 1)
+            for page_id in ids
+        ]
 
     def _total_width(self) -> int:
         rects = self._rects()
@@ -281,8 +333,10 @@ class PageTabs(QWidget):
         return QSize(0, self._chip_height())
 
     def _keep_current_visible(self):
-        """지금 페이지 칩이 다 보이도록 민다 (넘치지 않으면 0)"""
-        ids = [page["id"] for page in self._pages]
+        """지금 페이지 칩이 다 보이도록 민다 (넘치지 않으면 0). 칩을 끄는 중에는 그대로 둔다."""
+        if self._drag_id is not None:
+            return
+        ids = self._ids()
         rects = self._rects()
         if self._current not in ids or not rects:
             self._offset = 0.0
@@ -298,12 +352,6 @@ class PageTabs(QWidget):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self._keep_current_visible()
-
-    def changeEvent(self, event):
-        super().changeEvent(event)
-        if event.type() == QEvent.FontChange:  # 글자 배율이 바뀜
-            self.updateGeometry()
-            self._keep_current_visible()
 
     def page_at(self, pos):
         """pos(이 위젯 좌표)의 칩 페이지 id / 칩이 아니면 None"""
@@ -350,40 +398,171 @@ class PageTabs(QWidget):
     def _paint_chips(self, painter: QPainter):
         t = theme.current()
         painter.setFont(self.font())
+        chips = zip(self._ids(), self._rects(), self._names(), self._count_texts())
+        if self._drag_id is None:
+            for idx, (page_id, rect, name, count) in enumerate(chips):
+                current = page_id == self._current
+                self._paint_chip(painter, t, rect, name, count, current, idx == self._hover)
+            return
+        # 끄는 중: 나머지 칩은 놓일 자리를 비켜 서고, 끄는 칩은 커서를 따라 맨 위에 (배경을 칠해 덮는다)
+        lefts = self._shown_lefts()
+        dragged = None
+        for page_id, rect, name, count in chips:
+            current = page_id == self._current
+            if page_id == self._drag_id:
+                rect.moveLeft(self._drag_left())
+                dragged = (rect, name, count, current)
+                continue
+            rect.moveLeft(lefts[page_id])
+            self._paint_chip(painter, t, rect, name, count, current, False)
+        if dragged is not None:
+            self._paint_chip(painter, t, *dragged, True, QColor(t.bg))
+
+    def _paint_chip(self, painter, t, rect, name, count, current, hover, fill=None):
         radius = self._chip_height() / 2
-        counts = self._count_texts()
-        for idx, (rect, name) in enumerate(zip(self._rects(), self._names())):
-            current = self._pages[idx]["id"] == self._current
-            hover = idx == self._hover
-            if current:
-                border, text = QColor(t.accent), t.text_main
-            else:
-                border = t.overlay_color(CHIP_HOVER_ALPHA if hover else CHIP_ALPHA)
-                text = t.text_main if hover else t.text_sub
-            painter.setPen(QPen(border, 1))
-            painter.setBrush(Qt.NoBrush)
-            painter.drawRoundedRect(rect, radius, radius)
-            # 이름 + 할 일 수를 한 덩어리로 가운데에
-            inner = rect.adjusted(CHIP_PAD_H + 0.5, 0, -(CHIP_PAD_H + 0.5), 0)
-            painter.setPen(QColor(text))
-            painter.drawText(inner, Qt.AlignLeft | Qt.AlignVCenter, name)
-            if counts[idx]:  # 오른쪽 끝에 강조색 알약 배지
-                badge_h = rect.height() - 4
-                badge = QRectF(
-                    inner.right() - self._badge_width(counts[idx]),
-                    rect.center().y() - badge_h / 2,
-                    self._badge_width(counts[idx]),
-                    badge_h,
-                )
-                painter.setPen(Qt.NoPen)
-                painter.setBrush(QColor(t.accent) if current else t.overlay_color(60))
-                painter.drawRoundedRect(badge, badge_h / 2, badge_h / 2)
-                painter.setFont(self._count_font())
-                painter.setPen(QColor(t.on_accent if current else t.text_main))
-                painter.drawText(badge, Qt.AlignCenter, counts[idx])
-                painter.setFont(self.font())
+        if current:
+            border, text = QColor(t.accent), t.text_main
+        else:
+            border = t.overlay_color(CHIP_HOVER_ALPHA if hover else CHIP_ALPHA)
+            text = t.text_main if hover else t.text_sub
+        painter.setPen(QPen(border, 1))
+        painter.setBrush(fill if fill is not None else Qt.NoBrush)
+        painter.drawRoundedRect(rect, radius, radius)
+        # 이름 + 할 일 수를 한 덩어리로 가운데에
+        inner = rect.adjusted(CHIP_PAD_H + 0.5, 0, -(CHIP_PAD_H + 0.5), 0)
+        painter.setPen(QColor(text))
+        painter.drawText(inner, Qt.AlignLeft | Qt.AlignVCenter, name)
+        if count:  # 오른쪽 끝에 강조색 알약 배지
+            badge_h = rect.height() - 4
+            badge = QRectF(
+                inner.right() - self._badge_width(count),
+                rect.center().y() - badge_h / 2,
+                self._badge_width(count),
+                badge_h,
+            )
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QColor(t.accent) if current else t.overlay_color(60))
+            painter.drawRoundedRect(badge, badge_h / 2, badge_h / 2)
+            painter.setFont(self._count_font())
+            painter.setPen(QColor(t.on_accent if current else t.text_main))
+            painter.drawText(badge, Qt.AlignCenter, count)
+            painter.setFont(self.font())
+
+    # ---- 칩 드래그 (순서 바꾸기) ----
+    def dragging(self) -> bool:
+        return self._drag_id is not None
+
+    def _drag_order(self) -> list:
+        """끄는 칩을 지금 놓으면 될 순서"""
+        return todo_pages.moved(self._ids(), self._drag_id, self._drag_slot)
+
+    def _drag_left(self) -> float:
+        """끄는 칩의 왼쪽 x (내용 좌표) - 커서를 따라가되 칩 줄 밖으로는 나가지 않는다"""
+        widths = self._widths()
+        right_most = 0.5 + sum(
+            widths[page_id] + CHIP_GAP for page_id in widths if page_id != self._drag_id
+        )
+        left = self._drag_x + self._offset - self._drag_grab
+        return min(max(0.5, left), right_most)
+
+    def _shown_lefts(self) -> dict:
+        """비켜서는 중인 칩들의 지금 x (페이지 id -> x)"""
+        target = self._lefts(self._drag_order(), self._widths())
+        if self._slide >= 1.0:
+            return target
+        return {
+            page_id: self._slide_from.get(page_id, x)
+            + (x - self._slide_from.get(page_id, x)) * self._slide
+            for page_id, x in target.items()
+        }
+
+    def _set_slide(self, value):
+        self._slide = value
+        self.update()
+
+    def _start_drag(self, x: float):
+        page_id, press_x, _ = self._press
+        self._press = None
+        ids = self._ids()
+        if page_id not in ids:
+            return
+        widths = self._widths()
+        left = self._lefts(ids, widths)[page_id]
+        self._drag_id = page_id
+        self._drag_from = self._drag_slot = ids.index(page_id)
+        self._drag_grab = min(max(0.0, press_x - left), widths[page_id])
+        self._slide_from, self._slide = {}, 1.0
+        self._hover = None
+        QToolTip.hideText()
+        self.setCursor(Qt.ClosedHandCursor)
+        self.grabKeyboard()  # Esc 로 취소
+        self._scroll_timer.start()
+        self._drag_to(x)
+
+    def _drag_to(self, x: float):
+        self._drag_x = x
+        self._update_slot()
+        self.update()
+
+    def _update_slot(self):
+        """끄는 칩이 쉬어 갈 자리 중 지금 칩 위치와 가장 가까운 곳으로 놓일 자리를 정한다
+        (칩 폭이 달라도 반쯤 넘어가면 자리가 바뀐다). 바뀌면 나머지 칩이 비켜서기 시작한다."""
+        ids, widths = self._ids(), self._widths()
+        left = self._drag_left()
+        slot = min(
+            range(len(ids)),
+            key=lambda s: abs(
+                self._lefts(todo_pages.moved(ids, self._drag_id, s), widths)[
+                    self._drag_id
+                ]
+                - left
+            ),
+        )
+        if slot != self._drag_slot:
+            self._slide_from = self._shown_lefts()
+            self._drag_slot = slot
+            self._slide = 0.0
+            self._slide_anim.stop()
+            self._slide_anim.start()
+
+    def _auto_scroll(self):
+        """칩이 넘칠 때 커서가 양 끝(흐린 곳)에 있으면 그쪽으로 민다"""
+        width = self.width()
+        limit = max(0.0, self._total_width() - width)
+        step = 0
+        if self._drag_x < CHIP_FADE:
+            step = -DRAG_SCROLL_STEP
+        elif self._drag_x > width - CHIP_FADE:
+            step = DRAG_SCROLL_STEP
+        offset = min(max(0.0, self._offset + step), limit)
+        if offset != self._offset:
+            self._offset = offset
+            self._update_slot()
+            self.update()
+
+    def _end_drag(self):
+        """드래그 끝 / 취소 (놓을지는 부르는 쪽이 정한다)"""
+        self._press = None
+        if self._drag_id is None:
+            return
+        self._drag_id = None
+        self._scroll_timer.stop()
+        self._slide_anim.stop()
+        self._slide_from, self._slide = {}, 1.0
+        self.releaseKeyboard()
+        self.setCursor(Qt.PointingHandCursor)
+        self._keep_current_visible()
+        self.update()
 
     def mouseMoveEvent(self, event):
+        x = event.position().x()
+        if self._drag_id is not None:
+            self._drag_to(x)
+            return
+        if self._press is not None and (event.buttons() & Qt.LeftButton):
+            if abs(x - self._press[2]) >= QApplication.startDragDistance():
+                self._start_drag(x)
+            return
         idx = self._index_at(event.position())
         if idx != self._hover:
             self._hover = idx
@@ -404,12 +583,46 @@ class PageTabs(QWidget):
         super().leaveEvent(event)
 
     def mousePressEvent(self, event):
+        if self._drag_id is not None:
+            event.accept()  # 끄는 중 다른 버튼
+            return
         idx = self._index_at(event.position())
         if event.button() == Qt.LeftButton and idx is not None:
-            self.page_clicked.emit(self._pages[idx]["id"])
+            page_id = self._pages[idx]["id"]
+            x = event.position().x()
+            # 넘어가면서(page_clicked) 칩 줄이 밀릴 수 있으니 내용 좌표는 먼저 잡아 둔다
+            self._press = (page_id, x + self._offset, x)
+            self.page_clicked.emit(page_id)
             event.accept()
             return
         event.ignore()  # 칩 사이 빈 곳은 위젯 창 이동으로 넘긴다
+
+    def mouseReleaseEvent(self, event):
+        if self._drag_id is not None and event.button() == Qt.LeftButton:
+            page_id, slot, start = self._drag_id, self._drag_slot, self._drag_from
+            self._end_drag()
+            if slot != start:
+                self.page_moved.emit(page_id, slot)
+            event.accept()
+            return
+        if event.button() == Qt.LeftButton:
+            self._press = None
+        super().mouseReleaseEvent(event)
+
+    def keyPressEvent(self, event):
+        if self._drag_id is not None and event.key() == Qt.Key_Escape:
+            self._end_drag()  # 취소 - 원래 순서 그대로
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        if event.type() == QEvent.FontChange:  # 글자 배율이 바뀜
+            self.updateGeometry()
+            self._keep_current_visible()
+        elif event.type() == QEvent.ActivationChange and not self.isActiveWindow():
+            self._end_drag()  # 끄는 중 다른 창으로 넘어감 - 놓음이 오지 않는다
 
     def mouseDoubleClickEvent(self, event):
         idx = self._index_at(event.position())
@@ -428,6 +641,7 @@ class PageBar(QWidget):
     add_requested = Signal()
     rename_requested = Signal()
     move_requested = Signal(int)  # 지금 페이지를 앞(-1) / 뒤(+1)로
+    page_moved = Signal(int, int)  # 칩을 끌어 놓음 - 페이지 id, 새 index
     delete_requested = Signal()
 
     def __init__(self, parent=None):
@@ -442,6 +656,7 @@ class PageBar(QWidget):
         self.tabs = PageTabs(self)
         self.tabs.page_clicked.connect(self.page_selected.emit)
         self.tabs.page_double_clicked.connect(self._on_tab_double_clicked)
+        self.tabs.page_moved.connect(self.page_moved.emit)
         self.dots = PageDots(self)
         self.dots.page_clicked.connect(self.page_selected.emit)
         self.btn_add = QPushButton("+", self)
@@ -494,13 +709,16 @@ class PageBar(QWidget):
 
     def wheelEvent(self, event):
         dy = event.angleDelta().y()
-        if dy:
+        if dy and not self.tabs.dragging():  # 칩을 끄는 중에는 넘기지 않는다
             self.step_requested.emit(-1 if dy > 0 else 1)
         event.accept()  # 목록이 스크롤되지 않게
 
     def contextMenuEvent(self, event):
         """지금 페이지 메뉴 (할 일 목록의 우클릭 메뉴로 올려 보내지 않는다).
         다른 페이지 칩 위에서 열면 그 페이지로 넘어간 뒤 그 페이지의 메뉴를 띄운다."""
+        if self.tabs.dragging():
+            event.accept()
+            return
         if self.tabs.isVisible():
             page_id = self.tabs.page_at(self.tabs.mapFromGlobal(event.globalPos()))
             if page_id is not None and page_id != self._current:

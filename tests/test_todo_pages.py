@@ -20,6 +20,17 @@ def test_add_rename_reorder_remove(temp_db):
     assert [page["id"] for page in todo_pages.load()] == [1, second["id"]]
 
 
+def test_moved():
+    ids = [1, 2, 3, 4]
+    assert todo_pages.moved(ids, 1, 2) == [2, 3, 1, 4]  # 앞 -> 뒤
+    assert todo_pages.moved(ids, 4, 0) == [4, 1, 2, 3]  # 뒤 -> 앞
+    assert todo_pages.moved(ids, 3, 2) == ids  # 같은 자리
+    assert todo_pages.moved(ids, 2, 99) == [1, 3, 4, 2]  # 범위 밖은 끝으로
+    assert todo_pages.moved(ids, 3, -5) == [3, 1, 2, 4]
+    assert todo_pages.moved(ids, 9, 0) == ids  # 없는 페이지는 그대로
+    assert ids == [1, 2, 3, 4]  # 원래 목록은 그대로
+
+
 def test_load_recreates_a_page_when_empty(temp_db):
     todo_pages.remove(1)
     pages = todo_pages.load()

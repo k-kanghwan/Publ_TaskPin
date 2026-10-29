@@ -76,6 +76,15 @@ def rename(page_id: int, name: str) -> None:
         print(f"TODO 페이지 이름 변경 실패: {e}")
 
 
+def moved(ids: list, page_id: int, index: int) -> list:
+    """page_id 를 빼서 index 자리(0 ~ 마지막으로 자름)에 넣은 새 순서 (칩 드래그 / 앞·뒤로 옮기기)"""
+    order = [other for other in ids if other != page_id]
+    if len(order) == len(ids):
+        return list(ids)
+    order.insert(min(max(0, index), len(order)), page_id)
+    return order
+
+
 def reorder(ids: list) -> None:
     """ids 순서대로 position 을 다시 매긴다."""
     c = db.conn()
