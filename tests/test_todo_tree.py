@@ -318,3 +318,19 @@ def test_paste_target_keeps_level_up_to_one_below_anchor():
     assert todo_tree.paste_target(items, "a", 1, skip={"a1"}) == ("a", "a2")
     assert todo_tree.paste_target(items, "a1", 1, skip={"a2"}) == ("a", None)
     assert todo_tree.paste_target(items, None, 3) == (None, None)
+
+
+def test_indent_and_outdent_targets():
+    # a(0) > a1(1) > a1x(2) / a2(1) / b(0)
+    items = _items(("a", None), ("a1", "a"), ("a1x", "a1"), ("a2", "a"), ("b", None))
+    # 내리기: 바로 위 형제의 하위로 / 맨 앞 형제는 못 내림
+    assert todo_tree.indent_target(items, "a2") == "a1"
+    assert todo_tree.indent_target(items, "b") == "a"
+    assert todo_tree.indent_target(items, "a1") is None
+    assert todo_tree.indent_target(items, "a2", can_parent=lambda i: i["id"] != "a1") is None
+    # 화면 순서(sort_key)의 바로 위 형제
+    assert todo_tree.indent_target(items, "a1", sort_key=lambda i: i["id"] != "a2") == "a2"
+    # 올리기: 상위 바로 뒤 형제로 / 최상위는 못 올림
+    assert todo_tree.outdent_target(items, "a1x") == ("a", "a2")
+    assert todo_tree.outdent_target(items, "a2") == (None, "b")
+    assert todo_tree.outdent_target(items, "a") is None

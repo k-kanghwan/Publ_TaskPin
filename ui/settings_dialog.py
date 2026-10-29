@@ -59,6 +59,7 @@ from ui.color_dialog import pick_color
 from ui.confirm_dialog import ConfirmDialog
 from ui.reminder_popup import ReminderPopup
 from ui.tag_dialog import TagDialog
+from ui.todo_panel import plain_symbol
 
 WINDOW_TITLE = "Task알림 설정"
 WINDOW_SIZE = (800, 580)  # 가장 큰 알림 창 예시(380px × 130%)가 잘리지 않도록
@@ -108,6 +109,8 @@ SHORTCUT_GROUPS = [
             ("todo_focus", "할 일 추가", "할 일 입력칸으로 커서 이동"),
             ("todo_edit", "할 일 수정", "선택한 할 일을 수정합니다 (F2 도 됩니다)"),
             ("todo_check", "할 일 체크", "선택한 할 일을 완료 / 해제합니다"),
+            ("todo_outdent", "단계 올리기", "선택한 할 일을 상위 바로 뒤로 올립니다"),
+            ("todo_indent", "단계 내리기", "선택한 할 일을 바로 위 할 일의 하위로 내립니다"),
             ("todo_delete", "할 일 삭제", "선택한 할 일을 삭제합니다 (Delete 도 됩니다)"),
             ("todo_cut", "잘라내기", "붙여넣으면 옮겨집니다 (Ctrl+X 도 됩니다)"),
             ("todo_copy", "복사", "하위와 함께 복사합니다 (Ctrl+C 도 됩니다)"),
@@ -313,8 +316,9 @@ def _keys_overlap(a: str, b: str) -> bool:
     """두 단축키가 같거나 한쪽이 다른 쪽의 앞부분인지 ("G" 와 "G, G" - 앞 키에서 바로 실행되어 버린다)"""
     seq_a = QKeySequence(a, QKeySequence.PortableText)
     seq_b = QKeySequence(b, QKeySequence.PortableText)
-    combos_a = [seq_a[i].toCombined() for i in range(seq_a.count())]
-    combos_b = [seq_b[i].toCombined() for i in range(seq_b.count())]
+    # Shift 로 치는 기호는 Shift 를 떼고 본다 ("<" 와 "Shift+<" 는 같은 키 - todo_panel.plain_symbol)
+    combos_a = [plain_symbol(seq_a[i].toCombined()) for i in range(seq_a.count())]
+    combos_b = [plain_symbol(seq_b[i].toCombined()) for i in range(seq_b.count())]
     shorter = min(len(combos_a), len(combos_b))
     return shorter > 0 and combos_a[:shorter] == combos_b[:shorter]
 
@@ -689,7 +693,7 @@ class SettingsDialog(QWidget):
             "Keyboard Shortcuts",
             "위젯을 클릭해 활성화한 상태에서 동작합니다. 입력칸에 커서가 있으면 글자 키는 글자로 입력됩니다. "
             "키를 두 번 이어 눌러 G, G (gg) 처럼 정할 수도 있습니다.\n"
-            "탐색 키와 체크 · 삭제 · 잘라내기 · 복사 · 붙여넣기는 할 일 목록에 포커스가 있을 때만 동작합니다. "
+            "탐색 키와 체크 · 단계 올리기 / 내리기 · 삭제 · 잘라내기 · 복사 · 붙여넣기는 할 일 목록에 포커스가 있을 때만 동작합니다. "
             "고정 키(바꿔도 함께 동작): ↑↓←→ · Home/End · Delete · Ctrl+X/C/V · F2 수정(선택이 없으면 "
             "페이지 이름) · Esc 선택 해제",
         )

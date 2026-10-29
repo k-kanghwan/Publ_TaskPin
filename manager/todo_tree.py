@@ -239,6 +239,35 @@ def next_sibling_id(items: list, item_id, skip=()):
     return siblings[idx + 1]["id"] if idx + 1 < len(siblings) else None
 
 
+def indent_target(items: list, item_id, sort_key=None, can_parent=None):
+    """단계 내리기(기본 >): 화면에서 바로 위 형제의 하위 맨 뒤로 들어갈 상위 id. 못 내리면 None
+    items: 같은 페이지의 항목 (다른 페이지 항목이 형제로 잡히지 않게)
+    sort_key: 형제를 화면 순서로 (TodoPanel._sort_key) / can_parent: 상위가 될 수 있는지 (구분선은 안 됨)"""
+    item = _find(items, item_id)
+    if item is None:
+        return None
+    siblings = [other for other in items if other.get("parent_id") == item.get("parent_id")]
+    if sort_key is not None:
+        siblings = sorted(siblings, key=sort_key)
+    idx = siblings.index(item)
+    if idx == 0:
+        return None
+    above = siblings[idx - 1]
+    if can_parent is not None and not can_parent(above):
+        return None
+    return above["id"]
+
+
+def outdent_target(items: list, item_id):
+    """단계 올리기(기본 <): 상위 바로 뒤 형제가 될 자리 (상위의 상위, 이 형제 앞). 최상위면 None
+    items: 같은 페이지의 항목 (상위 바로 뒤 형제를 같은 페이지에서 찾는다)"""
+    item = _find(items, item_id)
+    parent = _find(items, item.get("parent_id")) if item is not None else None
+    if parent is None:
+        return None
+    return parent.get("parent_id"), next_sibling_id(items, parent["id"])
+
+
 def paste_target(items: list, anchor_id, level: int, skip=()):
     """붙여넣을 자리: anchor 바로 아래에 원래 레벨(level, 최상위 0)을 지켜서 넣는다.
     anchor 보다 깊으면 한 단계 아래(anchor 의 첫 하위)까지만 - 3레벨을 1레벨 아래에 붙이면 2레벨.

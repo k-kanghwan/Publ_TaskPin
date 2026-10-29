@@ -12,7 +12,8 @@
   하위 레벨 가이드 선(강조색, 설정)과 행 구분선(설정)도 목록이 그린다.
   선택한 채로 입력하면 마지막으로 클릭한 항목의 하위로 들어간다 (구분선을 골랐으면 그 바로 아래로).
 - 키보드: ↑↓ 선택 이동(선택이 없으면 마지막으로 고른 행, 없으면 보이는 영역 가운데부터) / ← 접기·상위로
-  / → 펴기·첫 하위로 / 맨 위·맨 아래(gg / Shift+G) / 체크(Space)·삭제·잘라내기·복사·붙여넣기 - 모두 설정 단축키(set_nav_keys)
+  / → 펴기·첫 하위로 / 맨 위·맨 아래(gg / Shift+G) / 체크(Space)·단계 올리기(<)·내리기(>)·삭제·잘라내기·복사·붙여넣기
+  - 모두 설정 단축키(set_nav_keys)
   / 고정 키(FIXED_NAV_KEYS): ↑↓←→ · Home/End · Delete · Ctrl+X/C/V / 수정은 고정 F2(선택이 없으면 페이지 이름)
   + 설정 단축키(기본 Enter, 창 단축키 - ClockWidget.apply_shortcuts).
   목록의 화살표 스크롤 대신 선택을 옮긴다. 메뉴 키(Shift+F10)는 지금 행 아래에 우클릭 메뉴를 띄운다.
@@ -161,6 +162,19 @@ HIGHLIGHT_FADE_MS = 600
 
 def _combo(key, modifiers=Qt.NoModifier) -> int:
     return QKeyCombination(modifiers, key).toCombined()
+
+
+def plain_symbol(combo: int) -> int:
+    """Shift 로 치는 기호(< > ? : 등)는 Shift 를 떼고 비교한다 - 설정에 "<" 로 두어도
+    Shift+< 로 눌리고, 단축키 입력칸에서 눌러 "Shift+<" 로 저장돼도 같은 키로 본다 (글자 키 Shift+G 는 그대로)"""
+    keys = QKeyCombination.fromCombined(combo)
+    key = keys.key().value
+    shift = keys.keyboardModifiers() & Qt.ShiftModifier
+    if shift and 0x21 <= key <= 0x7E and not (0x41 <= key <= 0x5A):
+        return QKeyCombination(
+            keys.keyboardModifiers() & ~Qt.ShiftModifier, keys.key()
+        ).toCombined()
+    return combo
 
 
 # 목록 키보드 이동 (TodoPanel.handle_nav_key) - 목록 스크롤 대신 선택을 옮긴다.
@@ -1357,6 +1371,36 @@ class TodoPanel(QWidget):
             if row is not None:
                 self._reveal(row, NAV_SCROLL_MARGIN)
 
+    def shift_level(self, step: int):
+        """단계 올리기(-1, 기본 <) / 내리기(+1, 기본 >): 선택 항목을 하위와 함께 한 단계씩 옮긴다.
+        내리기는 화면에서 바로 위 형제의 하위 맨 뒤로 (위 형제가 없거나 구분선이면 그대로),
+        올리기는 상위 바로 뒤 형제로 (최상위면 그대로). 거르는 중에는 숨은 형제가 있어 옮기지 않는다.
+        이어진 형제를 함께 고르면 순서를 지킨다 (내리기는 앞부터, 올리기는 뒤부터 옮김)."""
+        if self._shown_ids is not None:
+            return
+        roots = todo_tree.top_selected(self._items, self._selected_ids())
+        changed = False
+        for root_id in roots if step > 0 else list(reversed(roots)):
+            scope = self._page_items()  # 앞에서 옮긴 결과를 보고 다시 정한다
+            if step > 0:
+                parent_id = todo_tree.indent_target(
+                    scope,
+                    root_id,
+                    self._sort_key,
+                    lambda item: not todo_store.is_separator(item["text"]),
+                )
+                target = (parent_id, None) if parent_id is not None else None
+            else:
+                target = todo_tree.outdent_target(scope, root_id)
+            if target is not None:
+                changed = todo_tree.move(self._items, root_id, *target) or changed
+                todo_tree.expand_ancestors(self._items, root_id)  # 접힌 상위로 들어가면 펼침
+        if changed:
+            self._save_and_rebuild()
+            row = self._current_row()
+            if row is not None:
+                self._reveal(row, NAV_SCROLL_MARGIN)
+
     def set_done(self, item_id: str, done: bool):
         """완료하면 하위도 모두 완료, 해제하면 상위와 하위를 모두 해제"""
         if todo_tree.set_done(self._items, item_id, done):
@@ -2339,7 +2383,10 @@ class TodoPanel(QWidget):
         for action in widget_config.LIST_SHORTCUTS:
             sequence = QKeySequence(mapping.get(action, ""), QKeySequence.PortableText)
             if not sequence.isEmpty():
-                combos = tuple(sequence[i].toCombined() for i in range(sequence.count()))
+                combos = tuple(
+                    plain_symbol(sequence[i].toCombined())
+                    for i in range(sequence.count())
+                )
                 self._nav_keys[combos] = action
         self._clear_nav_pending()
 
@@ -2355,7 +2402,7 @@ class TodoPanel(QWidget):
             return ""  # Shift+G 의 Shift 만 눌렸을 때 - 기다리던 키를 지우지 않는다
         modifiers = Qt.KeyboardModifiers(modifiers) & ~Qt.KeypadModifier
         try:
-            combo = QKeyCombination(modifiers, Qt.Key(key)).toCombined()
+            combo = plain_symbol(QKeyCombination(modifiers, Qt.Key(key)).toCombined())
         except ValueError:  # Qt.Key 에 없는 키 코드
             self._clear_nav_pending()
             return ""
@@ -2384,7 +2431,8 @@ class TodoPanel(QWidget):
         맨 위 / 맨 아래(기본 gg / Shift+G, 고정 Home / End): 처음 / 마지막 행
         삭제(기본·고정 Delete): 선택 항목 삭제 (확인 창은 설정에 따름)
         잘라내기 / 복사 / 붙여넣기(기본·고정 Ctrl+X / C / V)
-        체크(기본 Space): 선택 항목 완료 / 해제"""
+        체크(기본 Space): 선택 항목 완료 / 해제
+        단계 올리기 / 내리기(기본 < / >): 선택 항목을 한 단계 위 / 아래 레벨로 (shift_level)"""
         action = self._nav_action(key, modifiers)
         if not action:
             return False
@@ -2398,6 +2446,8 @@ class TodoPanel(QWidget):
             "todo_copy": self.copy_selected,
             "todo_paste": self.paste,
             "todo_check": self.toggle_selected,
+            "todo_outdent": lambda: self.shift_level(-1),
+            "todo_indent": lambda: self.shift_level(1),
         }
         if action in edits:
             edits[action]()
