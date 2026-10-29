@@ -77,6 +77,8 @@ def test_shortcuts_fill_missing_and_broken():
         "todo_copy": "Ctrl+C",
         "todo_paste": "Ctrl+V",
         "todo_check": "Space",
+        "todo_outdent": "<",
+        "todo_indent": ">",
         "todo_up": "Up",
         "todo_down": "Down",
         "todo_collapse": "Left",
