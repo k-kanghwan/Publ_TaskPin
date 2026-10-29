@@ -4,6 +4,7 @@
 이 줄은 보여주고 요청만 시그널로 올린다 ("멍청한 뷰").
   - 위 / 아래: [페이지 1][페이지 2][페이지 3] ... [점들][+]
     모든 페이지 이름 칩 - 지금 페이지는 강조색 테두리. 누르면 그 페이지로, 더블클릭하면 이름 바꾸기.
+    이름 뒤에 그 페이지의 체크 안 한 할 일 수를 강조색 배지로 (0 이면 숨김, 구분선은 세지 않음).
     칩이 폭을 넘치면 지금 페이지 칩이 보이게 옆으로 민다.
   - 왼쪽 / 오른쪽: 세로로 [점들][+]   (이름은 점의 툴팁)
   - 점: 지금 페이지는 강조색 알약, 나머지는 작은 점. 누르면 그 페이지로 (바뀔 때 알약이 옮겨 가며 늘었다 줄어든다)
@@ -21,7 +22,15 @@ from PySide6.QtCore import (
     QVariantAnimation,
     Signal,
 )
-from PySide6.QtGui import QColor, QFont, QLinearGradient, QPainter, QPen, QPixmap
+from PySide6.QtGui import (
+    QColor,
+    QFont,
+    QFontMetrics,
+    QLinearGradient,
+    QPainter,
+    QPen,
+    QPixmap,
+)
 from PySide6.QtWidgets import (
     QBoxLayout,
     QMenu,
@@ -51,6 +60,8 @@ CHIP_FADE = 18  # 칩이 넘칠 때 잘린 쪽 끝을 흐리게 지우는 폭(px
 CHIP_ALPHA = 45  # 다른 페이지 칩 테두리 (테마의 덧칠 색)
 CHIP_HOVER_ALPHA = 110
 CHIP_FONT_PX = 11  # 우패널 글자 배율을 곱한다
+CHIP_COUNT_GAP = 5  # 칩 안 이름 - 할 일 수 배지 간격(px)
+COUNT_PAD_H = 4  # 할 일 수 배지 좌우 여백(px)
 
 
 class PageDots(QWidget):
@@ -197,6 +208,7 @@ class PageTabs(QWidget):
         super().__init__(parent)
         self._pages = []
         self._current = None  # 지금 페이지 id
+        self._counts = {}  # 페이지 id -> 체크 안 한 할 일 수
         self._hover = None  # 마우스가 올라간 칩 index
         self._offset = 0.0  # 넘칠 때 왼쪽으로 민 만큼(px)
         self.setMouseTracking(True)
@@ -211,6 +223,18 @@ class PageTabs(QWidget):
         self._keep_current_visible()
         self.update()
 
+    def set_counts(self, counts: dict):
+        """페이지 id -> 체크 안 한 할 일 수. 바뀌었을 때만 다시 잰다 (할 일을 바꿀 때마다 부른다)"""
+        if counts != self._counts:
+            self._counts = dict(counts)
+            self.updateGeometry()
+            self._keep_current_visible()
+            self.update()
+
+    def _count_texts(self) -> list:
+        """칩마다 할 일 수 글자 ("" 이면 표시 안 함)"""
+        return [str(self._counts.get(page["id"]) or "") for page in self._pages]
+
     def _names(self) -> list:
         """칩에 보일 이름 (길면 말줄임)"""
         metrics = self.fontMetrics()
@@ -218,6 +242,16 @@ class PageTabs(QWidget):
             metrics.elidedText(page["name"], Qt.ElideRight, CHIP_TEXT_MAX)
             for page in self._pages
         ]
+
+    def _count_font(self):
+        """할 일 수 배지 글꼴 - 이름보다 조금 작고 굵게"""
+        font = QFont(self.font())
+        font.setPixelSize(max(8, font.pixelSize() - 2))
+        font.setBold(True)
+        return font
+
+    def _badge_width(self, count: str) -> float:
+        return QFontMetrics(self._count_font()).horizontalAdvance(count) + COUNT_PAD_H * 2
 
     def _chip_height(self) -> int:
         return self.fontMetrics().height() + CHIP_PAD_V * 2 + 2
@@ -228,8 +262,10 @@ class PageTabs(QWidget):
         rects, x = [], 0.5  # 1px 테두리가 흐려지지 않게 반 픽셀
         height = self._chip_height()
         top = (self.height() - height) / 2 + 0.5
-        for name in self._names():
+        for name, count in zip(self._names(), self._count_texts()):
             width = metrics.horizontalAdvance(name) + CHIP_PAD_H * 2 + 2
+            if count:
+                width += CHIP_COUNT_GAP + self._badge_width(count)
             rects.append(QRectF(x, top, width - 1, height - 1))
             x += width + CHIP_GAP
         return rects
@@ -315,6 +351,7 @@ class PageTabs(QWidget):
         t = theme.current()
         painter.setFont(self.font())
         radius = self._chip_height() / 2
+        counts = self._count_texts()
         for idx, (rect, name) in enumerate(zip(self._rects(), self._names())):
             current = self._pages[idx]["id"] == self._current
             hover = idx == self._hover
@@ -326,8 +363,25 @@ class PageTabs(QWidget):
             painter.setPen(QPen(border, 1))
             painter.setBrush(Qt.NoBrush)
             painter.drawRoundedRect(rect, radius, radius)
+            # 이름 + 할 일 수를 한 덩어리로 가운데에
+            inner = rect.adjusted(CHIP_PAD_H + 0.5, 0, -(CHIP_PAD_H + 0.5), 0)
             painter.setPen(QColor(text))
-            painter.drawText(rect, Qt.AlignCenter, name)
+            painter.drawText(inner, Qt.AlignLeft | Qt.AlignVCenter, name)
+            if counts[idx]:  # 오른쪽 끝에 강조색 알약 배지
+                badge_h = rect.height() - 4
+                badge = QRectF(
+                    inner.right() - self._badge_width(counts[idx]),
+                    rect.center().y() - badge_h / 2,
+                    self._badge_width(counts[idx]),
+                    badge_h,
+                )
+                painter.setPen(Qt.NoPen)
+                painter.setBrush(QColor(t.accent) if current else t.overlay_color(60))
+                painter.drawRoundedRect(badge, badge_h / 2, badge_h / 2)
+                painter.setFont(self._count_font())
+                painter.setPen(QColor(t.on_accent if current else t.text_main))
+                painter.drawText(badge, Qt.AlignCenter, counts[idx])
+                painter.setFont(self.font())
 
     def mouseMoveEvent(self, event):
         idx = self._index_at(event.position())
@@ -420,6 +474,10 @@ class PageBar(QWidget):
         self._current = current_id
         self.dots.set_pages(pages, current_id)
         self.tabs.set_pages(pages, current_id)
+
+    def set_counts(self, counts: dict):
+        """페이지 id -> 체크 안 한 할 일 수 (이름 칩에 표시)"""
+        self.tabs.set_counts(counts)
 
     def apply_appearance(self):
         t = theme.current()

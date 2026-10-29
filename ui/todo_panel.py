@@ -1671,6 +1671,7 @@ class TodoPanel(QWidget):
                 # 그 사이 목록 높이가 잠깐 줄어 스크롤 범위가 0 이 되고 위치가 맨 위로 잘린다
                 row.show()
 
+        self.page_bar.set_counts(self._open_counts())
         self.empty_label.setText(
             EMPTY_FILTERED_TEXT if self._shown_ids is not None else EMPTY_TEXT
         )
@@ -1681,6 +1682,14 @@ class TodoPanel(QWidget):
         if self._anchor_id not in ids:
             self._anchor_id = None
         self._apply_selection()
+
+    def _open_counts(self) -> dict:
+        """페이지 id -> 체크 안 한 할 일 수 (하위 포함, 구분선 제외) - 페이지 이름 칩에 표시"""
+        counts = dict.fromkeys(self._page_ids(), 0)
+        for item in self._items:
+            if not item["done"] and not todo_store.is_separator(item["text"]):
+                counts[item["page_id"]] = counts.get(item["page_id"], 0) + 1
+        return counts
 
     def _new_row(self) -> "TodoRow":
         row = TodoRow(
