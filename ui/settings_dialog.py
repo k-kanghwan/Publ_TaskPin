@@ -3,21 +3,24 @@
 좌측 사이드바에서 탭을 고르고 우측 카드에서 바로 바꾼다 (확인 버튼 없이 즉시 config.json 에 저장).
   - Keyboard Shortcuts : 위젯 단축키. 다른 동작과 겹치면 저장하지 않고 경고
   - Snippets           : `:트리거:` -> 문구 목록. 빈 칸 / 중복 트리거는 저장하지 않고 표시만
-  - Appearance         : 테마 / 강조색 / 배경색 / 글자도 함께 투명 / 폰트, 좌·우패널 글자 크기, TODO 글자색 /
-                         완료 항목 취소선 / 행 구분선 / 페이지 표시 위치,
+  - Appearance         : 테마 / 강조색 / 배경색 / 투명도 / 글자도 함께 투명 / 폰트, 좌·우패널 글자 크기,
+                         TODO 글자색 / 완료 항목 취소선 / 행 구분선 / 하위 가이드 선 / 페이지 표시 위치,
                          리마인더 알림 창 폭 / 글자 크기(실제 크기 예시 포함),
                          사용자 태그(이름 / 색 변경, 추가, 삭제 - config.json custom_tags).
                          바꾸면 appearance_changed 로 위젯에 바로 반영한다.
   - Application        : TODO(할 일 삭제 확인, 되돌릴 수 있는 삭제 수) /
-                         설정 내보내기(폴더를 고르면 config.json 을 그대로 저장) / 가져오기(바로 적용)
+                         설정 내보내기(폴더를 고르면 config.json 을 그대로 저장) / 가져오기(바로 적용) /
+                         모든 데이터 초기화 (문구를 입력해야 실행 - 지우기 전에 데이터 폴더에 DB 백업을 남김)
 
 설정창 자체는 테마(다크 / 라이트)와 강조색만 따른다. 배경색 / 폰트 / 글자 크기는 위젯에만 적용한다.
+마지막으로 본 탭은 앱이 실행되는 동안 기억해 다시 열면 그 탭부터 보여준다 (저장하지 않음).
 
 키보드
   - Esc : 닫기 (단축키 입력칸에서는 입력 취소)
 """
 
 import os
+import sqlite3
 from dataclasses import replace
 from datetime import datetime
 
@@ -34,12 +37,13 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QPushButton,
     QScrollArea,
+    QSlider,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
 
-from manager import os_win, snippets, widget_config
+from manager import db, os_win, snippets, widget_config
 from ui import painted, theme
 from ui.color_dialog import pick_color
 from ui.confirm_dialog import ConfirmDialog
@@ -47,7 +51,7 @@ from ui.reminder_popup import ReminderPopup
 from ui.tag_dialog import TagDialog
 
 WINDOW_TITLE = "Task알림 설정"
-WINDOW_SIZE = (720, 560)  # Appearance 탭이 스크롤 없이 거의 다 보이도록
+WINDOW_SIZE = (800, 580)  # 가장 큰 알림 창 예시(380px × 130%)가 잘리지 않도록
 # 테마별 (창 배경, 카드 배경) - 카드가 창보다 한 단계 떠 보이도록
 SURFACES = {True: ("#18181a", "#232326"), False: ("#ececef", "#ffffff")}
 SIDEBAR_WIDTH = 210
@@ -57,6 +61,10 @@ TRIGGER_EDIT_WIDTH = 110
 FONT_COMBO_WIDTH = 190
 SWATCH_SIZE = 20
 COLOR_CHIP_SIZE = 12
+OPACITY_SLIDER_WIDTH = 150
+SLIDER_HANDLE = 12  # 투명도 슬라이더 핸들 지름(px) - 홈(4px)보다 크다
+SLIDER_HEIGHT = SLIDER_HANDLE + 4  # 핸들이 잘리지 않는 슬라이더 높이
+RESET_PHRASE = "모든 데이터 초기화"  # 초기화하려면 이 문구를 똑같이 입력한다
 
 # (아이콘, 탭 이름) - 아이콘은 글자색을 따르는 흑백 기호
 TABS = [
@@ -86,14 +94,18 @@ SHORTCUT_GROUPS = [
         "편집",
         [
             ("todo_focus", "할 일 추가", "할 일 입력칸으로 커서 이동"),
-            ("todo_edit", "할 일 수정", "선택한 할 일을 그 자리에서 수정합니다"),
+            ("todo_edit", "할 일 수정", "선택한 할 일을 수정합니다 (F2 도 됩니다)"),
+            ("todo_delete", "할 일 삭제", "선택한 할 일을 삭제합니다 (Delete 도 됩니다)"),
+            ("todo_cut", "잘라내기", "붙여넣으면 옮겨집니다 (Ctrl+X 도 됩니다)"),
+            ("todo_copy", "복사", "하위와 함께 복사합니다 (Ctrl+C 도 됩니다)"),
+            ("todo_paste", "붙여넣기", "선택한 행 바로 아래에 (Ctrl+V 도 됩니다)"),
         ],
     ),
     (
         "탐색",
         [
-            ("todo_up", "위 할 일 선택", "할 일 목록에서 위 행을 고릅니다"),
-            ("todo_down", "아래 할 일 선택", "할 일 목록에서 아래 행을 고릅니다"),
+            ("todo_up", "위 할 일 선택", "위 행을 고릅니다 (↑ 도 됩니다)"),
+            ("todo_down", "아래 할 일 선택", "아래 행을 고릅니다 (↓ 도 됩니다)"),
             ("todo_first", "맨 위 할 일", "목록의 첫 행을 고릅니다 (Home 도 됩니다)"),
             (
                 "todo_last",
@@ -103,12 +115,12 @@ SHORTCUT_GROUPS = [
             (
                 "todo_collapse",
                 "하위 접기",
-                "펼친 상위면 접고, 아니면 상위 행으로 갑니다",
+                "펼친 상위면 접고, 아니면 상위로 (← 도 됩니다)",
             ),
             (
                 "todo_expand",
                 "하위 펼치기",
-                "접힌 상위면 펴고, 펼쳤으면 첫 하위 행으로 갑니다",
+                "접힌 상위면 펴고, 펼쳤으면 첫 하위로 (→ 도 됩니다)",
             ),
             ("todo_search", "할 일 검색", "검색 · 날짜별 보기 줄을 엽니다"),
         ],
@@ -150,6 +162,7 @@ ACCENT_SWATCHES = [
 DEFAULT_FONT_LABEL = "기본 (맑은 고딕)"
 EXPORT_HINT = "폴더를 고르면 지금 설정을 JSON 파일로 그대로 저장합니다"
 IMPORT_HINT = "내보낸 JSON 파일로 지금 설정을 바꾸고 바로 적용합니다"
+RESET_HINT = "할 일 · 페이지 · 삭제 이력 · Task 기록을 모두 지웁니다 (설정은 그대로)"
 
 
 def _settings_theme(cfg: dict) -> theme.Theme:
@@ -196,7 +209,8 @@ def _settings_style(t: theme.Theme) -> str:
         background: transparent;
         font-size: 13px;
     }}
-    QPushButton#small {{ padding: 4px 10px; }}
+    QPushButton#small, QPushButton#danger {{ padding: 4px 10px; }}
+    QPushButton#danger {{ color: {t.text_warn}; }}
     QPushButton#segment {{ padding: 4px 12px; }}
     QPushButton#segment:checked {{ color: {t.on_accent}; }}
     QLabel#group {{ color: {t.text_sub}; font-size: 12px; font-weight: bold; }}
@@ -208,6 +222,26 @@ def _settings_style(t: theme.Theme) -> str:
     }}
     QPushButton#remove:hover {{ color: {t.text_warn}; }}
     QScrollArea, QScrollArea > QWidget > QWidget {{ background: transparent; border: none; }}
+    QSlider:horizontal {{
+        /* 기본 높이는 화면 배율이 클수록 줄어(175% 에서 13px) 핸들 위아래가 잘린다 */
+        min-height: {SLIDER_HEIGHT}px;
+    }}
+    QSlider::groove:horizontal {{
+        height: 4px;
+        background: {t.overlay(50)};
+        border-radius: 2px;
+    }}
+    QSlider::sub-page:horizontal {{
+        background: {t.accent};
+        border-radius: 2px;
+    }}
+    QSlider::handle:horizontal {{
+        width: {SLIDER_HANDLE}px;
+        height: {SLIDER_HANDLE}px;
+        margin: -{(SLIDER_HANDLE - 4) // 2}px 0;
+        background: {t.text_main};
+        border-radius: {SLIDER_HANDLE // 2}px;
+    }}
     QScrollBar:vertical {{ background: transparent; width: 6px; margin: 0px; }}
     QScrollBar::handle:vertical {{
         background: {t.overlay(50)};
@@ -245,6 +279,15 @@ def _settings_boxes(t: theme.Theme) -> list:
             ),
         ),
         (QPushButton, "remove", None),
+        (
+            QPushButton,
+            "danger",
+            replace(
+                painted.button_box(t),
+                border=QColor(t.text_warn),
+                hover_border=QColor(t.text_warn),
+            ),
+        ),
         (QLabel, "version", painted.box(14, None, t.overlay_color(40))),
         (QFrame, "card", card),
         (QFrame, "sidebar", card),
@@ -420,6 +463,12 @@ class SettingsDialog(QWidget):
     config_imported = Signal(dict)
     # config 의 "app_icon" 이 바뀜 - TaskPinApp 이 트레이 / 창 아이콘을 바꾼다
     app_icon_changed = Signal()
+    # config 의 "opacity" 가 바뀜 (투명도 슬라이더) - 위젯이 바로 다시 칠한다 (저장은 이 창이)
+    opacity_changed = Signal()
+    # "모든 데이터 초기화" 로 DB 를 비움 - TaskPinApp 이 메모리의 할 일 / Task 상태를 다시 읽는다
+    data_reset = Signal()
+
+    _last_tab = 0  # 마지막으로 본 탭 (앱이 실행되는 동안만 - 다시 열면 그 탭부터)
 
     def __init__(self, cfg: dict, version_text: str, parent=None):
         """cfg: 위젯과 같은 설정 dict (여기서 고친 값을 바로 저장한다)"""
@@ -452,9 +501,11 @@ class SettingsDialog(QWidget):
         self.stack.addWidget(self._build_application_page())
         root.addWidget(self.stack, 1)
 
-        self._nav_group.button(0).setChecked(True)
+        tab = SettingsDialog._last_tab if 0 <= SettingsDialog._last_tab < len(TABS) else 0
+        self._nav_group.button(tab).setChecked(True)
+        self.stack.setCurrentIndex(tab)
         # 단축키 입력칸이 처음부터 키를 가져가지 않도록
-        self._nav_group.button(0).setFocus()
+        self._nav_group.button(tab).setFocus()
 
     # ==================================================
     # 레이아웃
@@ -488,7 +539,7 @@ class SettingsDialog(QWidget):
                 label.setAttribute(Qt.WA_TransparentForMouseEvents, True)
             self._nav_group.addButton(btn, idx)
             layout.addWidget(btn)
-        self._nav_group.idClicked.connect(lambda idx: self.stack.setCurrentIndex(idx))
+        self._nav_group.idClicked.connect(self._show_tab)
 
         layout.addStretch(1)
         version = QLabel(version_text)
@@ -496,6 +547,10 @@ class SettingsDialog(QWidget):
         version.setAlignment(Qt.AlignCenter)
         layout.addWidget(version)
         return sidebar
+
+    def _show_tab(self, idx: int):
+        self.stack.setCurrentIndex(idx)
+        SettingsDialog._last_tab = idx
 
     @staticmethod
     def _page(title: str, hint: str = ""):
@@ -518,7 +573,7 @@ class SettingsDialog(QWidget):
         return page, card, card_layout
 
     @staticmethod
-    def _group_page(title: str, hint: str):
+    def _group_page(title: str, hint: str = ""):
         """섹션 제목 + 보조설명 + 스크롤되는 그룹 목록 (_add_group 으로 채운다).
         행이 많은 탭은 스크롤에 넣어야 창 높이를 넘을 때 행이 납작하게 눌리지 않는다.
         Returns (페이지, 그룹 레이아웃)"""
@@ -528,11 +583,12 @@ class SettingsDialog(QWidget):
         layout.setSpacing(8)
         section = QLabel(title)
         section.setObjectName("section")
-        hint_label = QLabel(hint)
-        hint_label.setObjectName("sub")
-        hint_label.setWordWrap(True)
         layout.addWidget(section)
-        layout.addWidget(hint_label)
+        if hint:
+            hint_label = QLabel(hint)
+            hint_label.setObjectName("sub")
+            hint_label.setWordWrap(True)
+            layout.addWidget(hint_label)
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -586,8 +642,9 @@ class SettingsDialog(QWidget):
             "Keyboard Shortcuts",
             "위젯을 클릭해 활성화한 상태에서 동작합니다. 입력칸에 커서가 있으면 글자 키는 글자로 입력됩니다. "
             "키를 두 번 이어 눌러 G, G (gg) 처럼 정할 수도 있습니다.\n"
-            "탐색 키(선택 · 맨 위 / 아래 · 접기 / 펼치기)는 할 일 목록에 포커스가 있을 때만 동작합니다 "
-            "(입력칸의 화살표는 그대로). 고정 키: Home/End 처음/끝 · Delete 삭제 · Esc 선택 해제",
+            "탐색 키와 삭제 · 잘라내기 · 복사 · 붙여넣기는 할 일 목록에 포커스가 있을 때만 동작합니다. "
+            "고정 키(바꿔도 함께 동작): ↑↓←→ · Home/End · Delete · Ctrl+X/C/V · F2 수정(선택이 없으면 "
+            "페이지 이름) · Esc 선택 해제",
         )
         current = widget_config.shortcuts(self._cfg)
         for group, rows in SHORTCUT_GROUPS:
@@ -617,10 +674,10 @@ class SettingsDialog(QWidget):
             )
         )
         self._shortcut_edits[action] = edit
-        self._shortcut_notes[action] = (
-            self._add_row(card_layout, title, subtitle, edit, btn_reset),
-            subtitle,
-        )
+        note = self._add_row(card_layout, title, subtitle, edit, btn_reset)
+        # 설명이 길어도 줄을 넓히지 않게 (넓어지면 키 입력칸 / ↺ 가 오른쪽으로 밀려 잘린다)
+        note.setWordWrap(True)
+        self._shortcut_notes[action] = (note, subtitle)
 
     def _set_shortcut(self, action: str, keys: str):
         """겹치지 않으면 저장하고 위젯에 알린다. 겹치면 이전 값으로 되돌리고 경고한다."""
@@ -758,13 +815,32 @@ class SettingsDialog(QWidget):
             self._bg_button,
             self._reset_button(lambda: self._set_appearance("background", "")),
         )
+        self._opacity_slider = QSlider(Qt.Horizontal)
+        self._opacity_slider.setRange(0, widget_config.TRANSPARENCY_MAX)
+        self._opacity_slider.setFixedWidth(OPACITY_SLIDER_WIDTH)
+        self._opacity_slider.setCursor(Qt.PointingHandCursor)
+        self._opacity_value = QLabel()
+        self._opacity_value.setObjectName("sub")
+        self._opacity_value.setFixedWidth(34)
+        self._opacity_value.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self._opacity_slider.valueChanged.connect(self._on_opacity_changed)
+        self._opacity_slider.sliderReleased.connect(
+            lambda: widget_config.save_config(self._cfg)
+        )
+        self._add_row(
+            card_layout,
+            "투명도",
+            f"위젯 배경을 비쳐 보이게 합니다 (최대 {widget_config.TRANSPARENCY_MAX}%)",
+            self._opacity_slider,
+            self._opacity_value,
+        )
         box, self._fade_text_group = self._segmented(
             ON_OFF_OPTIONS, lambda v: self._set_appearance("fade_text", v)
         )
         self._add_row(
             card_layout,
             "글자도 함께 투명",
-            "켜면 투명도 슬라이더가 글자까지 투명하게 합니다 (끄면 배경만)",
+            "켜면 투명도가 글자까지 투명하게 합니다 (끄면 배경만)",
             box,
         )
         self._font_combo = self._build_font_combo()
@@ -776,7 +852,7 @@ class SettingsDialog(QWidget):
             [(s, SCALE_NAMES[s]) for s in widget_config.LEFT_SCALES],
             lambda v: self._set_appearance("left_scale", v),
         )
-        self._add_row(card_layout, "글자 크기", "이름 · 시간 · 버튼 · 투명도", box)
+        self._add_row(card_layout, "글자 크기", "이름 · 시간 · 버튼", box)
 
         # ---- 우패널 ----
         card_layout = self._add_group(groups, "우패널 (TODO)")
@@ -808,6 +884,15 @@ class SettingsDialog(QWidget):
         self._add_row(
             card_layout, "행 구분선", "할 일 사이에 옅은 가로선을 긋습니다", box
         )
+        box, self._guides_group = self._segmented(
+            ON_OFF_OPTIONS, lambda v: self._set_appearance("todo_guides", v)
+        )
+        self._add_row(
+            card_layout,
+            "하위 가이드 선",
+            "하위 할 일 왼쪽에 상위에서 내려오는 강조색 세로선을 긋습니다",
+            box,
+        ).setWordWrap(True)
         box, self._page_bar_group = self._segmented(
             PAGE_BAR_OPTIONS, lambda v: self._set_appearance("page_bar", v)
         )
@@ -815,7 +900,7 @@ class SettingsDialog(QWidget):
         self._add_row(
             card_layout,
             "페이지 표시 위치",
-            "위 · 아래: 이름 + 점, 왼쪽 · 오른쪽: 점만",
+            "위 · 아래: 페이지 이름 칩 + 점, 왼쪽 · 오른쪽: 점만",
             box,
         ).setWordWrap(True)
 
@@ -830,7 +915,7 @@ class SettingsDialog(QWidget):
             [(s, SCALE_NAMES[s]) for s in widget_config.POPUP_SCALES],
             lambda v: self._set_appearance("popup_scale", v),
         )
-        self._add_row(card_layout, "글자 크기", "제목 · 내용 · 버튼", box)
+        self._add_row(card_layout, "글자 크기", "창 크기도 함께 커지고 작아집니다", box)
         # 실제 알림 창과 같은 크기 / 테마로 그린 예시 (값을 바꿀 때마다 다시 만든다)
         card_layout.addWidget(_line())
         preview_row = QWidget()
@@ -1003,6 +1088,22 @@ class SettingsDialog(QWidget):
             ),
         )
 
+    def _on_opacity_changed(self, percent: int):
+        """투명도 슬라이더: 위젯에 바로 반영한다. 끄는 중에는 저장하지 않고(놓을 때 저장),
+        키보드 / 클릭 조작만 바로 저장한다."""
+        widget_config.set_transparency(self._cfg, percent)
+        self._opacity_value.setText(f"{percent}%")
+        self.opacity_changed.emit()
+        if not self._opacity_slider.isSliderDown():
+            widget_config.save_config(self._cfg)
+
+    def _refresh_opacity(self):
+        percent = widget_config.transparency(self._cfg)
+        self._opacity_slider.blockSignals(True)  # 맞추는 것이 다시 저장하지 않도록
+        self._opacity_slider.setValue(percent)
+        self._opacity_slider.blockSignals(False)
+        self._opacity_value.setText(f"{percent}%")
+
     def _pick_accent(self):
         color = pick_color(widget_config.appearance(self._cfg)["accent"], "강조색")
         if color:
@@ -1068,6 +1169,8 @@ class SettingsDialog(QWidget):
         self._todo_color_button.set_color(a["todo_text_color"], look.text_main)
         self._strike_group.button(int(a["todo_strike"])).setChecked(True)
         self._row_lines_group.button(int(a["todo_row_lines"])).setChecked(True)
+        self._guides_group.button(int(a["todo_guides"])).setChecked(True)
+        self._refresh_opacity()
         self._page_bar_group.button(
             [value for value, _ in PAGE_BAR_OPTIONS].index(a["page_bar"])
         ).setChecked(True)
@@ -1083,7 +1186,10 @@ class SettingsDialog(QWidget):
         self._popup_scale_group.button(
             widget_config.POPUP_SCALES.index(a["popup_scale"])
         ).setChecked(True)
-        self._popup_width_sub.setText(f"폭 {a['popup_width']}px")
+        # 글자 크기를 바꾸면 창 크기도 같은 배율로 (ReminderPopup)
+        self._popup_width_sub.setText(
+            f"폭 {theme.px(a['popup_width'], a['popup_scale'])}px"
+        )
         self._rebuild_popup_preview(a)
 
         idx = self._font_combo.findData(a["font_family"])
@@ -1113,13 +1219,8 @@ class SettingsDialog(QWidget):
     # Application: TODO 동작 / 설정 내보내기 / 가져오기
     # ==================================================
     def _build_application_page(self) -> QWidget:
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        layout.setContentsMargins(0, 4, 0, 0)
-        layout.setSpacing(8)
-        section = QLabel("Application")
-        section.setObjectName("section")
-        layout.addWidget(section)
+        # 그룹이 늘어 창 높이를 넘으면 보조설명이 눌려 잘리므로 다른 탭처럼 스크롤에 넣는다
+        page, layout = self._group_page("Application")
 
         # ---- 앱: 트레이 / 창 아이콘 ----
         card_layout = self._add_group(layout, "앱")
@@ -1183,6 +1284,20 @@ class SettingsDialog(QWidget):
         )
         for note in (self._export_note, self._import_note):
             note.setWordWrap(True)
+
+        # ---- 데이터: 모든 데이터 초기화 ----
+        card_layout = self._add_group(layout, "데이터")
+        btn_reset = QPushButton("초기화…")
+        btn_reset.setObjectName("danger")
+        btn_reset.setCursor(Qt.PointingHandCursor)
+        btn_reset.clicked.connect(self._reset_data)
+        self._reset_note = self._add_row(
+            card_layout,
+            "모든 데이터 초기화",
+            RESET_HINT,
+            btn_reset,
+        )
+        self._reset_note.setWordWrap(True)
         layout.addStretch(1)
         self._refresh_application()
         return page
@@ -1261,6 +1376,29 @@ class SettingsDialog(QWidget):
             return
         self.config_imported.emit(new)
         self._show_note(self._import_note, f"가져왔습니다: {os.path.basename(path)}")
+
+    def _reset_data(self):
+        """모든 데이터 초기화: 문구를 똑같이 입력해야 실행한다. 지우기 전에 데이터 폴더에 DB 백업을 남긴다
+        (백업 이야기는 따로 하지 않는다). 백업하지 못하면 지우지 않는다."""
+        dialog = ConfirmDialog(
+            "모든 데이터 초기화",
+            "할 일 · 페이지 · 삭제 이력 · Task 기록을 모두 지웁니다.\n"
+            "지운 데이터는 앱에서 되돌릴 수 없습니다.",
+            confirm_text="초기화",
+            note=f"계속하려면 아래에 '{RESET_PHRASE}'를 입력하세요. 설정은 그대로 둡니다.",
+            danger=True,
+            confirm_phrase=RESET_PHRASE,
+            parent=self,
+        )
+        if not dialog.exec_over(self):
+            return
+        try:
+            db.reset_all(datetime.now())
+        except (sqlite3.Error, OSError) as e:
+            self._show_note(self._reset_note, f"초기화하지 못했습니다. {e}", warn=True)
+            return
+        self.data_reset.emit()
+        self._show_note(self._reset_note, "모든 데이터를 초기화했습니다.")
 
     def reload_values(self):
         """설정 가져오기 뒤: 모든 탭의 표시를 바뀐 cfg 로 다시 맞춘다."""

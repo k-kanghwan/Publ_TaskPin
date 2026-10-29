@@ -106,6 +106,8 @@ class TaskPinApp(TrayApp):
         self.widget.reminder_due.connect(
             lambda _id, text: self.send_message_info("⏰ 리마인더", text)
         )
+        # 등록 / 수정 창이 떠 있는 동안 막힌 위젯을 누르면 그 창을 다시 앞으로
+        self.widget.blocked_clicked.connect(self._raise_picker)
         # "시스템" 테마: Windows 앱 모드가 바뀌면 따라간다
         QGuiApplication.styleHints().colorSchemeChanged.connect(
             self._on_color_scheme_changed
@@ -193,12 +195,15 @@ class TaskPinApp(TrayApp):
         return True
 
     def _show_picker(self, picker: TaskPicker, anchor):
+        """등록 / 수정 창을 띄우는 동안 위젯은 끌어 옮기기만 된다 (항목 클릭 / 우클릭 / 단축키 막음)."""
         self._picker = picker
         picker.closed.connect(self._on_picker_closed)
+        self.widget.set_input_blocked(True)
         picker.popup_for(anchor)
 
     def _on_picker_closed(self):
         self._picker = None
+        self.widget.set_input_blocked(False)
 
     def _keep_task_draft(self, title: str, detail: str):
         """등록 창을 확인 없이 닫음: 적던 내용을 다음 등록 때까지 남긴다 (둘 다 비었으면 비운다)."""
@@ -303,11 +308,24 @@ class TaskPinApp(TrayApp):
             self._settings.appearance_changed.connect(self.apply_appearance)
             self._settings.config_imported.connect(self.apply_imported_config)
             self._settings.app_icon_changed.connect(self._apply_app_icon)
+            self._settings.opacity_changed.connect(self.widget.apply_opacity)
+            self._settings.data_reset.connect(self.reload_data)
             self._settings.destroyed.connect(self._on_settings_destroyed)
         self._settings.show_front()
 
     def _on_settings_destroyed(self):
         self._settings = None
+
+    def reload_data(self):
+        """설정창 "모든 데이터 초기화" 뒤 (DB 는 이미 비었음): 메모리의 Task / 할 일 상태를 비운다.
+        열린 등록 / 수정 창은 닫고 임시저장한 업무명도 버린다."""
+        if self._picker is not None:
+            self._picker.close()
+        self._task_draft = ("", "")
+        self._task = None
+        self._notified_task_ids.clear()
+        self.widget.reload_data()
+        self.tick_widget()
 
     def _apply_theme(self):
         """설정의 Appearance 값으로 현재 테마와 앱 기본 글꼴(툴팁 등)을 건다."""

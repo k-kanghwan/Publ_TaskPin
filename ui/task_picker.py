@@ -1,6 +1,7 @@
 """좌패널 [등록] / [수정] 버튼으로 뜨는 Task 등록 / 수정 창
 
-왼쪽: 업무명(비워도 됨) / 시작 / 소요 / 종료, 오른쪽: 상세 업무(여러 줄, 비워도 됨)
+왼쪽: 업무명(필수) / 시작 / 소요 / 종료, 오른쪽: 상세 업무(여러 줄, 비워도 됨)
+  - 업무명이 비어 있으면 확인 버튼이 꺼지고, Enter 를 누르면 업무명 칸을 경고색 테두리로 표시한다.
   - 상세 업무는 위젯의 업무명 배지 위에 표시된다.
   - 업무명에서도 `:idea:` 같은 스니펫 트리거를 문구로 바꾼다.
   - 시작은 그날 00:00 ~ 23:45 (15분 단위). 등록 기본값은 현재시간을 15분 단위로 올린 값
@@ -12,6 +13,7 @@
 Qt.Popup 이 아니라 활성화되는 Tool 창이다. Windows 에서 Popup 은 전경 창이 되지 않아
 IME 가 붙지 않는다(한글 입력 불가). 다른 창을 눌러 포커스가 옮겨져도 닫히지 않고
 취소 / Esc / 확인으로만 닫힌다 (적던 내용을 잃지 않게). 위젯을 옮기면 같이 따라 움직인다.
+떠 있는 동안 위젯은 끌어 옮기기만 되고 항목 / 우클릭은 막힌다 (ClockWidget.set_input_blocked).
 등록 창을 확인 없이 닫으면 canceled 로 적던 업무명 / 상세 업무를 알린다 - TaskPinApp 이 임시저장해
 다음 등록 때 draft 로 다시 채운다.
 
@@ -133,6 +135,7 @@ class TaskPicker(QFrame):
         self._build_ui()
         self.title_edit.setText(title)
         self.detail_edit.setPlainText(detail)
+        self._update_ok()
         self.start_combo.setCurrentIndex(
             (start.hour * 60 + start.minute) // task_clock.STEP_MIN
         )
@@ -168,6 +171,7 @@ class TaskPicker(QFrame):
                 padding: 4px 14px;
             }}
             QPushButton#ok {{ color: {t.on_accent}; }}
+            QPushButton#ok:disabled {{ color: {t.text_disabled}; }}
             QPlainTextEdit {{
                 background: transparent;
                 color: {t.text_main};
@@ -213,7 +217,10 @@ class TaskPicker(QFrame):
         # Enter 는 returnPressed 로 연결하지 않는다 - QLineEdit 가 Enter 를 부모로 넘겨
         # keyPressEvent 에서도 처리되므로 두 번 등록된다.
         self.title_edit = _TitleEdit(self._snippets_provider)
-        self.title_edit.setPlaceholderText("업무명 (선택)")
+        self.title_edit.setPlaceholderText("업무명 (필수)")
+        # 조합 중인 한글까지 보고 확인 버튼을 켠다 (마지막 글자는 확정 전까지 text() 에 없다)
+        self.title_edit.textChanged.connect(self._update_ok)
+        self.title_edit.preedit_changed.connect(self._update_ok)
 
         self.start_combo = self._combo()
         for minutes in range(0, 24 * 60, task_clock.STEP_MIN):
@@ -258,16 +265,16 @@ class TaskPicker(QFrame):
         buttons = QHBoxLayout()
         buttons.setSpacing(6)
         btn_cancel = QPushButton("취소")
-        btn_ok = QPushButton("확인")
-        btn_ok.setObjectName("ok")
-        for btn in (btn_cancel, btn_ok):
+        self.btn_ok = QPushButton("확인")
+        self.btn_ok.setObjectName("ok")
+        for btn in (btn_cancel, self.btn_ok):
             btn.setFocusPolicy(Qt.NoFocus)
             btn.setCursor(Qt.PointingHandCursor)
         btn_cancel.clicked.connect(self.close)
-        btn_ok.clicked.connect(self._accept)
+        self.btn_ok.clicked.connect(self._accept)
         buttons.addStretch(1)
         buttons.addWidget(btn_cancel)
-        buttons.addWidget(btn_ok)
+        buttons.addWidget(self.btn_ok)
         root.addLayout(buttons)
 
     @staticmethod
@@ -331,8 +338,22 @@ class TaskPicker(QFrame):
         QGuiApplication.inputMethod().commit()
         return self.detail_edit.full_text().strip()
 
+    def _update_ok(self):
+        """업무명이 있어야 확인할 수 있다. 다시 적기 시작하면 경고 테두리를 지운다."""
+        filled = bool(self.title_edit.full_text().strip())
+        self.btn_ok.setEnabled(filled)
+        if filled and self.title_edit.property("invalid"):
+            self.title_edit.setProperty("invalid", False)
+            self.title_edit.update()  # 테두리는 ui/painted 가 property("invalid") 를 보고 그린다
+
     def _accept(self):
         if self._accepted:
+            return
+        if not self.entered_title():
+            # 업무명은 필수 - 칸을 경고색 테두리로 표시하고 커서를 옮긴다 (Enter / Ctrl+Enter 로 온 경우)
+            self.title_edit.setProperty("invalid", True)
+            self.title_edit.update()
+            self.title_edit.setFocus()
             return
         self._accepted = True
         start = self.selected_start()

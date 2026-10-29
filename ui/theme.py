@@ -19,7 +19,7 @@ FALLBACK_FONTS = "'Malgun Gothic', 'Segoe UI', sans-serif"
 @dataclass(frozen=True)
 class Theme:
     dark: bool
-    # 배경은 불투명 - 위젯 투명도는 위젯의 투명도 슬라이더(setWindowOpacity)로만 정한다
+    # 배경은 불투명 - 위젯 투명도는 설정창의 투명도 슬라이더(config opacity)로만 정한다
     bg: str  # 위젯 배경 (paintEvent)
     popup_bg: str  # Task 등록 창 / 리마인더 피커 / 리마인더 팝업 배경
     dialog_bg: str  # 확인 창 배경 - 위젯 위에 떠 보이도록 위젯과 조금 다르게
@@ -42,8 +42,9 @@ class Theme:
     todo_text: str = ""  # TODO 글자색 ("" 이면 text_main)
     todo_strike: bool = True  # 완료한 할 일에 취소선
     todo_row_lines: bool = False  # 할 일 행 사이 구분선
+    todo_guides: bool = True  # 하위 레벨 가이드 선
     page_bar: str = "top"  # TODO 페이지 표시 위치 (top / bottom / left / right)
-    fade_text: bool = False  # 투명도 슬라이더가 글자까지 투명하게 (False: 배경만)
+    fade_text: bool = False  # 투명도가 글자까지 투명하게 (False: 배경만)
     popup_width: int = 260  # 리마인더 알림 창 폭(px)
     popup_scale: int = 100  # 리마인더 알림 창 글자 배율(%)
 
@@ -162,6 +163,7 @@ def build(appearance: dict, system_dark: bool = True) -> Theme:
         "todo_text": appearance["todo_text_color"],
         "todo_strike": appearance["todo_strike"],
         "todo_row_lines": appearance["todo_row_lines"],
+        "todo_guides": appearance["todo_guides"],
         "page_bar": appearance["page_bar"],
         "fade_text": appearance["fade_text"],
         "popup_width": appearance["popup_width"],

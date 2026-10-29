@@ -2,6 +2,8 @@
 
 배경은 위젯 테마를 따르고, 강조색 테두리 / 큰 글씨로 바탕화면 위에서도 잘 보이게 한다.
 필요하면 강조 값(예: 남은시간)을 크게 한 줄 보여준다.
+되돌릴 수 없는 동작(모든 데이터 초기화)은 confirm_phrase 를 똑같이 입력해야 확인 버튼이 켜진다
+(git 저장소를 지울 때 이름을 입력하게 하는 것처럼).
 
 키보드
   - Enter : 확인 버튼, Esc : 취소
@@ -21,6 +23,7 @@ from PySide6.QtWidgets import (
 
 from ui import painted, theme
 from ui.painted import CheckBox
+from ui.text_input import PreeditLineEdit
 from ui.theme import CORNER_RADIUS
 
 DIALOG_WIDTH = 260
@@ -38,6 +41,7 @@ class ConfirmDialog(QDialog):
         note: str = "",
         danger: bool = False,
         remember_text: str = "",
+        confirm_phrase: str = "",
         parent=None,
     ):
         """
@@ -47,6 +51,7 @@ class ConfirmDialog(QDialog):
         note : 메시지 아래 흐린 보조 설명
         danger : 확인 버튼을 경고색으로 (삭제 같은 동작)
         remember_text : 버튼 위 체크박스 (예: "다시 묻지 않음") - 확인했을 때 remembered() 로 읽는다
+        confirm_phrase : 이 문구를 똑같이 입력해야 확인 버튼이 켜진다 (입력칸을 버튼 위에 둔다)
         """
         super().__init__(parent, Qt.Dialog | Qt.FramelessWindowHint)
         self.setAttribute(Qt.WA_TranslucentBackground, True)
@@ -66,6 +71,7 @@ class ConfirmDialog(QDialog):
             }}
             QPushButton {{ padding: 6px 0px; }}
             QPushButton#confirm {{ color: #1a1a1a; font-weight: bold; }}
+            QPushButton#confirm:disabled {{ color: {t.text_disabled}; }}
             QCheckBox {{
                 background: transparent;
                 color: {t.text_sub};
@@ -73,6 +79,7 @@ class ConfirmDialog(QDialog):
                 font-size: 12px;
             }}
             """
+            + theme.popup_form_style(t)
         )
 
         painted.set_boxes(
@@ -84,6 +91,7 @@ class ConfirmDialog(QDialog):
                     painted.accent_box(t, confirm_color, confirm_hover),
                 ),
                 (QPushButton, None, painted.button_box(t)),
+                *painted.form_rules(t),
             ],
         )
 
@@ -127,6 +135,16 @@ class ConfirmDialog(QDialog):
             self._remember.setCursor(Qt.PointingHandCursor)
             root.addWidget(self._remember)
 
+        # 조합 중인 한글까지 맞춰 본다 (마지막 글자는 확정 전까지 text() 에 없다)
+        self._phrase = confirm_phrase
+        self._phrase_edit = None
+        if confirm_phrase:
+            self._phrase_edit = PreeditLineEdit()
+            self._phrase_edit.setPlaceholderText(confirm_phrase)
+            self._phrase_edit.textChanged.connect(self._update_confirm)
+            self._phrase_edit.preedit_changed.connect(self._update_confirm)
+            root.addWidget(self._phrase_edit)
+
         buttons = QHBoxLayout()
         buttons.setSpacing(8)
         self.btn_cancel = QPushButton("취소")
@@ -140,6 +158,13 @@ class ConfirmDialog(QDialog):
         self.btn_confirm.clicked.connect(self.accept)
         root.addSpacing(2)
         root.addLayout(buttons)
+        self._update_confirm()
+
+    def _update_confirm(self):
+        """confirm_phrase 를 똑같이 입력했을 때만 확인 버튼을 켠다."""
+        if self._phrase_edit is not None:
+            typed = self._phrase_edit.full_text().strip()
+            self.btn_confirm.setEnabled(typed == self._phrase)
 
     def remembered(self) -> bool:
         """remember_text 체크박스를 켰는지"""
@@ -172,4 +197,6 @@ class ConfirmDialog(QDialog):
         x = min(max(x, area.left()), area.right() + 1 - self.width())
         y = min(max(y, area.top()), area.bottom() + 1 - self.height())
         self.move(QPoint(x, y))
+        if self._phrase_edit is not None:
+            self._phrase_edit.setFocus()
         return self.exec() == QDialog.Accepted

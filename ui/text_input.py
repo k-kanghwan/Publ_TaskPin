@@ -1,10 +1,12 @@
-"""입력칸 공통 보조: Win+. 이모지 패널 입력 보정, 스니펫 치환"""
+"""입력칸 공통 보조: Win+. 이모지 패널 입력 보정, 스니펫 치환, Enter 를 창 단축키보다 먼저 받는 입력칸"""
 
-from PySide6.QtCore import QAbstractNativeEventFilter, Qt, QTimer, Signal
+from PySide6.QtCore import QAbstractNativeEventFilter, QEvent, Qt, QTimer, Signal
 from PySide6.QtGui import QInputMethodEvent
 from PySide6.QtWidgets import QApplication, QLineEdit
 
 from manager import os_win, snippets
+
+ENTER_KEYS = (Qt.Key_Return, Qt.Key_Enter)
 
 
 class ImeCharFilter(QAbstractNativeEventFilter):
@@ -51,7 +53,23 @@ def utf16_pos(text: str, index: int) -> int:
     return len(text[:index].encode("utf-16-le")) // 2
 
 
-class PreeditLineEdit(QLineEdit):
+class LineEdit(QLineEdit):
+    """위젯의 한 줄 입력칸. 조합 키 없는 Enter 는 창 단축키(QShortcut)보다 입력칸이 먼저 받는다.
+    (설정에서 할 일 수정 단축키를 Enter 로 바꿔도 할 일 추가 / 수정 / 이름 입력이 Enter 로 끝나도록.
+    글자 키는 QLineEdit 이 이미 먼저 받지만 Enter 는 받지 않아 단축키로 넘어간다)"""
+
+    def event(self, event):
+        if (
+            event.type() == QEvent.ShortcutOverride
+            and event.key() in ENTER_KEYS
+            and not (event.modifiers() & ~Qt.KeypadModifier)
+        ):
+            event.accept()  # 단축키 대신 이 입력칸의 keyPressEvent 로
+            return True
+        return super().event(event)
+
+
+class PreeditLineEdit(LineEdit):
     """조합 중인 한글(preedit)을 기억하는 입력칸. full_text() 는 조합 중인 글자까지 합쳐 읽는다.
     (조합 중인 마지막 글자는 확정되기 전까지 text() 에 빠진다)"""
 
