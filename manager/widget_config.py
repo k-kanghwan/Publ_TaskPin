@@ -32,6 +32,7 @@ DEFAULT_SHORTCUTS = {
     "todo_cut": "Ctrl+X",  # 선택한 할 일 잘라내기 (붙여넣으면 옮겨진다)
     "todo_copy": "Ctrl+C",  # 선택한 할 일을 하위와 함께 복사
     "todo_paste": "Ctrl+V",  # 지금 행 아래에 붙여넣기
+    "todo_check": "Space",  # 선택한 할 일 완료 / 해제 (체크박스와 같음)
     "todo_up": "Up",  # 위 할 일 선택
     "todo_down": "Down",  # 아래 할 일 선택
     "todo_collapse": "Left",  # 펼친 상위면 접고, 아니면 상위로
@@ -50,6 +51,7 @@ LIST_SHORTCUTS = (
     "todo_cut",
     "todo_copy",
     "todo_paste",
+    "todo_check",
     "todo_up",
     "todo_down",
     "todo_collapse",
