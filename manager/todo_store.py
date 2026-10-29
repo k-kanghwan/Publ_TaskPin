@@ -33,6 +33,9 @@ EMOJI_RE = re.compile(f"[{_EMOJI_CHARS}][️‍{_EMOJI_CHARS}]*")
 TAGS = ("red", "orange", "yellow", "green", "blue", "gray")
 TAG_MAX_LEN = 64
 DEFAULT_PAGE_ID = 1  # 첫 페이지 (스키마 v9 가 만든다)
+# 구분선: 하이픈(-)만 3개 이상 적은 할 일은 체크박스 대신 가로선으로 그린다 (우클릭 "아래에 구분선 추가")
+SEPARATOR = "---"
+_SEPARATOR_RE = re.compile(r"-{3,}")
 
 _COLUMNS = (
     "id",
@@ -172,6 +175,11 @@ def normalize(item: dict) -> dict:
     if not (isinstance(tag, str) and 0 < len(tag) <= TAG_MAX_LEN):
         base["tag"] = None
     return base
+
+
+def is_separator(text: str) -> bool:
+    """구분선 할 일인지 (앞뒤 공백을 뺀 글자가 하이픈 3개 이상뿐)"""
+    return bool(_SEPARATOR_RE.fullmatch((text or "").strip()))
 
 
 # ==================================================

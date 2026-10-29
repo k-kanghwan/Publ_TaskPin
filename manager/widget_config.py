@@ -23,8 +23,15 @@ DEFAULT_SHORTCUTS = {
     "task_edit": "R",  # Task 수정
     "task_clear": "C",  # Task 완료
     "todo_focus": "A",  # 할 일 입력칸으로 커서 이동
-    "todo_edit": "F2",  # 선택한 할 일을 그 자리에서 수정
+    # 선택한 할 일을 그 자리에서 수정. F2 는 고정 키로 늘 된다 (선택이 없으면 F2 는 페이지 이름 바꾸기)
+    "todo_edit": "Return",
     # 목록 키 (LIST_SHORTCUTS): 할 일 목록에 포커스가 있을 때만 - 입력칸의 화살표는 그대로 둔다
+    # 삭제 / 잘라내기 / 복사 / 붙여넣기 / 위 / 아래는 기본 키(Delete / Ctrl+X / Ctrl+C / Ctrl+V / ↑ / ↓)가
+    # 고정 키로도 늘 동작한다 - 여기서 다른 키를 정하면 그 키도 함께 된다 (todo_panel.FIXED_NAV_KEYS)
+    "todo_delete": "Del",  # 선택한 할 일 삭제
+    "todo_cut": "Ctrl+X",  # 선택한 할 일 잘라내기 (붙여넣으면 옮겨진다)
+    "todo_copy": "Ctrl+C",  # 선택한 할 일을 하위와 함께 복사
+    "todo_paste": "Ctrl+V",  # 지금 행 아래에 붙여넣기
     "todo_up": "Up",  # 위 할 일 선택
     "todo_down": "Down",  # 아래 할 일 선택
     "todo_collapse": "Left",  # 펼친 상위면 접고, 아니면 상위로
@@ -39,6 +46,10 @@ DEFAULT_SHORTCUTS = {
 
 # 창 단축키(QShortcut)가 아니라 할 일 목록이 직접 받는 키 (TodoPanel.set_nav_keys)
 LIST_SHORTCUTS = (
+    "todo_delete",
+    "todo_cut",
+    "todo_copy",
+    "todo_paste",
     "todo_up",
     "todo_down",
     "todo_collapse",
@@ -67,8 +78,9 @@ DEFAULT_APPEARANCE = {
     "todo_text_color": "",  # TODO 글자색
     "todo_strike": True,  # 완료한 할 일에 취소선
     "todo_row_lines": False,  # 할 일 행 사이 구분선
+    "todo_guides": True,  # 하위 레벨 가이드 선 (상위의 접기 버튼에서 내려오는 강조색 세로선)
     "page_bar": "top",  # TODO 페이지 표시 위치 (PAGE_BAR_POSITIONS)
-    "fade_text": False,  # 투명도 슬라이더가 글자까지 투명하게 할지 (False: 배경만)
+    "fade_text": False,  # 투명도가 글자까지 투명하게 할지 (False: 배경만)
     "popup_width": 260,  # 리마인더 알림 창 폭(px)
     "popup_scale": 100,  # 리마인더 알림 창 글자 배율(%)
 }
@@ -78,6 +90,9 @@ UNDO_LIMITS = (5, 10, 20, 50)
 DEFAULT_UNDO_LIMIT = 10
 # 트레이 / 창 아이콘 (설정창 Application) - 첫 값이 기본. exe 아이콘은 빌드 때 정해져 바뀌지 않는다
 APP_ICONS = ("dark", "light")
+# 위젯 불투명도 (설정창 Appearance 투명도 슬라이더 - 값은 투명도 % = 100 - 불투명도 %)
+OPACITY_MIN = 0.2  # 이보다 낮으면 위젯이 사라져 조작 불가
+TRANSPARENCY_MAX = round((1 - OPACITY_MIN) * 100)  # 슬라이더 최대 투명도(%) = 80
 
 DEFAULT_CONFIG = {
     "pos": None,  # [x, y] / None 이면 우측 상단 배치
@@ -140,6 +155,25 @@ def shortcuts(cfg: dict) -> dict:
         ):
             result[action] = ""
     return result
+
+
+def opacity(cfg: dict) -> float:
+    """위젯 불투명도 (OPACITY_MIN ~ 1.0). 깨진 값이면 1.0"""
+    value = cfg.get("opacity", 1.0)
+    if type(value) not in (int, float):  # bool 은 int 의 하위 타입이므로 정확히 숫자만
+        value = 1.0
+    return min(1.0, max(OPACITY_MIN, float(value)))
+
+
+def transparency(cfg: dict) -> int:
+    """투명도 슬라이더 값(%) = 100 - 불투명도 %"""
+    return round((1 - opacity(cfg)) * 100)
+
+
+def set_transparency(cfg: dict, percent: int) -> None:
+    """투명도(%)를 불투명도로 저장한다 (기존 호환. 부동소수 오차 방지 round). 저장은 부르는 쪽에서"""
+    percent = min(TRANSPARENCY_MAX, max(0, percent))
+    cfg["opacity"] = round(1 - percent / 100, 2)
 
 
 def confirm_delete(cfg: dict) -> bool:
@@ -225,6 +259,7 @@ def appearance(cfg: dict) -> dict:
         "todo_text_color": _color(saved.get("todo_text_color"), ""),
         "todo_strike": _bool(saved.get("todo_strike"), default["todo_strike"]),
         "todo_row_lines": _bool(saved.get("todo_row_lines"), default["todo_row_lines"]),
+        "todo_guides": _bool(saved.get("todo_guides"), default["todo_guides"]),
         "page_bar": (
             saved.get("page_bar")
             if saved.get("page_bar") in PAGE_BAR_POSITIONS

@@ -261,3 +261,60 @@ def test_restore_reopens_done_parent():
     todo_tree.set_done(items, "p", True)
     _restore(items, snapshot, info)
     assert not items[0]["done"]
+
+
+# ==================================================
+# 붙여넣기 / 구분선 자리 / 복사
+# ==================================================
+def test_next_sibling_id():
+    items = _items(("a", None), ("a1", "a"), ("b", None), ("a2", "a"))
+    assert todo_tree.next_sibling_id(items, "a") == "b"
+    assert todo_tree.next_sibling_id(items, "a1") == "a2"
+    assert todo_tree.next_sibling_id(items, "a2") is None
+    assert todo_tree.next_sibling_id(items, "b") is None
+    assert todo_tree.next_sibling_id(items, "없음") is None
+    # 함께 옮겨질 형제는 건너뛴다
+    assert todo_tree.next_sibling_id(items, "a", skip={"b"}) is None
+    assert todo_tree.next_sibling_id(items, "a1", skip={"a1"}) == "a2"
+
+
+def test_subtrees_keep_list_order_and_follow_parent():
+    items = _items(("a", None), ("a1", "a"), ("b", None), ("a1x", "a1"), ("c", None))
+    # a1 은 상위 a 를 따라간다
+    result = todo_tree.subtrees(items, ["a1", "a", "c", "없음"])
+    assert [item["id"] for item in result] == ["a", "a1", "a1x", "c"]
+    assert result[0] is items[0]
+
+
+def test_clone_relinks_parents_with_new_ids():
+    items = _items(("a", None), ("a1", "a"), ("a1x", "a1"), ("b", "z"))
+    items[1]["done"] = True
+    counter = iter(range(100))
+    clones = todo_tree.clone(items, lambda: f"n{next(counter)}")
+    assert [(c["id"], c["parent_id"]) for c in clones] == [
+        ("n0", None),
+        ("n1", "n0"),
+        ("n2", "n1"),
+        ("n3", None),  # 상위가 묶음 밖이면 맨 위
+    ]
+    assert clones[1]["done"] is True and clones[1]["text"] == "a1"
+    # 원본은 그대로
+    assert [(i["id"], i["parent_id"]) for i in items][3] == ("b", "z")
+    assert clones[0] is not items[0]
+
+
+def test_paste_target_keeps_level_up_to_one_below_anchor():
+    # a(0) > a1(1) > a1x(2) / b(0)
+    items = _items(("a", None), ("a1", "a"), ("a1x", "a1"), ("a2", "a"), ("b", None))
+    # 같은 레벨: 바로 뒤 형제로
+    assert todo_tree.paste_target(items, "a1", 1) == ("a", "a2")
+    # 더 깊은 레벨(3레벨)을 1레벨 아래에: 한 단계 아래 = 첫 하위 앞
+    assert todo_tree.paste_target(items, "a", 2) == ("a", "a1")
+    assert todo_tree.paste_target(items, "a1x", 5) == ("a1x", None)  # 하위가 없으면 첫 하위로
+    # 더 얕은 레벨: 그 레벨의 상위 바로 뒤로
+    assert todo_tree.paste_target(items, "a1x", 0) == (None, "b")
+    assert todo_tree.paste_target(items, "a1x", 1) == ("a", "a2")
+    # 함께 옮겨질 항목은 건너뛴다 / 없는 기준은 최상위 맨 뒤
+    assert todo_tree.paste_target(items, "a", 1, skip={"a1"}) == ("a", "a2")
+    assert todo_tree.paste_target(items, "a1", 1, skip={"a2"}) == ("a", None)
+    assert todo_tree.paste_target(items, None, 3) == (None, None)

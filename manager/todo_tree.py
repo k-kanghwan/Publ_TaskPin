@@ -7,6 +7,8 @@ TodoPanel 의 평면 목록(todo_store 의 dict 리스트)에 그대로 적용�
   그래서 "완료 항목 정리"는 완료 항목만 보관해도 묶음째 빠진다.
 """
 
+import uuid
+
 
 def _find(items: list, item_id):
     return next((item for item in items if item["id"] == item_id), None)
@@ -218,6 +220,77 @@ def top_selected(items: list, ids) -> list:
         for item_id in ids
         if not any(parent["id"] in chosen for parent in ancestors(items, item_id))
     ]
+
+
+def next_sibling_id(items: list, item_id, skip=()):
+    """item_id 바로 뒤 형제(같은 상위, 목록 순서)의 id. 맨 뒤이거나 없는 항목이면 None
+    ("아래에 구분선 추가" / 붙여넣기처럼 그 항목 바로 아래에 넣을 때 move 의 before_id 로 쓴다)
+    skip: 건너뛸 형제 id (잘라낸 묶음처럼 함께 옮겨질 항목)"""
+    item = _find(items, item_id)
+    if item is None:
+        return None
+    siblings = [
+        other
+        for other in items
+        if other.get("parent_id") == item.get("parent_id")
+        and (other is item or other["id"] not in skip)
+    ]
+    idx = siblings.index(item)
+    return siblings[idx + 1]["id"] if idx + 1 < len(siblings) else None
+
+
+def paste_target(items: list, anchor_id, level: int, skip=()):
+    """붙여넣을 자리: anchor 바로 아래에 원래 레벨(level, 최상위 0)을 지켜서 넣는다.
+    anchor 보다 깊으면 한 단계 아래(anchor 의 첫 하위)까지만 - 3레벨을 1레벨 아래에 붙이면 2레벨.
+    같거나 얕으면 그 레벨의 상위(anchor 자신 또는 그 상위) 바로 뒤 형제로.
+    skip: 함께 옮겨질 항목 (잘라내기) - 뒤 형제 / 첫 하위로 고르지 않는다.
+
+    Returns
+    -------
+    (parent_id, before_id) : move 에 넘길 자리. 없는 anchor 면 (None, None) - 최상위 맨 뒤
+    """
+    anchor = _find(items, anchor_id)
+    if anchor is None:
+        return None, None
+    chain = [anchor] + ancestors(items, anchor_id)  # anchor 부터 위로
+    depth = len(chain) - 1
+    if level > depth:
+        first = next(
+            (
+                other
+                for other in items
+                if other.get("parent_id") == anchor_id and other["id"] not in skip
+            ),
+            None,
+        )
+        return anchor_id, first["id"] if first is not None else None
+    target = chain[depth - max(level, 0)]
+    return target.get("parent_id"), next_sibling_id(items, target["id"], skip)
+
+
+def subtrees(items: list, ids) -> list:
+    """ids 를 하위와 함께 (상위가 함께 든 항목은 상위를 따라간다). 목록 순서 그대로 같은 dict"""
+    keep = set()
+    for item_id in top_selected(items, ids):
+        if _find(items, item_id) is not None:
+            keep.add(item_id)
+            keep.update(other["id"] for other in descendants(items, item_id))
+    return [item for item in items if item["id"] in keep]
+
+
+def clone(items: list, new_id=None) -> list:
+    """항목 묶음(subtrees 결과 같은)을 새 id 로 복사한다. 묶음 안의 상위 / 하위 관계는 새 id 로 이어지고,
+    상위가 묶음 밖인 항목(복사의 맨 위)은 parent_id 가 None 이 된다 - 넣을 자리는 부르는 쪽이 move 로 정한다.
+    순서는 items 순서 그대로 (형제 사이 순서 유지)."""
+    new_id = new_id or (lambda: uuid.uuid4().hex)
+    ids = {item["id"]: new_id() for item in items}
+    result = []
+    for item in items:
+        copy = dict(item)
+        copy["id"] = ids[item["id"]]
+        copy["parent_id"] = ids.get(item.get("parent_id"))
+        result.append(copy)
+    return result
 
 
 def move_many(items: list, ids: list, parent_id, before_id) -> bool:

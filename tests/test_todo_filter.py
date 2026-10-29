@@ -123,3 +123,11 @@ def test_counts():
         "overdue": 0,
         "upcoming": 1,
     }
+
+
+def test_separator_is_not_a_search_hit():
+    items = [_item("---", "sep"), _item("a-b", "ab")]
+    assert todo_filter.matches(items[0], "") is True
+    assert todo_filter.matches(items[0], "-") is False
+    shown, _context = todo_filter.visible(items, "all", "-", NOW)
+    assert shown == {"ab"}

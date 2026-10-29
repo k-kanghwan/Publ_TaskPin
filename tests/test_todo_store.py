@@ -167,3 +167,10 @@ def test_collapsed_roundtrip(temp_db):
     todo_store.save_todos(items)
     loaded = {i["text"]: i["collapsed"] for i in todo_store.load_todos()}
     assert loaded == {"a": True, "b": False}
+
+
+def test_is_separator():
+    for text in ("---", "-----", "  ---  "):
+        assert todo_store.is_separator(text)
+    for text in ("--", "--- a", "-- -", "", None, "—"):
+        assert not todo_store.is_separator(text)
