@@ -185,3 +185,63 @@ def test_appearance_fills_missing_keys():
 def test_appearance_rejects_bool_scale():
     result = widget_config.appearance({"appearance": {"todo_scale": True}})
     assert result["todo_scale"] == 100
+
+
+def _preset(preset_id: str) -> dict:
+    return next(p for p in widget_config.COLOR_PRESETS if p["id"] == preset_id)
+
+
+def test_color_presets_are_valid():
+    ids = [p["id"] for p in widget_config.COLOR_PRESETS]
+    assert len(set(ids)) == len(ids)
+    for preset in widget_config.COLOR_PRESETS:
+        colors = {key: preset[key] for key in widget_config.PRESET_COLORS}
+        # appearance() 가 바로잡지 않는 값이어야 고른 뒤에도 같은 추천 테마로 보인다
+        result = widget_config.appearance({"appearance": colors})
+        assert {key: result[key] for key in colors} == colors
+        if preset["background"]:
+            # 다크 / 라이트가 배경 밝기(theme.build 기준)와 맞아야 메뉴 / 설정창이 위젯과 같은 쪽 색이 된다
+            rgb = [int(preset["background"][i : i + 2], 16) for i in (1, 3, 5)]
+            assert preset["dark"] == ((max(rgb) + min(rgb)) / 2 / 255 < 0.5)
+        if "transparency" in preset:
+            assert 0 <= preset["transparency"] <= widget_config.TRANSPARENCY_MAX
+
+
+def test_color_preset_default_on_any_theme():
+    default = widget_config.DEFAULT_APPEARANCE
+    assert widget_config.color_preset(default, True) == "default"
+    assert widget_config.color_preset({**default, "theme": "light"}, True) == "default"
+    assert widget_config.color_preset({**default, "accent": "#123456"}, True) is None
+
+
+def test_with_preset_round_trip_keeps_other_values():
+    for system_dark in (True, False):
+        for name in widget_config.THEMES:
+            values = {
+                **widget_config.DEFAULT_APPEARANCE,
+                "theme": name,
+                "todo_scale": 130,
+            }
+            for preset in widget_config.COLOR_PRESETS:
+                result = widget_config.with_preset(values, preset, system_dark)
+                assert result["todo_scale"] == 130  # 색 / 테마 말고는 그대로
+                assert widget_config.color_preset(result, system_dark) == preset["id"]
+
+
+def test_with_preset_changes_theme_only_when_needed():
+    dark = {**widget_config.DEFAULT_APPEARANCE, "theme": "dark"}
+    light = {**dark, "theme": "light"}
+    system = {**dark, "theme": "system"}
+    paper, forest = _preset("paper"), _preset("forest")
+    assert widget_config.with_preset(dark, paper, True)["theme"] == "light"
+    assert widget_config.with_preset(dark, forest, True)["theme"] == "dark"
+    assert widget_config.with_preset(light, forest, True)["theme"] == "dark"
+    # 시스템 테마는 OS 의 다크 / 라이트가 맞으면 그대로 둔다
+    assert widget_config.with_preset(system, forest, True)["theme"] == "system"
+    assert widget_config.with_preset(system, forest, False)["theme"] == "dark"
+    assert widget_config.with_preset(system, paper, False)["theme"] == "system"
+    # 기본은 테마를 바꾸지 않는다
+    assert widget_config.with_preset(light, _preset("default"), True)["theme"] == "light"
+    # 추천 테마를 고른 뒤 테마만 바꾸면 사용자 지정
+    chosen = widget_config.with_preset(dark, forest, True)
+    assert widget_config.color_preset({**chosen, "theme": "light"}, True) is None

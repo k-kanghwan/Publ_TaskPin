@@ -3,7 +3,8 @@
 좌측 사이드바에서 탭을 고르고 우측 카드에서 바로 바꾼다 (확인 버튼 없이 즉시 config.json 에 저장).
   - Keyboard Shortcuts : 위젯 단축키. 다른 동작과 겹치면 저장하지 않고 경고
   - Snippets           : `:트리거:` -> 문구 목록. 빈 칸 / 중복 트리거는 저장하지 않고 표시만
-  - Appearance         : 테마 / 강조색 / 배경색 / 투명도 / 글자도 함께 투명 / 폰트, 좌·우패널 글자 크기,
+  - Appearance         : 테마 / 추천 테마(강조색 · 배경색 묶음, 글자색은 배경에 맞춤 - widget_config.COLOR_PRESETS) /
+                         강조색 / 배경색 / 투명도 / 글자도 함께 투명 / 폰트, 좌·우패널 글자 크기,
                          TODO 글자색 / 완료 항목 취소선 / 행 구분선 / 하위 가이드 선 / 페이지 표시 위치,
                          리마인더 알림 창 폭 / 글자 크기(실제 크기 예시 포함),
                          사용자 태그(이름 / 색 변경, 추가, 삭제 - config.json custom_tags).
@@ -17,6 +18,7 @@
 
 키보드
   - Esc : 닫기 (단축키 입력칸에서는 입력 취소)
+드롭다운 / 투명도 슬라이더는 휠로 바뀌지 않는다 (페이지를 스크롤하다 실수로 바뀌지 않게 - 휠은 페이지 스크롤).
 """
 
 import os
@@ -70,6 +72,9 @@ NAV_ICON_WIDTH = 22  # 기호마다 폭이 달라 탭 이름이 어긋나지 않
 KEY_EDIT_WIDTH = 120
 TRIGGER_EDIT_WIDTH = 110
 FONT_COMBO_WIDTH = 190
+PRESET_COMBO_WIDTH = 190
+PRESET_ICON_SIZE = QSize(30, 18)  # 추천 테마 미리보기 (배경 + 강조색 점 + 글자색 줄)
+CUSTOM_PRESET_LABEL = "사용자 지정"  # 지금 색이 어느 추천 테마와도 다를 때
 SWATCH_SIZE = 20
 COLOR_CHIP_SIZE = 12
 RESET_ICON_PX = 13  # 되돌리기(↶) 아이콘 크기(px) - 24칸 격자로 그린 모양을 이 크기로 줄인다
@@ -323,6 +328,26 @@ def _keys_overlap(a: str, b: str) -> bool:
     return shorter > 0 and combos_a[:shorter] == combos_b[:shorter]
 
 
+def _preset_icon(look: theme.Theme, dpr: float) -> QIcon:
+    """추천 테마 미리보기: 위젯 배경 위에 강조색 점과 TODO 글자색 줄"""
+    w, h = PRESET_ICON_SIZE.width(), PRESET_ICON_SIZE.height()
+    pixmap = QPixmap(round(w * dpr), round(h * dpr))
+    pixmap.setDevicePixelRatio(dpr)
+    pixmap.fill(Qt.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.Antialiasing)
+    painter.setPen(QPen(look.overlay_color(60), 1))
+    painter.setBrush(QColor(look.bg))
+    painter.drawRoundedRect(QRectF(0.5, 0.5, w - 1, h - 1), 4, 4)
+    painter.setPen(Qt.NoPen)
+    painter.setBrush(QColor(look.accent))
+    painter.drawEllipse(QPointF(8.5, h / 2), 4, 4)
+    painter.setBrush(QColor(look.todo_color))
+    painter.drawRoundedRect(QRectF(16, h / 2 - 1.5, w - 21, 3), 1.5, 1.5)
+    painter.end()
+    return QIcon(pixmap)
+
+
 def _line() -> QFrame:
     line = QFrame()
     line.setObjectName("line")
@@ -394,6 +419,29 @@ class _ShortcutEdit(QKeySequenceEdit):
             self.clearFocus()
             return
         super().keyPressEvent(event)
+
+
+class _NoWheelComboBox(QComboBox):
+    """닫힌 상태에서는 휠로 바뀌지 않는 드롭다운 - 페이지를 스크롤하다 커서가 지나가며 값이 바뀌지 않도록
+    휠은 부모(스크롤 영역)로 넘긴다. 열어서 고르거나 포커스를 준 뒤 방향키로만 바꾼다."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFocusPolicy(Qt.StrongFocus)  # 기본 WheelFocus 는 휠로 포커스를 가져간다
+
+    def wheelEvent(self, event):
+        event.ignore()
+
+
+class _NoWheelSlider(QSlider):
+    """휠로 바뀌지 않는 슬라이더 (_NoWheelComboBox 와 같은 이유) - 끌기 / 클릭 / 방향키로만 바꾼다."""
+
+    def __init__(self, orientation, parent=None):
+        super().__init__(orientation, parent)
+        self.setFocusPolicy(Qt.StrongFocus)
+
+    def wheelEvent(self, event):
+        event.ignore()
 
 
 class _SnippetRow(QWidget):
@@ -848,6 +896,13 @@ class SettingsDialog(QWidget):
             THEME_OPTIONS, lambda v: self._set_appearance("theme", v)
         )
         self._add_row(card_layout, "테마", "시스템은 Windows 앱 모드를 따릅니다", box)
+        self._preset_combo = self._build_preset_combo()
+        self._add_row(
+            card_layout,
+            "추천 테마",
+            "강조색 · 배경색 · 글자색을 한 번에 바꿉니다",
+            self._preset_combo,
+        ).setWordWrap(True)
         self._add_row(
             card_layout,
             "강조색",
@@ -859,11 +914,11 @@ class SettingsDialog(QWidget):
         self._add_row(
             card_layout,
             "배경색",
-            "고르면 글자색은 배경 밝기에 맞춰집니다",
+            "고르면 글자색은 배경에 어울리고 잘 읽히는 색으로 맞춰집니다",
             self._bg_button,
             self._reset_button(lambda: self._set_appearance("background", "")),
         )
-        self._opacity_slider = QSlider(Qt.Horizontal)
+        self._opacity_slider = _NoWheelSlider(Qt.Horizontal)
         self._opacity_slider.setRange(0, widget_config.TRANSPARENCY_MAX)
         self._opacity_slider.setFixedWidth(OPACITY_SLIDER_WIDTH)
         self._opacity_slider.setCursor(Qt.PointingHandCursor)
@@ -1155,7 +1210,7 @@ class SettingsDialog(QWidget):
             self._set_appearance("accent", color)
 
     def _build_font_combo(self) -> QComboBox:
-        combo = QComboBox()
+        combo = _NoWheelComboBox()
         combo.setFixedWidth(FONT_COMBO_WIDTH)
         combo.setMaxVisibleItems(12)
         combo.addItem(DEFAULT_FONT_LABEL, "")
@@ -1172,6 +1227,50 @@ class SettingsDialog(QWidget):
             lambda idx: self._set_appearance("font_family", combo.itemData(idx))
         )
         return combo
+
+    def _build_preset_combo(self) -> QComboBox:
+        """추천 테마 드롭다운: 기본 | 다크 배경 | 라이트 배경 순으로 구분선을 넣어 묶는다.
+        지금 색이 어느 추천 테마와도 다르면 "사용자 지정"(placeholder - 목록에는 없음)을 보인다."""
+        combo = _NoWheelComboBox()
+        combo.setFixedWidth(PRESET_COMBO_WIDTH)
+        combo.setIconSize(PRESET_ICON_SIZE)
+        combo.setPlaceholderText(CUSTOM_PRESET_LABEL)
+        group = None
+        for preset in widget_config.COLOR_PRESETS:
+            if combo.count() and preset["dark"] != group:
+                combo.insertSeparator(combo.count())
+            group = preset["dark"]
+            combo.addItem(preset["name"], preset["id"])
+            combo.setItemData(combo.count() - 1, preset["desc"], Qt.ToolTipRole)
+        # activated 는 사용자가 고를 때만 온다 (같은 항목을 다시 골라도 와서 바꾼 색을 되돌린다)
+        combo.activated.connect(lambda idx: self._apply_preset(combo.itemData(idx)))
+        return combo
+
+    def _apply_preset(self, preset_id: str):
+        preset = next(p for p in widget_config.COLOR_PRESETS if p["id"] == preset_id)
+        if "transparency" in preset:  # 저장은 _save_appearance 가 함께
+            widget_config.set_transparency(self._cfg, preset["transparency"])
+        self._save_appearance(
+            widget_config.with_preset(
+                widget_config.appearance(self._cfg), preset, theme.system_dark()
+            )
+        )
+
+    def _refresh_presets(self, a: dict):
+        """추천 테마 미리보기(기본은 지금 테마의 색)와 지금 색에 맞는 항목을 맞춘다."""
+        system_dark = theme.system_dark()
+        dpr = self.devicePixelRatioF()
+        for preset in widget_config.COLOR_PRESETS:
+            look = theme.build(
+                widget_config.with_preset(a, preset, system_dark), system_dark
+            )
+            self._preset_combo.setItemIcon(
+                self._preset_combo.findData(preset["id"]), _preset_icon(look, dpr)
+            )
+        preset_id = widget_config.color_preset(a, system_dark)
+        self._preset_combo.setCurrentIndex(
+            self._preset_combo.findData(preset_id) if preset_id else -1
+        )
 
     def _set_appearance(self, key: str, value):
         current = widget_config.appearance(self._cfg)
@@ -1201,6 +1300,7 @@ class SettingsDialog(QWidget):
         look = self._look  # 배경색 / 글자색을 고르지 않았을 때(테마 따름) 칩에 보일 색
         ids = [value for value, _ in THEME_OPTIONS]
         self._theme_group.button(ids.index(a["theme"])).setChecked(True)
+        self._refresh_presets(a)
         for color, btn in self._swatches:
             ring = look.text_main if color == a["accent"] else color
             self._paint_swatch(btn, color, ring)
@@ -1211,7 +1311,10 @@ class SettingsDialog(QWidget):
             self._paint_swatch(self._custom_accent, "transparent", look.text_sub, "+")
         self._bg_button.set_color(a["background"], look.bg)
         self._fade_text_group.button(int(a["fade_text"])).setChecked(True)
-        self._todo_color_button.set_color(a["todo_text_color"], look.text_main)
+        # 테마 따름이면 위젯이 실제로 쓰는 글자색 (배경색을 고르면 배경에 맞춘 색 - manager/colors)
+        self._todo_color_button.set_color(
+            a["todo_text_color"], theme.build(a, theme.system_dark()).todo_color
+        )
         self._strike_group.button(int(a["todo_strike"])).setChecked(True)
         self._row_lines_group.button(int(a["todo_row_lines"])).setChecked(True)
         self._guides_group.button(int(a["todo_guides"])).setChecked(True)
