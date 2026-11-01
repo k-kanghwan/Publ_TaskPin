@@ -90,6 +90,77 @@ DEFAULT_APPEARANCE = {
     "popup_width": 260,  # 리마인더 알림 창 폭(px)
     "popup_scale": 100,  # 리마인더 알림 창 글자 배율(%)
 }
+# 설정창 Appearance "추천 테마": 강조색 / 배경색을 한 번에 바꾸는 색 조합. 글자색은 배경에 맞춘 색
+# (theme.build -> manager/colors)을 쓰도록 TODO 글자색도 "" 로 되돌린다.
+# dark: 배경에 맞는 테마 (다르면 테마도 바꿔 우클릭 메뉴 / 설정창 색을 맞춘다, None 이면 지금 테마 그대로)
+# transparency: 있으면 투명도(%)도 바꾼다 (없으면 그대로). 고른 테마는 저장하지 않고 지금 색으로 알아낸다
+PRESET_COLORS = ("accent", "background", "todo_text_color")
+COLOR_PRESETS = (
+    {
+        "id": "default",
+        "name": "기본",
+        "desc": "테마 기본 색 (다크 / 라이트는 그대로)",
+        "dark": None,
+        "accent": DEFAULT_APPEARANCE["accent"],
+        "background": "",
+        "todo_text_color": "",
+    },
+    {
+        "id": "midnight",
+        "name": "미드나잇",
+        "desc": "짙은 남색 배경 + 블루",
+        "dark": True,
+        "accent": "#5f84ea",
+        "background": "#172033",
+        "todo_text_color": "",
+    },
+    {
+        "id": "forest",
+        "name": "포레스트",
+        "desc": "짙은 숲색 배경 + 그린",
+        "dark": True,
+        "accent": "#57b07e",
+        "background": "#15201a",
+        "todo_text_color": "",
+    },
+    {
+        "id": "mocha",
+        "name": "모카",
+        "desc": "에스프레소 배경 + 골드",
+        "dark": True,
+        "accent": "#d1a050",
+        "background": "#231c17",
+        "todo_text_color": "",
+    },
+    {
+        "id": "glass",
+        "name": "글래스",
+        "desc": "반투명 차콜 배경 + 시안 · 투명도 25%",
+        "dark": True,
+        "accent": "#3db5c5",
+        "background": "#101a20",
+        "todo_text_color": "",
+        "transparency": 25,
+    },
+    {
+        "id": "paper",
+        "name": "페이퍼",
+        "desc": "크림색 종이 배경 + 잉크 블루",
+        "dark": False,
+        "accent": "#2e6a8e",
+        "background": "#f5f0e6",
+        "todo_text_color": "",
+    },
+    {
+        "id": "lavender",
+        "name": "라벤더",
+        "desc": "연보라 배경 + 퍼플",
+        "dark": False,
+        "accent": "#7558c9",
+        "background": "#efecf8",
+        "todo_text_color": "",
+    },
+)
 _COLOR_RE = re.compile(r"#[0-9a-fA-F]{6}")
 # 우패널 "삭제 이력"으로 되돌릴 수 있는 최근 삭제 수 (설정창 Application)
 UNDO_LIMITS = (5, 10, 20, 50)
@@ -277,6 +348,32 @@ def appearance(cfg: dict) -> dict:
         ),
         "popup_scale": _scale(saved.get("popup_scale"), POPUP_SCALES),
     }
+
+
+def _is_dark(values: dict, system_dark: bool) -> bool:
+    """Appearance 의 테마가 다크인지 ("system" 이면 OS 를 따른다 - theme.build 와 같은 규칙)"""
+    return values["theme"] == "dark" or (values["theme"] == "system" and system_dark)
+
+
+def color_preset(values: dict, system_dark: bool):
+    """values(appearance() 결과)와 색이 같은 추천 테마의 id. 없으면 None (사용자 지정).
+    투명도는 보지 않는다 - 글래스를 고른 뒤 투명도만 바꿔도 글래스다"""
+    dark = _is_dark(values, system_dark)
+    for preset in COLOR_PRESETS:
+        if preset["dark"] in (None, dark) and all(
+            values[key] == preset[key] for key in PRESET_COLORS
+        ):
+            return preset["id"]
+    return None
+
+
+def with_preset(values: dict, preset: dict, system_dark: bool) -> dict:
+    """values 에 추천 테마의 색을 넣은 새 Appearance. 지금 테마가 추천 테마의 다크 / 라이트와 다를 때만
+    테마를 바꾼다 (같으면 "시스템"도 그대로). 투명도는 부르는 쪽에서 (preset "transparency")"""
+    result = {**values, **{key: preset[key] for key in PRESET_COLORS}}
+    if preset["dark"] is not None and preset["dark"] != _is_dark(values, system_dark):
+        result["theme"] = "dark" if preset["dark"] else "light"
+    return result
 
 
 def _write(cfg: dict, path: str) -> None:

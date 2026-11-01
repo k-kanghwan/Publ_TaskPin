@@ -5,12 +5,15 @@
 팝업은 띄울 때마다 새로 만들므로 그때의 테마를 따른다.
 설정창은 테마(다크 / 라이트)와 강조색만 따른다 (settings_dialog._settings_theme).
 우클릭 메뉴는 배경색을 골라도 테마 설정(다크 / 라이트)을 따른다.
+배경색을 고르면 글자색은 배경의 색조를 띠고 배경 대비 읽히는 대비율을 지킨다 (manager/colors).
 """
 
 from dataclasses import dataclass, replace
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QGuiApplication
+
+from manager import colors
 
 CORNER_RADIUS = 14
 FALLBACK_FONTS = "'Malgun Gothic', 'Segoe UI', sans-serif"
@@ -175,6 +178,8 @@ def build(appearance: dict, system_dark: bool = True) -> Theme:
     if bg:
         # 팝업 / 확인 창은 위젯 배경보다 조금 덧칠한 색 (다크 기본값의 20 -> 32 / 36 과 같은 비율)
         changes["bg"] = bg
+        # 글자색은 회색 대신 배경의 색조를 옅게 띠고, 배경 대비 읽히는 대비율을 지킨다 (manager/colors)
+        changes.update(colors.text_colors(bg))
         changes["popup_bg"] = _mix(bg, base.overlay_rgb, 0.05)
         changes["dialog_bg"] = _mix(bg, base.overlay_rgb, 0.07)
     return replace(base, **changes)
