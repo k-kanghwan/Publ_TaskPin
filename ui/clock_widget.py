@@ -1198,15 +1198,17 @@ class ClockWidget(QWidget):
         act_lock.setChecked(self._locked)
         act_lock.toggled.connect(self.set_locked)
 
+        # 다른 앱을 보며 등록 / 할 일 추가를 할 때 위젯이 뒤로 사라지지 않게
+        act_top = menu.addAction("항상 위에 보이기")
+        act_top.setCheckable(True)
+        act_top.setChecked(self._on_top())
+        act_top.setEnabled(not self._force_on_top)  # 디버그 실행은 늘 위
+        act_top.toggled.connect(self.set_always_on_top)
+
         act_auto = menu.addAction("윈도우 시작 시 실행")
         act_auto.setCheckable(True)
         act_auto.setChecked(os_win.is_autostart_enabled())
         act_auto.toggled.connect(self._on_autostart_toggled)
-
-        # act_top = menu.addAction("항상 위에 보이기")
-        # act_top.setCheckable(True)
-        # act_top.setChecked(bool(self._cfg.get("always_on_top", False)))
-        # act_top.toggled.connect(self.set_always_on_top)
 
         menu.addAction("설정", self.settings_requested.emit)
         menu.addAction("위젯 숨기기", self.hide_widget)
@@ -1277,17 +1279,31 @@ class ClockWidget(QWidget):
     def set_always_on_top(self, on_top: bool):
         self._cfg["always_on_top"] = on_top
         widget_config.save_config(self._cfg)
-        self._reapply_window_flags()
+        self._apply_stay_mode()
 
-    def _reapply_window_flags(self):
-        # setWindowFlags 는 창을 숨기므로 표시 중이었다면 다시 보여준다
-        was_visible = self.isVisible()
-        pos = self.pos()
-        self._apply_window_flags()
-        self.move(pos)
-        if was_visible:
-            self.show()
-            self._apply_z_order()
+    def _apply_stay_mode(self):
+        """항상 위 / 아래 힌트를 깜빡임 없이 바꾸고 Win32 z-order 를 맞춘다.
+        setWindowFlags 는 창을 숨겼다 다시 띄우므로 _set_bottom_hint 처럼 플래그만 바꾼다.
+        메뉴를 연 위젯은 '앞으로 꺼낸' 상태라 그대로 두면 _apply_z_order 가 건너뛰고,
+        다른 앱으로 넘어갈 때 _send_to_back 이 바탕화면 층으로 내리므로 먼저 푼다."""
+        self._front_timer.stop()
+        self._front = False
+        if self.windowHandle() is None:  # 아직 띄운 적 없음
+            self._apply_window_flags()
+            return
+        flags = self.windowFlags() & ~(
+            Qt.WindowStaysOnTopHint | Qt.WindowStaysOnBottomHint
+        )
+        flags |= (
+            Qt.WindowStaysOnTopHint if self._on_top() else Qt.WindowStaysOnBottomHint
+        )
+        self.overrideWindowFlags(flags)
+        self.windowHandle().setFlags(flags)
+        self.repaint()
+        self._apply_z_order()
+        if not self._on_top() and self.isActiveWindow():
+            # 끄자마자 사라지지 않게 - 다른 앱을 누르면 그때 바탕화면 층으로
+            self.bring_to_front()
 
     def reload_config(self):
         """설정 가져오기: 새 값으로 바뀐 cfg 를 위젯 배치 / 상태에 다시 적용한다.
@@ -1299,7 +1315,7 @@ class ClockWidget(QWidget):
 
         on_top = bool(self.windowFlags() & Qt.WindowStaysOnTopHint)
         if on_top != self._on_top():
-            self._reapply_window_flags()
+            self._apply_stay_mode()
         self._apply_orientation(self._cfg_orientation())
         self._apply_size_limits()  # 같은 모드여도 저장된 폭 / 높이로
         self._place_grip()
