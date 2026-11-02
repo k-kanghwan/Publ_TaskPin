@@ -1,6 +1,6 @@
 {
   // F5 디버그 실행
-  //   - TASKPIN_DEBUG=1 : 위젯 항상 위, 설치본과 단일 인스턴스 분리, 자동 실행 레지스트리/mutex 건드리지 않음
+  //   - TASKPIN_DEBUG=1 : 기능별 예제 TODO 페이지(tools/debug_seed), 설치본과 단일 인스턴스 분리, 자동 실행 레지스트리/mutex 건드리지 않음
   //   - APPDATA         : 데이터를 .debug_appdata\TaskPin 에 저장 (실제 %APPDATA%\TaskPin 은 그대로)
   //   - PYTHONUSERBASE  : user site-packages(%APPDATA%\Python)는 원래 위치를 쓴다 (APPDATA 를 바꾸면 pip --user 패키지를 못 찾음)
   "version": "0.2.0",
