@@ -26,6 +26,7 @@ APP_NAME = "Task알림"
 # fmt: on
 
 import getpass
+import importlib
 import os
 import sys
 from datetime import datetime
@@ -44,7 +45,7 @@ from ui.text_input import ImeCharFilter
 from ui.tray_app import TrayApp
 from version import VERSION
 
-# VS Code 디버그 실행(.vscode/launch.json): 위젯 항상 위, 실제 앱과 분리
+# VS Code 디버그 실행(.vscode/launch.json): 실제 앱과 분리, 기능별 예제 TODO 페이지(tools/debug_seed)
 # (데이터는 launch.json 이 APPDATA 를 .debug_appdata 로 바꿔 분리한다)
 DEBUG = os.environ.get("TASKPIN_DEBUG") == "1"
 # Task 를 내리는 방식별 화면 문구 (task_store.COMPLETED / RELEASED)
@@ -66,6 +67,8 @@ class TaskPinApp(TrayApp):
     def __init__(self):
         super().__init__()
         self.tray.setToolTip(f"{APP_NAME} {VERSION}" + (" (debug)" if DEBUG else ""))
+        if DEBUG:
+            self._seed_debug_examples()
 
         # ==========================
         # Task 시간 (가장 최근 등록 1건)
@@ -86,7 +89,7 @@ class TaskPinApp(TrayApp):
         # 테마는 위젯을 만들기 전에 건다 (위젯 / 팝업은 만들 때 theme.current() 를 읽는다)
         self._base_font = QApplication.font()
         self._apply_theme()
-        self.widget = ClockWidget(self.widget_cfg, force_on_top=DEBUG)
+        self.widget = ClockWidget(self.widget_cfg)
         self._settings = None  # 열려 있는 설정창 (한 번에 하나)
         self._picker = None  # 열려 있는 Task 등록 / 수정 창 (한 번에 하나)
         # 등록 창을 확인 없이 닫을 때 적던 (업무명, 상세 업무) - 다음 등록 때 다시 채운다 (실행 중에만)
@@ -159,6 +162,14 @@ class TaskPinApp(TrayApp):
             self.widget.set_clock(
                 now.strftime("%H:%M:%S"), task_clock.remaining_display(end, now)
             )
+
+    @staticmethod
+    def _seed_debug_examples():
+        """디버그 실행: 없는 예제 페이지("🧪 ...")를 만든다 (.debug_appdata 일 때만, 위젯을 만들기 전에).
+        importlib 로 불러 Nuitka 가 tools/ 를 빌드에 넣지 않게 한다."""
+        made = importlib.import_module("tools.debug_seed").ensure()
+        if made:
+            print(f"[debug] 예제 페이지 {len(made)}개를 만들었습니다", flush=True)  # 이모지는 cp949 콘솔에서 깨짐
 
     def open_task_picker(self):
         """위젯의 [등록] 버튼(Task 가 없을 때): 등록 창을 수정 창과 같은 자리([수정] 버튼 위)에 띄운다.

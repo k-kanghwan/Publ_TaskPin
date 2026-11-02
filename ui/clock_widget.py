@@ -324,12 +324,10 @@ class ClockWidget(QWidget):
     # Task 등록 / 수정 창이 떠 있는 동안 위젯을 눌렀다 뗌 - TaskPinApp 이 그 창을 다시 앞으로 올린다
     blocked_clicked = Signal()
 
-    def __init__(self, cfg: dict, force_on_top: bool = False):
+    def __init__(self, cfg: dict):
         super().__init__()
 
         self._cfg = cfg
-        # 디버그 실행: 설정과 관계없이 항상 위 (cfg 는 바꾸지 않으므로 저장되지 않는다)
-        self._force_on_top = force_on_top
         self._locked = bool(cfg.get("locked", False))
         self._drag_offset = None
         self._popups = []
@@ -416,7 +414,7 @@ class ClockWidget(QWidget):
         return ORIENTATION_VERTICAL
 
     def _on_top(self) -> bool:
-        return self._force_on_top or bool(self._cfg.get("always_on_top", False))
+        return bool(self._cfg.get("always_on_top", False))
 
     def _apply_window_flags(self):
         stay_hint = (
@@ -1202,7 +1200,6 @@ class ClockWidget(QWidget):
         act_top = menu.addAction("항상 위에 보이기")
         act_top.setCheckable(True)
         act_top.setChecked(self._on_top())
-        act_top.setEnabled(not self._force_on_top)  # 디버그 실행은 늘 위
         act_top.toggled.connect(self.set_always_on_top)
 
         act_auto = menu.addAction("윈도우 시작 시 실행")
