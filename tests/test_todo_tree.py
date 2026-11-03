@@ -334,3 +334,13 @@ def test_indent_and_outdent_targets():
     assert todo_tree.outdent_target(items, "a1x") == ("a", "a2")
     assert todo_tree.outdent_target(items, "a2") == (None, "b")
     assert todo_tree.outdent_target(items, "a") is None
+
+
+def test_with_descendants_keeps_list_order():
+    items = _items(
+        ("a", None), ("a1", "a"), ("a1x", "a1"), ("b", None), ("b1", "b"), ("c", None)
+    )
+    assert todo_tree.with_descendants(items, ["b", "a1"]) == ["a1", "a1x", "b", "b1"]
+    # 상위와 하위를 함께 골라도 한 번만, 없는 id 는 뺀다
+    assert todo_tree.with_descendants(items, ["a", "a1", "zz"]) == ["a", "a1", "a1x"]
+    assert todo_tree.with_descendants(items, []) == []

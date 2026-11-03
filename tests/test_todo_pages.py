@@ -71,3 +71,13 @@ def test_migrate_v8_puts_todos_on_first_page(tmp_path):
         assert todo_pages.load() == [{"id": 1, "name": "페이지 1"}]
     finally:
         db.close()
+
+
+def test_pending_page_is_pinned_and_not_a_db_id(temp_db):
+    page = todo_pages.pending_page()
+    assert page["id"] == todo_pages.PENDING_ID
+    assert page["name"] == todo_pages.PENDING_NAME
+    assert page["pinned"] is True
+    # DB 의 페이지 id 와 겹치지 않는다
+    assert all(p["id"] != todo_pages.PENDING_ID for p in todo_pages.load())
+    assert todo_pages.add("새 페이지")["id"] > 0

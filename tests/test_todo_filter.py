@@ -131,3 +131,33 @@ def test_separator_is_not_a_search_hit():
     assert todo_filter.matches(items[0], "-") is False
     shown, _context = todo_filter.visible(items, "all", "-", NOW)
     assert shown == {"ab"}
+
+
+# ==================================================
+# 미완료 페이지
+# ==================================================
+def test_pending_collects_undone_dated_items_across_pages_by_due():
+    later = _item("발표 (@2026-10-28 10:00)")
+    later["page_id"] = 2
+    snoozed = _item("미룬 것 (@2026-10-20 09:00)", snooze="2026-10-27 09:00")
+    overdue = _item("지난 것 (@2026-10-25 18:00)")
+    overdue["page_id"] = 3
+    items = [
+        later,
+        _item("날짜 없음"),
+        _item("끝낸 것 (@2026-10-24 09:00)", done=True),
+        snoozed,
+        overdue,
+    ]
+    # 미룬 시각이 기준 (행에 보이는 시각과 같다), 페이지와 관계없이 시각 순
+    assert [item["id"] for item in todo_filter.pending(items)] == [
+        overdue["id"],
+        snoozed["id"],
+        later["id"],
+    ]
+
+
+def test_pending_keeps_order_for_same_time():
+    first = _item("A (@2026-10-27 09:00)")
+    second = _item("B (@2026-10-27 09:00)")
+    assert todo_filter.pending([first, second]) == [first, second]

@@ -10,8 +10,10 @@
   - 점: 지금 페이지는 강조색 알약, 나머지는 작은 점. 누르면 그 페이지로 (바뀔 때 알약이 옮겨 가며 늘었다 줄어든다)
   - 칩을 끌면 브라우저 탭처럼 순서를 바꾼다 (나머지 칩이 비켜서고, 넘치면 끝에서 밀림, Esc 취소).
     점은 끌지 않는다.
-  - 휠: 앞 / 뒤 페이지, 우클릭: 새 페이지 / 이름 바꾸기 / 앞·뒤로 옮기기 / 페이지 삭제
-    (다른 페이지 칩에서 우클릭하면 그 페이지로 넘어간 뒤 메뉴를 띄운다)
+  - 휠: 앞 / 뒤 페이지, 우클릭: 페이지 바로가기(모든 페이지 목록) / 새 페이지 / 이름 바꾸기 /
+    앞·뒤로 옮기기 / 페이지 삭제 (다른 페이지 칩에서 우클릭하면 그 페이지로 넘어간 뒤 메뉴를 띄운다)
+  - 고정 페이지(page["pinned"], 맨 앞 "미완료"): 칩 앞에 알람 시계, 끌 수 없고 다른 칩도 그 앞으로 못 간다.
+    이름 바꾸기 / 옮기기 / 삭제 메뉴는 꺼진다. 점은 지금 페이지가 아니면 속이 빈 원.
 """
 
 from PySide6.QtCore import (
@@ -45,7 +47,7 @@ from PySide6.QtWidgets import (
 )
 
 from manager import todo_pages
-from ui import theme
+from ui import painted, theme
 from ui.theme import px
 
 DOT = 6  # 점 지름(px)
@@ -70,6 +72,7 @@ COUNT_PAD_H = 4  # 할 일 수 배지 좌우 여백(px)
 CHIP_SLIDE_MS = 120  # 칩을 끌 때 나머지 칩이 비켜서는 시간
 DRAG_SCROLL_MS = 30  # 칩을 끌어 양 끝에 대면 이 간격으로 민다
 DRAG_SCROLL_STEP = 6  # 한 번에 미는 폭(px)
+PIN_ICON_GAP = 3  # 고정 칩: 알람 시계 - 이름 간격(px)
 
 
 class PageDots(QWidget):
@@ -174,6 +177,13 @@ class PageDots(QWidget):
             else:
                 alpha = DOT_HOVER_ALPHA if idx == self._hover else DOT_ALPHA
                 color = t.overlay_color(alpha)
+            if idx != self._current and self._pages[idx].get("pinned"):
+                # 고정 페이지("미완료")는 속이 빈 원
+                painter.setBrush(Qt.NoBrush)
+                painter.setPen(QPen(color, 1.2))
+                painter.drawEllipse(rect.adjusted(0.6, 0.6, -0.6, -0.6))
+                painter.setPen(Qt.NoPen)
+                continue
             painter.setBrush(color)
             painter.drawRoundedRect(rect, DOT / 2, DOT / 2)
 
@@ -185,9 +195,9 @@ class PageDots(QWidget):
             if idx is None:
                 QToolTip.hideText()
             else:
-                QToolTip.showText(
-                    event.globalPosition().toPoint(), self._pages[idx]["name"], self
-                )
+                page = self._pages[idx]
+                tip = page["name"] + (f"\n{page['tip']}" if page.get("tip") else "")
+                QToolTip.showText(event.globalPosition().toPoint(), tip, self)
         super().mouseMoveEvent(event)
 
     def leaveEvent(self, event):
@@ -291,12 +301,27 @@ class PageTabs(QWidget):
     def _ids(self) -> list:
         return [page["id"] for page in self._pages]
 
+    def _pinned_count(self) -> int:
+        """맨 앞에 고정된 페이지 수 (끌 수 없고 다른 칩이 그 앞으로 못 간다)"""
+        count = 0
+        for page in self._pages:
+            if not page.get("pinned"):
+                break
+            count += 1
+        return count
+
+    def _pin_icon(self) -> int:
+        """고정 칩 앞 알람 시계 크기(px) - 글자 높이에 맞춘다"""
+        return max(8, self.fontMetrics().height() - 4)
+
     def _widths(self) -> dict:
         """페이지 id -> 칩 폭 (칩 사이 간격 제외)"""
         metrics = self.fontMetrics()
         widths = {}
         for page, name, count in zip(self._pages, self._names(), self._count_texts()):
             width = metrics.horizontalAdvance(name) + CHIP_PAD_H * 2 + 2
+            if page.get("pinned"):
+                width += self._pin_icon() + PIN_ICON_GAP
             if count:
                 width += CHIP_COUNT_GAP + self._badge_width(count)
             widths[page["id"]] = width
@@ -398,11 +423,21 @@ class PageTabs(QWidget):
     def _paint_chips(self, painter: QPainter):
         t = theme.current()
         painter.setFont(self.font())
+        pinned = {page["id"] for page in self._pages if page.get("pinned")}
         chips = zip(self._ids(), self._rects(), self._names(), self._count_texts())
         if self._drag_id is None:
             for idx, (page_id, rect, name, count) in enumerate(chips):
                 current = page_id == self._current
-                self._paint_chip(painter, t, rect, name, count, current, idx == self._hover)
+                self._paint_chip(
+                    painter,
+                    t,
+                    rect,
+                    name,
+                    count,
+                    current,
+                    idx == self._hover,
+                    pinned=page_id in pinned,
+                )
             return
         # 끄는 중: 나머지 칩은 놓일 자리를 비켜 서고, 끄는 칩은 커서를 따라 맨 위에 (배경을 칠해 덮는다)
         lefts = self._shown_lefts()
@@ -414,11 +449,15 @@ class PageTabs(QWidget):
                 dragged = (rect, name, count, current)
                 continue
             rect.moveLeft(lefts[page_id])
-            self._paint_chip(painter, t, rect, name, count, current, False)
+            self._paint_chip(
+                painter, t, rect, name, count, current, False, pinned=page_id in pinned
+            )
         if dragged is not None:
             self._paint_chip(painter, t, *dragged, True, QColor(t.bg))
 
-    def _paint_chip(self, painter, t, rect, name, count, current, hover, fill=None):
+    def _paint_chip(
+        self, painter, t, rect, name, count, current, hover, fill=None, pinned=False
+    ):
         radius = self._chip_height() / 2
         if current:
             border, text = QColor(t.accent), t.text_main
@@ -430,6 +469,14 @@ class PageTabs(QWidget):
         painter.drawRoundedRect(rect, radius, radius)
         # 이름 + 할 일 수를 한 덩어리로 가운데에
         inner = rect.adjusted(CHIP_PAD_H + 0.5, 0, -(CHIP_PAD_H + 0.5), 0)
+        if pinned:  # 고정 페이지("미완료"): 이름 앞에 알람 시계 (지금 페이지면 강조색)
+            size = self._pin_icon()
+            icon = painted.alarm_pixmap(
+                t.accent if current else text, size, self.devicePixelRatioF()
+            )
+            top = rect.center().y() - size / 2
+            painter.drawPixmap(QPointF(inner.left(), top), icon)
+            inner.setLeft(inner.left() + size + PIN_ICON_GAP)
         painter.setPen(QColor(text))
         painter.drawText(inner, Qt.AlignLeft | Qt.AlignVCenter, name)
         if count:  # 오른쪽 끝에 강조색 알약 배지
@@ -462,8 +509,13 @@ class PageTabs(QWidget):
         right_most = 0.5 + sum(
             widths[page_id] + CHIP_GAP for page_id in widths if page_id != self._drag_id
         )
+        # 고정 칩 앞으로는 가지 않는다
+        left_most = 0.5 + sum(
+            widths[page["id"]] + CHIP_GAP
+            for page in self._pages[: self._pinned_count()]
+        )
         left = self._drag_x + self._offset - self._drag_grab
-        return min(max(0.5, left), right_most)
+        return min(max(left_most, left), right_most)
 
     def _shown_lefts(self) -> dict:
         """비켜서는 중인 칩들의 지금 x (페이지 id -> x)"""
@@ -484,8 +536,8 @@ class PageTabs(QWidget):
         page_id, press_x, _ = self._press
         self._press = None
         ids = self._ids()
-        if page_id not in ids:
-            return
+        if page_id not in ids or ids.index(page_id) < self._pinned_count():
+            return  # 고정 칩은 끌지 않는다
         widths = self._widths()
         left = self._lefts(ids, widths)[page_id]
         self._drag_id = page_id
@@ -510,7 +562,7 @@ class PageTabs(QWidget):
         ids, widths = self._ids(), self._widths()
         left = self._drag_left()
         slot = min(
-            range(len(ids)),
+            range(self._pinned_count(), len(ids)),  # 고정 칩 앞으로는 못 간다
             key=lambda s: abs(
                 self._lefts(todo_pages.moved(ids, self._drag_id, s), widths)[
                     self._drag_id
@@ -567,12 +619,12 @@ class PageTabs(QWidget):
         if idx != self._hover:
             self._hover = idx
             self.update()
-            # 줄인 이름은 툴팁으로 전체를 보여준다
+            # 줄인 이름은 툴팁으로 전체를 보여준다 (고정 페이지는 설명도)
             names = self._names()
-            if idx is not None and names[idx] != self._pages[idx]["name"]:
-                QToolTip.showText(
-                    event.globalPosition().toPoint(), self._pages[idx]["name"], self
-                )
+            page = self._pages[idx] if idx is not None else None
+            if page is not None and (names[idx] != page["name"] or page.get("tip")):
+                tip = page["name"] + (f"\n{page['tip']}" if page.get("tip") else "")
+                QToolTip.showText(event.globalPosition().toPoint(), tip, self)
             else:
                 QToolTip.hideText()
         super().mouseMoveEvent(event)
@@ -725,18 +777,40 @@ class PageBar(QWidget):
                 self.page_selected.emit(page_id)  # set_pages 로 지금 페이지가 바뀐다
         ids = [page["id"] for page in self._pages]
         idx = ids.index(self._current) if self._current in ids else 0
+        pinned = self.tabs._pinned_count()
+        fixed = idx < pinned  # 고정 페이지("미완료")는 이름 / 자리 / 삭제를 바꾸지 않는다
         menu = QMenu(self)
         menu.setStyleSheet(theme.menu_style(theme.current()))
+        self._add_jump_menu(menu)
+        menu.addSeparator()
         menu.addAction("새 페이지", self.add_requested.emit)
-        menu.addAction("이름 바꾸기…", self.rename_requested.emit)
+        act_rename = menu.addAction("이름 바꾸기…", self.rename_requested.emit)
+        act_rename.setEnabled(not fixed)
         menu.addSeparator()
         act_front = menu.addAction(
             "앞으로 옮기기", lambda: self.move_requested.emit(-1)
         )
-        act_front.setEnabled(idx > 0)
+        act_front.setEnabled(idx > pinned)
         act_back = menu.addAction("뒤로 옮기기", lambda: self.move_requested.emit(1))
-        act_back.setEnabled(idx < len(ids) - 1)
+        act_back.setEnabled(not fixed and idx < len(ids) - 1)
         menu.addSeparator()
         act_delete = menu.addAction("페이지 삭제…", self.delete_requested.emit)
-        act_delete.setEnabled(len(ids) > 1)
+        act_delete.setEnabled(not fixed and len(ids) - pinned > 1)
         menu.exec(event.globalPos())
+
+    def _add_jump_menu(self, menu: QMenu):
+        """우클릭 "페이지 바로가기" 서브메뉴: 모든 페이지 (지금 페이지는 체크, 체크 안 한 할 일 수)"""
+        # menu.addMenu("제목") 으로 만든 서브메뉴는 이 함수가 끝나면 PySide 가 지워 버린다 - 부모를 준다
+        jump = QMenu("페이지 바로가기", menu)
+        menu.addMenu(jump)
+        jump.setStyleSheet(menu.styleSheet())
+        for page in self._pages:
+            count = self.tabs._counts.get(page["id"])
+            label = page["name"] + (f"  ({count})" if count else "")
+            action = jump.addAction(
+                label.replace("&", "&&"),  # & 는 메뉴 단축 글자 표시가 되므로
+                lambda _=False, pid=page["id"]: self.page_selected.emit(pid),
+            )
+            if page["id"] == self._current:
+                action.setCheckable(True)
+                action.setChecked(True)

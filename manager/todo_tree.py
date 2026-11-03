@@ -134,6 +134,18 @@ def descendants(items: list, item_id) -> list:
     return result
 
 
+def with_descendants(items: list, ids) -> list:
+    """ids 와 그 하위 전부의 id (items 순서, 중복 없이) - 우클릭 "완료 항목 정리 → 선택 항목".
+    목록에 없는 id 는 뺀다."""
+    wanted = set()
+    known = {item["id"] for item in items}
+    for item_id in ids:
+        if item_id in known and item_id not in wanted:
+            wanted.add(item_id)
+            wanted.update(child["id"] for child in descendants(items, item_id))
+    return [item["id"] for item in items if item["id"] in wanted]
+
+
 def ancestors(items: list, item_id) -> list:
     """item_id 의 상위 항목들 (바로 위 상위부터)"""
     by_id = {item["id"]: item for item in items}

@@ -88,6 +88,10 @@ def test_shortcuts_fill_missing_and_broken():
         "todo_search": "Ctrl+F",
         "todo_page_prev": "Ctrl+PgUp",
         "todo_page_next": "Ctrl+PgDown",
+        "todo_page_first": "Ctrl+Shift+PgUp",
+        "todo_page_last": "Ctrl+Shift+PgDown",
+        "todo_page_new": "Ctrl+T",
+        "todo_page_jump": "F5",
         "settings": "Ctrl+,",
     }
     assert widget_config.shortcuts({"shortcuts": "깨짐"}) == (
@@ -189,3 +193,16 @@ def test_list_shortcuts_yield_to_user_key():
     assert result["todo_up"] == ""
     assert result["todo_down"] == "Down"
     assert set(widget_config.LIST_SHORTCUTS) <= set(widget_config.DEFAULT_SHORTCUTS)
+
+
+def test_page_shortcuts_default_unless_taken():
+    # v0.1.29 에 생긴 페이지 단축키 (새 페이지 / 맨 앞 / 맨 뒤 / 바로가기 창)
+    result = widget_config.shortcuts({"shortcuts": {}})
+    assert [
+        result[a]
+        for a in ("todo_page_new", "todo_page_first", "todo_page_last", "todo_page_jump")
+    ] == ["Ctrl+T", "Ctrl+Shift+PgUp", "Ctrl+Shift+PgDown", "F5"]
+    # 사용자가 이미 다른 동작에 쓰는 키면 비워 둔다
+    result = widget_config.shortcuts({"shortcuts": {"settings": "F5", "todo_focus": "Ctrl+T"}})
+    assert result["todo_page_jump"] == ""
+    assert result["todo_page_new"] == ""

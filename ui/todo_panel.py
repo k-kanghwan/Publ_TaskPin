@@ -3,7 +3,8 @@
 - 목록 아래 입력창에서 Enter 로 바로 추가 (별도 창 없음)
 - 입력 중 `(@` 를 치면 리마인더 피커가 떠서 `(@YYYY-MM-DD HH:mm)` 토큰을 넣는다
 - 입력 중 `:idea:` 같은 스니펫 트리거를 치면 설정한 문구(💡)로 바뀐다 (설정창 Snippets 탭)
-- 체크하면 목록 아래로 (취소선은 Appearance 설정), 우클릭 메뉴 "완료 항목 정리" 로 일괄 보관(DB 에는 남음)
+- 체크하면 목록 아래로 (취소선은 Appearance 설정), 우클릭 메뉴 "완료 항목 정리"(선택 항목 / 이 페이지 /
+  모든 페이지 - 경고 확인 창) 로 일괄 보관(DB 에는 남음)
 - 하이픈만 3개 이상("---") 적은 할 일은 구분선(가로선)으로 그린다 (우클릭 "아래에 구분선 추가")
 - 꺾쇠(›/⌄, 직접 그림)로 펼치면 펼친 하위 마지막 행까지 보이게 스크롤한다 (하위가 화면보다 길면 상위를 맨 위에 둔다)
 - 더블클릭으로 그 자리에서 수정 (Enter/포커스 이동: 저장, Esc: 취소)
@@ -31,8 +32,13 @@
 - 행은 항목 id 로 기억해 두고 다시 쓴다 (다른 페이지 / 접힘 / 거름으로 숨은 행도 지우지 않음 - 페이지를 넘길 때
   행을 새로 만들지 않게). 지워지거나 보관된 항목의 행만 지운다.
 - 페이지(엑셀 시트처럼 독립된 목록, manager/todo_pages): 위 / 아래 / 왼쪽 / 오른쪽의 페이지 표시(ui/page_bar)와
-  Ctrl+PgUp / Ctrl+PgDown 으로 넘긴다. 화면 / 검색 / 정리 / 내보내기는 지금 페이지, 리마인더는 모든 페이지.
+  Ctrl+PgUp / Ctrl+PgDown (맨 앞 / 맨 뒤 Ctrl+Shift+PgUp / PgDown, 새 페이지 Ctrl+T, 바로가기 창 F5 -
+  ui/page_switcher) 로 넘긴다. 화면 / 검색 / 정리 / 내보내기는 지금 페이지, 리마인더는 모든 페이지.
   우클릭 "페이지로 이동"으로 선택 항목을 다른 페이지로 옮긴다.
+- 맨 앞 고정 페이지 "미완료"(todo_pages.PENDING_ID): 모든 페이지에서 날짜가 있고 하지 않은 할 일을 시각 순 한 목록으로
+  (행 끝에 원래 페이지 이름). 체크 / 수정 / 태그 / 삭제 / 복사와 우클릭 "원래 페이지에서 보기"(reveal_item)만 되고,
+  추가 / 드래그 / 잘라내기 / 붙여넣기 / 단계 변경 / 구분선 / 페이지로 이동은 막는다 (모은 목록이라 자리가 없다).
+- reveal_item: 할 일의 페이지로 넘어가 접힌 상위를 펴고 골라 보인 뒤 행을 깜빡인다 (알림 팝업 클릭에도 씀).
 - 형제끼리는 미완료 -> 완료 순, 리마인더 항목이 시각순으로 위에 고정되고 나머지는 사용자가 정한 순서
 - Ctrl+F / 우클릭 "검색": 목록 위에 [전체][오늘][지연][예정] 칩 + 검색칸 줄이 열린다 (manager/todo_filter).
   맞는 항목의 상위는 흐리게 함께 보인다. 거르는 중에는 드래그하지 않고, 할 일을 추가하면 전체 보기로 돌아간다.
@@ -96,6 +102,7 @@ from manager import (
 from ui import painted, theme
 from ui.confirm_dialog import ConfirmDialog
 from ui.page_bar import PageBar
+from ui.page_switcher import PageSwitcher
 from ui.painted import CheckBox
 from ui.reminder_picker import ReminderPicker
 from ui.tag_dialog import TagDialog
@@ -148,6 +155,7 @@ TAG_COLORS = {
 }
 PLACEHOLDER = "+ 할 일 추가 · (@ 리마인더"
 PLACEHOLDER_CHILD = "+ 하위 할 일 추가 · Esc 선택 해제"
+PLACEHOLDER_PENDING = "미완료 페이지에는 추가할 수 없습니다"
 SEARCH_PLACEHOLDER = "🔍 검색 · Esc 닫기"
 EMPTY_TEXT = "할 일이 없습니다"
 EMPTY_FILTERED_TEXT = "일치하는 할 일이 없습니다"
@@ -158,6 +166,9 @@ HIGHLIGHT_COLOR = "#f5cc45"  # 태그 Yellow 와 같은 색
 HIGHLIGHT_ALPHA = 150  # 가장 진할 때의 불투명도 (0~255)
 HIGHLIGHT_HOLD_MS = 2000
 HIGHLIGHT_FADE_MS = 600
+# 할 일 찾아 보여주기(알림 클릭 / "원래 페이지에서 보기")의 깜빡임: 강조색 배경이 두 번 맥박 치고 사라진다
+FLASH_ALPHA = 90  # 가장 진할 때의 강조색 불투명도 (0~255)
+FLASH_MS = 1400
 
 
 def _combo(key, modifiers=Qt.NoModifier) -> int:
@@ -201,6 +212,7 @@ WARM_DELAY_MS = 1500
 WARM_BATCH = 8  # 한 번에 만들 행 수 (UI 가 멈춰 보이지 않을 만큼)
 WARM_STEP_MS = 15
 HISTORY_TEXT_PX = 180  # 우클릭 "삭제 이력" 항목의 본문 폭 (넘치면 말줄임)
+CLEAR_ALL_PAGES_SHOWN = 4  # "모든 페이지" 정리 확인 창에 페이지별 개수를 보여줄 페이지 수
 
 
 def _indent(depth: int) -> int:
@@ -530,6 +542,8 @@ class TodoRow(QWidget):
         self.cut = False  # 잘라낸 항목 (붙여넣기 전까지 흐리게, TodoPanel 이 정함)
         self.mark_query = ""  # 검색 하이라이트할 검색어 (TodoPanel 이 정함)
         self.mark_level = 0.0  # 하이라이트 진하기 0~1 (0 이면 칠하지 않음)
+        self.flash = 0.0  # 찾아 보여줄 때의 깜빡임 0~1 (TodoPanel._flash 가 정함)
+        self.origin = ""  # 미완료 페이지에서 행 끝에 흐리게 붙이는 원래 페이지 이름
         self._tag_color = tag_color
         self._reminders_provider = reminders_provider
         self._snippets_provider = snippets_provider
@@ -605,14 +619,18 @@ class TodoRow(QWidget):
         layout.addWidget(self.label, 1)
         layout.addWidget(self.btn_delete, 0, Qt.AlignTop)
 
-    def set_state(self, item: dict, depth: int, context=False, has_children=False):
+    def set_state(
+        self, item: dict, depth: int, context=False, has_children=False, origin=""
+    ):
         """보여줄 항목과 자리를 (다시) 정하고 그린다.
         context: 검색 / 날짜별 보기에는 맞지 않지만 맞는 항목의 상위라서 보이는 행 (흐리게)
         has_children: 하위가 있으면 접기 꺾쇠 버튼을 보인다 (item["collapsed"] 가 방향을 정함)
+        origin: 미완료 페이지에서 행 끝에 붙일 원래 페이지 이름 ("" 이면 붙이지 않음)
         구분선 할 일은 체크박스 / 글자를 숨기고 paintEvent 가 가로선을 긋는다."""
         self.item = item
         self.depth = depth
         self.context = context
+        self.origin = origin
         self.separator = todo_store.is_separator(item["text"])
         self._layout.setContentsMargins(ROW_PAD + self.indent(), 2, ROW_PAD, 2)
         self.btn_toggle.setVisible(has_children)
@@ -693,6 +711,12 @@ class TodoRow(QWidget):
                 f"&nbsp;{icon}&nbsp;"
                 f'<span style="color:{chip_color}; font-size:{px(11, s)}px;">'
                 f"{due:%m/%d %H:%M}</span>"
+            )
+        if self.origin:  # 미완료 페이지: 어느 페이지의 할 일인지 (이름의 이모지도 본문처럼 감싼다)
+            origin = todo_store.to_html(self.origin, f"font-size:{px(12, s)}px;")
+            html += (
+                f'&nbsp;<span style="color:{t.text_sub}; font-size:{px(11, s)}px;">'
+                f"· {origin}</span>"
             )
         self.label.setText(f'<div style="{line_style}">{html}</div>')
 
@@ -822,19 +846,24 @@ class TodoRow(QWidget):
 
     def paintEvent(self, event):
         # 선택 테두리는 TodoPanel._paint_selection 이 목록 위에 그린다 (이어진 행을 묶기 위해)
-        if not (self._hover or self.separator):
+        if not (self._hover or self.separator or self.flash > 0):
             return
         t = theme.current()
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        if self._hover:
+        if self._hover or self.flash > 0:
             path = QPainterPath()
             path.addRoundedRect(
                 QRectF(self.rect().adjusted(self.indent(), 0, 0, 0)),
                 ROW_RADIUS,
                 ROW_RADIUS,
             )
-            painter.fillPath(path, t.overlay_color(ROW_HOVER_ALPHA))
+            if self._hover:
+                painter.fillPath(path, t.overlay_color(ROW_HOVER_ALPHA))
+            if self.flash > 0:
+                flash = QColor(t.accent)
+                flash.setAlpha(round(FLASH_ALPHA * self.flash))
+                painter.fillPath(path, flash)
         if self.separator:
             # 태그 막대 자리 뒤부터 ✕ 자리 앞까지 (✕ 는 숨어도 자리를 둔다)
             left = self.tag_bar.geometry().right() + 1 + SEPARATOR_GAP
@@ -848,7 +877,8 @@ class TodoRow(QWidget):
 class TodoPanel(QWidget):
     """TODO 목록 + 입력창. 상태는 todo_store 로 바로바로 저장한다. (선택 상태는 저장하지 않음)"""
 
-    export_requested = Signal(bool)  # 우클릭 "내보내기" - True 면 보관 항목 전체
+    # 우클릭 "내보내기" - todo_export.KINDS 중 하나 ("page" 현재 페이지 / "all" 전체 페이지 / "archived" 보관 항목)
+    export_requested = Signal(str)
     page_changed = Signal(int)  # 지금 페이지가 바뀜 - 페이지 id (위젯이 cfg 에 저장)
 
     def __init__(
@@ -882,9 +912,9 @@ class TodoPanel(QWidget):
         self.set_nav_keys(widget_config.DEFAULT_SHORTCUTS)
         # 페이지 (엑셀 시트처럼 독립된 목록). self._items 는 모든 페이지의 할 일이다 -
         # 리마인더 알림 / 팝업 완료는 모든 페이지에, 화면 / 검색 / 정리 / 내보내기는 지금 페이지에
-        self._pages = todo_pages.load()
+        self._pages = todo_pages.load()  # 실제 페이지 (맨 앞 고정 "미완료"는 _nav_pages)
         page_ids = [page["id"] for page in self._pages]
-        self._page_id = page_id if page_id in page_ids else page_ids[0]
+        self._page_id = page_id if page_id in self._nav_ids() else page_ids[0]
         self._items = todo_store.load_todos()
         for item in self._items:
             if item["page_id"] not in page_ids:  # 페이지가 사라진 할 일은 첫 페이지로
@@ -931,6 +961,17 @@ class TodoPanel(QWidget):
         self._mark_fade.valueChanged.connect(self._set_mark_level)
         self._mark_hold.timeout.connect(self._mark_fade.start)
 
+        # 찾아 보여준 행의 깜빡임 (reveal_item): 두 번 맥박 친 뒤 사라진다
+        self._flash_id = None
+        self._flash_anim = QVariantAnimation(self)
+        self._flash_anim.setDuration(FLASH_MS)
+        self._flash_anim.setStartValue(0.0)
+        self._flash_anim.setKeyValueAt(0.15, 1.0)
+        self._flash_anim.setKeyValueAt(0.35, 0.35)
+        self._flash_anim.setKeyValueAt(0.55, 1.0)
+        self._flash_anim.setEndValue(0.0)
+        self._flash_anim.valueChanged.connect(self._set_flash)
+
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(4)
@@ -943,9 +984,14 @@ class TodoPanel(QWidget):
         self.page_bar.add_requested.connect(self.add_page)
         self.page_bar.rename_requested.connect(self.rename_page)
         self.page_bar.move_requested.connect(self.move_page)
-        self.page_bar.page_moved.connect(self.move_page_to)
+        # 칩을 끌어 놓은 자리는 표시 순서 - 맨 앞 고정 페이지 수만큼 빼서 실제 순서로
+        self.page_bar.page_moved.connect(
+            lambda page_id, index: self.move_page_to(
+                page_id, index - (len(self._nav_ids()) - len(self._pages))
+            )
+        )
         self.page_bar.delete_requested.connect(self.delete_page)
-        self.page_bar.set_pages(self._pages, self._page_id)
+        self._sync_page_bar()
         self._page_bar_pos = None
 
         self.filter_bar = FilterBar()  # 검색 / 날짜별 보기 (Ctrl+F, 우클릭 "검색")
@@ -995,6 +1041,7 @@ class TodoPanel(QWidget):
         root.addWidget(self.input)
 
         self.apply_appearance()
+        self._apply_page_mode()
         self._rebuild()
         QTimer.singleShot(WARM_DELAY_MS, self._warm_rows)
 
@@ -1055,8 +1102,20 @@ class TodoPanel(QWidget):
     # 조회
     # ==================================================
     def items(self) -> list:
-        """지금 페이지 목록 사본 (내보내기 "화면 목록"용)"""
+        """지금 페이지 목록 사본 (내보내기 "현재 페이지"용 - 미완료 페이지면 모은 할 일)"""
         return self._page_items()
+
+    def all_items(self) -> list:
+        """모든 페이지의 할 일 (내보내기 "전체 페이지"용)"""
+        return list(self._items)
+
+    def pages(self) -> list:
+        """실제 페이지 [{"id", "name"}] 순서대로 (고정 페이지 "미완료"는 빼고)"""
+        return [dict(page) for page in self._pages]
+
+    def is_pending_page(self) -> bool:
+        """지금 페이지가 맨 앞 고정 페이지 "미완료"인지"""
+        return self._pending()
 
     def page_name(self) -> str:
         """지금 페이지 이름 (내보내기 파일 이름 / 제목)"""
@@ -1066,15 +1125,34 @@ class TodoPanel(QWidget):
         """고른 할 일이 있는지 (메뉴 키로 그 행의 메뉴를 띄울 수 있는지)"""
         return self._current_row() is not None
 
-    def has_done(self) -> bool:
-        return any(item["done"] for item in self._page_items())
-
     def _page_items(self) -> list:
-        """지금 페이지의 할 일 (self._items 순서 그대로, 같은 dict)"""
+        """지금 페이지의 할 일 (self._items 순서 그대로, 같은 dict).
+        미완료 페이지면 모든 페이지에서 날짜가 있고 하지 않은 할 일 (시각 순 - todo_filter.pending)"""
+        if self._pending():
+            return todo_filter.pending(self._items)
         return [item for item in self._items if item["page_id"] == self._page_id]
 
     def _page_ids(self) -> list:
+        """실제 페이지 id (고정 페이지 "미완료" 제외)"""
         return [page["id"] for page in self._pages]
+
+    def _nav_pages(self) -> list:
+        """페이지 표시 / 넘기기 순서: 맨 앞 고정 페이지 "미완료" + 실제 페이지"""
+        return [todo_pages.pending_page()] + self._pages
+
+    def _nav_ids(self) -> list:
+        return [page["id"] for page in self._nav_pages()]
+
+    def _pending(self) -> bool:
+        """지금 페이지가 고정 페이지 "미완료"인지 - 모은 목록이라 추가 / 자리 바꾸기는 막는다"""
+        return self._page_id == todo_pages.PENDING_ID
+
+    def _real_page_id(self) -> int:
+        """할 일을 넣을 실제 페이지 (미완료 페이지를 보는 중이면 첫 페이지)"""
+        return self._pages[0]["id"] if self._pending() else self._page_id
+
+    def _sync_page_bar(self):
+        self.page_bar.set_pages(self._nav_pages(), self._page_id)
 
     def _page_of(self, item_id):
         item = self._find(item_id)
@@ -1113,7 +1191,10 @@ class TodoPanel(QWidget):
     def add_item(self, text: str):
         """선택한 항목이 있으면 그 하위 맨 뒤로 넣는다 (마지막으로 클릭한 항목 우선).
         고른 항목이 구분선이면 하위가 아니라 그 바로 아래(같은 상위)에 넣는다.
-        거르는 중이면 새 항목이 숨지 않도록 전체 보기로 돌아간다 (검색 줄은 열어 둔다)."""
+        거르는 중이면 새 항목이 숨지 않도록 전체 보기로 돌아간다 (검색 줄은 열어 둔다).
+        미완료 페이지에는 넣지 않는다 (모은 목록이라 자리가 없다)."""
+        if self._pending():
+            return
         self._show_all()
         item = todo_store.new_item(text, self._page_id)
         anchor_id = self._add_parent_id()
@@ -1134,6 +1215,8 @@ class TodoPanel(QWidget):
     def add_separator_below(self, anchor_id=None):
         """우클릭 "아래에 구분선 추가": 그 행 바로 아래(같은 상위)에 구분선을 넣고 고른다. 행이 없으면 맨 뒤에.
         완료된 상위 아래면 구분선도 완료로 둔다 (구분선 때문에 상위가 미완료로 돌아가지 않게)."""
+        if self._pending():
+            return
         self._show_all()
         item = todo_store.new_item(todo_store.SEPARATOR, self._page_id)
         parent_id, before_id = (
@@ -1168,8 +1251,10 @@ class TodoPanel(QWidget):
 
     def cut_selected(self):
         """잘라내기(Ctrl+X / 설정 단축키): 선택 항목(하위와 함께)을 흐리게 표시만 해 두고, 붙여넣으면 그 자리로
-        옮긴다 (다른 페이지로도). 붙여넣기 전에는 아무것도 바뀌지 않는다 - Esc / 다시 복사하면 풀린다."""
-        self._take_selected(cut=True)
+        옮긴다 (다른 페이지로도). 붙여넣기 전에는 아무것도 바뀌지 않는다 - Esc / 다시 복사하면 풀린다.
+        미완료 페이지에서는 자리를 옮기는 동작이라 하지 않는다 (복사는 된다)."""
+        if not self._pending():
+            self._take_selected(cut=True)
 
     def _take_selected(self, cut: bool):
         """선택 항목을 앱 클립보드에: 하위까지 사본(items), 맨 위 id(ids)와 그때의 레벨(levels -
@@ -1213,7 +1298,7 @@ class TodoPanel(QWidget):
 
     def _can_paste(self) -> bool:
         clip = self._clipboard
-        if clip is None:
+        if clip is None or self._pending():
             return False
         return not clip["cut"] or any(self._find(i) for i in clip["ids"])
 
@@ -1302,9 +1387,10 @@ class TodoPanel(QWidget):
         self._clipboard = None
         self._cut_ids = set()
         self._show_all()
+        self._apply_page_mode()
         self._rebuild()
         self.scroll.verticalScrollBar().setValue(0)
-        self.page_bar.set_pages(self._pages, self._page_id)
+        self._sync_page_bar()
         self.page_changed.emit(self._page_id)
 
     def toggle_collapse(self, item_id: str):
@@ -1337,8 +1423,10 @@ class TodoPanel(QWidget):
         self.scroll.ensureWidgetVisible(parent, 0, NAV_SCROLL_MARGIN)
 
     def set_all_collapsed(self, collapsed: bool):
-        """우클릭 "모두 접기" / "모두 펼치기". 지금 행은 화면에 남겨 둔다."""
-        if todo_tree.set_all_collapsed(self._page_items(), collapsed):
+        """우클릭 "모두 접기" / "모두 펼치기". 지금 행은 화면에 남겨 둔다. (미완료 페이지는 계층 없이 보임)"""
+        if not self._pending() and todo_tree.set_all_collapsed(
+            self._page_items(), collapsed
+        ):
             self._save_and_rebuild()
             row = self._current_row()
             if row is not None:
@@ -1377,7 +1465,7 @@ class TodoPanel(QWidget):
         내리기는 화면에서 바로 위 형제의 하위 맨 뒤로 (위 형제가 없거나 구분선이면 그대로),
         올리기는 상위 바로 뒤 형제로 (최상위면 그대로). 거르는 중에는 숨은 형제가 있어 옮기지 않는다.
         이어진 형제를 함께 고르면 순서를 지킨다 (내리기는 앞부터, 올리기는 뒤부터 옮김)."""
-        if self._shown_ids is not None:
+        if self._shown_ids is not None or self._pending():
             return
         roots = todo_tree.top_selected(self._items, self._selected_ids())
         changed = False
@@ -1457,7 +1545,8 @@ class TodoPanel(QWidget):
         for entry in reversed(batch["entries"]):
             item = todo_store.normalize(entry["item"])
             if item["page_id"] not in page_ids:
-                item["page_id"] = self._page_id  # 지운 페이지의 할 일은 지금 페이지로
+                # 지운 페이지의 할 일은 지금 페이지로 (미완료 페이지를 보는 중이면 첫 페이지로)
+                item["page_id"] = self._real_page_id()
             # 자리(상위 / 뒤 형제 / 하위)는 같은 페이지에 있을 때만 따른다
             same_page = [
                 other_id
@@ -1474,19 +1563,46 @@ class TodoPanel(QWidget):
                 todo_tree.expand_ancestors(self._items, item["id"])
                 restored.append(item["id"])
         todo_trash.mark_restored(batch["batch"])
-        if not restored:
-            return
-        self.filter_bar.reset()
-        self._stop_highlight()
-        # 다른 페이지에서 지운 묶음이면 그 페이지로 넘어가서 보여준다
-        self.set_page(self._page_of(restored[-1]))
+        if restored:
+            # 지금 행은 되돌린 묶음의 첫 항목 (거꾸로 넣었으므로 마지막)
+            self._show_items(restored)
+
+    def reveal_item(self, item_id) -> bool:
+        """알림 팝업 클릭 / 미완료 페이지 "원래 페이지에서 보기": 그 할 일의 페이지로 넘어가 접힌 상위를
+        펴고 골라서 보이게 한 뒤 깜빡여 알려 준다. 없는 할 일(지워지거나 보관됨)이면 False"""
+        if self._find(item_id) is None:
+            return False
+        todo_tree.expand_ancestors(self._items, item_id)
+        self._show_items([item_id])
+        self.container.setFocus(Qt.OtherFocusReason)
+        self._flash(item_id)
+        return True
+
+    def _show_items(self, ids: list):
+        """ids(같은 페이지)가 보이도록 거름을 풀고 그 페이지로 넘어가 고른 뒤, 지금 행(ids 의 마지막)을 보인다.
+        (상태를 바꾼 뒤에 부르므로 저장도 한다)"""
+        self._show_all()
+        self.set_page(self._page_of(ids[-1]))
         self._save_and_rebuild()
-        self._selected = set(restored)
-        self._anchor_id = restored[-1]  # 되돌린 묶음의 첫 항목 (거꾸로 넣었으므로)
+        self._selected = set(ids)
+        self._anchor_id = ids[-1]
         self._apply_selection()
         row = self._current_row()
         if row is not None:
             self._reveal(row)
+
+    def _flash(self, item_id):
+        """그 할 일의 행을 잠깐 깜빡인다 (행은 id 로 기억해 두므로 목록을 다시 그려도 이어진다)."""
+        self._flash_anim.stop()
+        self._set_flash(0.0)
+        self._flash_id = item_id
+        self._flash_anim.start()
+
+    def _set_flash(self, level):
+        row = self._row_cache.get(self._flash_id)
+        if row is not None:
+            row.flash = level
+            row.update()
 
     def set_tag(self, tag):
         """우클릭 "태그": 선택 항목 모두에 태그(todo_store.TAGS 중 하나 / None)를 붙인다."""
@@ -1498,12 +1614,57 @@ class TodoPanel(QWidget):
         if changed:
             self._save_and_rebuild()
 
-    def clear_done(self):
-        """지금 페이지의 완료 항목을 목록에서 뺀다. DB 에서는 지우지 않고 보관 처리한다."""
-        done = [item["id"] for item in self._page_items() if item["done"]]
+    def clear_done(self, scope: str = "page"):
+        """우클릭 "완료 항목 정리": 완료 항목을 목록에서 뺀다. DB 에서는 지우지 않고 보관 처리한다.
+        scope: "selected" 선택한 완료 항목(하위 포함) / "page" 지금 페이지 / "all" 모든 페이지 (경고 확인 창)"""
+        done = self._done_ids(scope)
+        if not done or (scope == "all" and not self._confirm_clear_all(done)):
+            return
         todo_store.archive_items(done)
-        self._items = [item for item in self._items if item["id"] not in set(done)]
+        done_ids = set(done)
+        self._items = [item for item in self._items if item["id"] not in done_ids]
         self._save_and_rebuild()
+
+    def _done_ids(self, scope: str) -> list:
+        """정리할 완료 항목 id (clear_done / 메뉴의 개수). 선택 항목은 선택한 완료 항목과 그 하위
+        (완료한 상위의 하위는 규칙상 모두 완료 - 미완료 상위를 골라도 그 아래 완료 항목은 넣지 않는다)"""
+        if scope == "selected":
+            done = {item["id"] for item in self._items if item["done"]}
+            roots = [i for i in self._selected_ids() if i in done]
+            return [
+                i for i in todo_tree.with_descendants(self._items, roots) if i in done
+            ]
+        items = self._items if scope == "all" else self._page_items()
+        return [item["id"] for item in items if item["done"]]
+
+    def _confirm_clear_all(self, done: list) -> bool:
+        """모든 페이지 정리는 지금 페이지만이 아니라는 것을 크게 보여주고 묻는다 (매번 - 다시 묻지 않음 없음)."""
+        counts = {}
+        for item_id in done:
+            page_id = self._find(item_id)["page_id"]
+            counts[page_id] = counts.get(page_id, 0) + 1
+        parts = [
+            f"{page['name']} {counts[page['id']]}개"
+            for page in self._pages
+            if page["id"] in counts
+        ]
+        detail = ", ".join(parts[:CLEAR_ALL_PAGES_SHOWN])
+        if len(parts) > CLEAR_ALL_PAGES_SHOWN:
+            detail += f" 외 {len(parts) - CLEAR_ALL_PAGES_SHOWN}개 페이지"
+        dialog = ConfirmDialog(
+            "모든 페이지 완료 항목 정리",
+            "지금 보는 페이지만이 아니라 모든 페이지의 완료 항목을 정리할까요?",
+            confirm_text="모두 정리",
+            value_caption=f"완료 항목 {len(done)}개 · {len(counts)}개 페이지",
+            value="모든 페이지",
+            note=(
+                f"{detail}\n정리한 항목은 목록에서 빠지고 다시 되돌릴 수 없습니다."
+                " (우클릭 → 내보내기 → 보관 항목 전체에서 볼 수 있습니다)"
+            ),
+            danger=True,
+            parent=self,
+        )
+        return dialog.exec_over(self.window())
 
     def snooze(self, item_id: str, until: datetime):
         item = self._find(item_id)
@@ -1623,10 +1784,17 @@ class TodoPanel(QWidget):
         # 하위는 상위 바로 밑에. 형제끼리 미완료 -> 완료 순, 각각 리마인더 일시가 빠른 순
         # 리마인더 없는 항목은 그 뒤에 self._items 순서(= 드래그로 정한 순서) 그대로 (안정 정렬)
         # 거르는 중에는 접힘을 무시한다 (맞는 항목이 접힌 상위 아래에 숨지 않게)
-        ordered = todo_tree.flatten(
-            self._page_items(), self._sort_key, hide_collapsed=not self._filtering()
-        )
-        parents = {item.get("parent_id") for item in self._items}
+        # 미완료 페이지는 계층 없이 시각 순 한 목록 (행 끝에 원래 페이지 이름)
+        pending = self._pending()
+        if pending:
+            ordered = [(item, 0) for item in self._page_items()]
+            parents = set()
+        else:
+            ordered = todo_tree.flatten(
+                self._page_items(), self._sort_key, hide_collapsed=not self._filtering()
+            )
+            parents = {item.get("parent_id") for item in self._items}
+        names = {page["id"]: page["name"] for page in self._pages} if pending else {}
         now = datetime.now().astimezone()
         context = set()
         self._shown_ids = None
@@ -1649,6 +1817,7 @@ class TodoPanel(QWidget):
                 depth,
                 context=item["id"] in context,
                 has_children=item["id"] in parents,
+                origin=names.get(item["page_id"], ""),
             )
             self._rows.append(row)
         shown = {row.item["id"] for row in self._rows}
@@ -1685,11 +1854,13 @@ class TodoPanel(QWidget):
         self._apply_selection()
 
     def _open_counts(self) -> dict:
-        """페이지 id -> 체크 안 한 할 일 수 (하위 포함, 구분선 제외) - 페이지 이름 칩에 표시"""
+        """페이지 id -> 체크 안 한 할 일 수 (하위 포함, 구분선 제외) - 페이지 이름 칩에 표시.
+        고정 페이지 "미완료"는 모은 할 일 수"""
         counts = dict.fromkeys(self._page_ids(), 0)
         for item in self._items:
             if not item["done"] and not todo_store.is_separator(item["text"]):
                 counts[item["page_id"]] = counts.get(item["page_id"], 0) + 1
+        counts[todo_pages.PENDING_ID] = len(todo_filter.pending(self._items))
         return counts
 
     def _new_row(self) -> "TodoRow":
@@ -1730,22 +1901,52 @@ class TodoPanel(QWidget):
     # ==================================================
     def set_page(self, page_id: int):
         """그 페이지로 넘긴다. 선택은 풀고, 검색 줄은 그대로 두어 새 페이지에서 다시 거른다."""
-        if page_id == self._page_id or page_id not in self._page_ids():
+        if page_id == self._page_id or page_id not in self._nav_ids():
             return
         self._page_id = page_id
         self._selected.clear()
         self._anchor_id = None
+        self._apply_page_mode()
         self._rebuild()
         self.scroll.verticalScrollBar().setValue(0)
-        self.page_bar.set_pages(self._pages, self._page_id)
+        self._sync_page_bar()
         self.page_changed.emit(page_id)
+
+    def _apply_page_mode(self):
+        """미완료 페이지에서는 입력칸을 끈다 (모은 목록이라 넣을 자리가 없다).
+        포커스를 가진 입력칸을 끄면 Qt 가 다음 위젯으로 넘기며 목록을 스크롤하므로 목록으로 먼저 돌린다."""
+        pending = self._pending()
+        if pending and self.input.hasFocus():
+            self.container.setFocus(Qt.OtherFocusReason)
+        self.input.setEnabled(not pending)
+        self._update_placeholder()
+
+    def _update_placeholder(self):
+        if self._pending():
+            text = PLACEHOLDER_PENDING
+        else:  # 선택한 채로 입력하면 하위로 들어간다는 것을 보여준다
+            text = PLACEHOLDER_CHILD if self._selected else PLACEHOLDER
+        self.input.setPlaceholderText(text)
 
     def step_page(self, step: int):
         """앞(-1) / 뒤(+1) 페이지 (단축키 Ctrl+PgUp / Ctrl+PgDown, 페이지 표시 위 휠). 끝에서는 멈춘다."""
-        ids = self._page_ids()
+        ids = self._nav_ids()
         idx = ids.index(self._page_id) + step
         if 0 <= idx < len(ids):
             self.set_page(ids[idx])
+
+    def go_page_edge(self, last: bool):
+        """맨 앞(고정 페이지 "미완료") / 맨 뒤 페이지 (단축키 Ctrl+Shift+PgUp / Ctrl+Shift+PgDown)"""
+        ids = self._nav_ids()
+        self.set_page(ids[-1] if last else ids[0])
+
+    def open_page_switcher(self):
+        """페이지 바로가기 창(F5): 이름으로 찾아 고른 페이지로 넘어간다."""
+        dialog = PageSwitcher(
+            self._nav_pages(), self._page_id, self._open_counts(), parent=self
+        )
+        if dialog.exec_over(self.window()):
+            self.set_page(dialog.page_id())
 
     def add_page(self):
         """새 페이지("페이지 N")를 맨 뒤에 만들고 그리로 넘어간다."""
@@ -1755,7 +1956,10 @@ class TodoPanel(QWidget):
             self.set_page(page["id"])
 
     def rename_page(self):
-        """지금 페이지 이름 바꾸기 (태그 추가 창을 색 칸 없이 쓴다)"""
+        """지금 페이지 이름 바꾸기 (태그 추가 창을 색 칸 없이 쓴다, 이름에도 스니펫이 바뀐다).
+        고정 페이지 "미완료"는 바꾸지 않는다."""
+        if self._pending():
+            return
         page = self._current_page()
         dialog = TagDialog(
             title="페이지 이름",
@@ -1764,6 +1968,7 @@ class TodoPanel(QWidget):
             with_color=False,
             placeholder="이름 (예: 업무)",
             max_length=todo_pages.NAME_MAX,
+            snippets_provider=self._snippets_provider,
             parent=self,
         )
         if dialog.exec_over(self.window()):
@@ -1772,14 +1977,18 @@ class TodoPanel(QWidget):
             self._reload_pages()
 
     def move_page(self, step: int):
-        """지금 페이지를 앞(-1) / 뒤(+1)로 옮긴다."""
+        """지금 페이지를 앞(-1) / 뒤(+1)로 옮긴다. (고정 페이지 "미완료"는 늘 맨 앞)"""
+        if self._pending():
+            return
         ids = self._page_ids()
         idx = ids.index(self._page_id)
         if 0 <= idx + step < len(ids):
             self.move_page_to(self._page_id, idx + step)
 
     def move_page_to(self, page_id: int, index: int):
-        """페이지를 index 자리로 옮긴다 (칩 드래그)"""
+        """페이지를 index 자리로 옮긴다. index 는 실제 페이지 순서 (앞/뒤로 옮기기)"""
+        if page_id == todo_pages.PENDING_ID:
+            return
         ids = self._page_ids()
         order = todo_pages.moved(ids, page_id, index)
         if order != ids:
@@ -1788,8 +1997,9 @@ class TodoPanel(QWidget):
 
     def delete_page(self):
         """지금 페이지를 지운다 (마지막 한 장은 지우지 않는다). 남은 할 일은 한 묶음으로 삭제 이력에 넣어
-        되돌릴 수 있게 하고(페이지가 없으니 되돌리면 그때 보던 페이지로), 앞 페이지(없으면 뒤)로 넘어간다."""
-        if len(self._pages) < 2:
+        되돌릴 수 있게 하고(페이지가 없으니 되돌리면 그때 보던 페이지로), 앞 페이지(없으면 뒤)로 넘어간다.
+        고정 페이지 "미완료"는 지우지 않는다."""
+        if len(self._pages) < 2 or self._pending():
             return
         page = self._current_page()
         ids = [
@@ -1822,6 +2032,8 @@ class TodoPanel(QWidget):
 
     def move_to_page(self, page_id: int):
         """우클릭 "페이지로 이동": 선택 항목을 하위와 함께 그 페이지의 최상위 맨 뒤로 옮긴다."""
+        if self._pending() or page_id not in self._page_ids():
+            return
         moving = set()
         for root_id in todo_tree.top_selected(self._items, self._selected_ids()):
             root = self._find(root_id)
@@ -1839,11 +2051,11 @@ class TodoPanel(QWidget):
         self._save_and_rebuild()
 
     def _current_page(self) -> dict:
-        return next(page for page in self._pages if page["id"] == self._page_id)
+        return next(page for page in self._nav_pages() if page["id"] == self._page_id)
 
     def _reload_pages(self):
         self._pages = todo_pages.load()
-        self.page_bar.set_pages(self._pages, self._page_id)
+        self._sync_page_bar()
 
     # ==================================================
     # 선택
@@ -1886,10 +2098,7 @@ class TodoPanel(QWidget):
         if current is not None:  # 선택을 풀어도 ↑↓ 를 여기서 다시 시작한다
             self._last_ids[self._page_id] = current
         self.container.update()  # 선택 테두리 (_paint_selection)
-        # 선택한 채로 입력하면 하위로 들어간다는 것을 입력칸에 보여준다
-        self.input.setPlaceholderText(
-            PLACEHOLDER_CHILD if self._selected else PLACEHOLDER
-        )
+        self._update_placeholder()
 
     def _selection_blocks(self) -> list:
         """화면에서 이어진 선택 행 묶음 [[row, ...], ...]"""
@@ -2000,6 +2209,12 @@ class TodoPanel(QWidget):
         t = theme.current()
         menu = QMenu(self)
         menu.setStyleSheet(theme.menu_style(t))
+        pending = self._pending()  # 미완료 페이지: 모은 목록이라 추가 / 자리 바꾸기는 끈다
+
+        if pending and row is not None:
+            item_id = row.item["id"]
+            menu.addAction("원래 페이지에서 보기", lambda: self.reveal_item(item_id))
+            menu.addSeparator()
 
         # 연관된 것끼리 묶는다: 찾기·이동 / 접기 / 추가·삭제 / 태그 / 정리·내보내기
         menu.addAction("검색", self.open_search)
@@ -2012,18 +2227,20 @@ class TodoPanel(QWidget):
             bool(item.get("collapsed")) for item in page_items if item["id"] in parents
         ]
         act_fold = menu.addAction("모두 접기", lambda: self.set_all_collapsed(True))
-        act_fold.setEnabled(not all(folds))
+        act_fold.setEnabled(not pending and not all(folds))
         act_unfold = menu.addAction(
             "모두 펼치기", lambda: self.set_all_collapsed(False)
         )
-        act_unfold.setEnabled(any(folds))
+        act_unfold.setEnabled(not pending and any(folds))
         menu.addSeparator()
 
-        menu.addAction("추가", self.focus_input)
+        act_add = menu.addAction("추가", self.focus_input)
         anchor_id = row.item["id"] if row is not None else None
-        menu.addAction(
+        act_line = menu.addAction(
             "아래에 구분선 추가", lambda: self.add_separator_below(anchor_id)
         )
+        for action in (act_add, act_line):
+            action.setEnabled(not pending)
         act_delete = menu.addAction("삭제", self.delete_selected)
         act_delete.setEnabled(bool(self._selected))
         self._add_history_menu(menu)
@@ -2034,6 +2251,7 @@ class TodoPanel(QWidget):
         act_copy = menu.addAction("복사\tCtrl+C", self.copy_selected)
         for action in (act_cut, act_copy):
             action.setEnabled(bool(self._selected))
+        act_cut.setEnabled(bool(self._selected) and not pending)
         act_paste = menu.addAction("붙여넣기\tCtrl+V", self.paste)
         act_paste.setEnabled(self._can_paste())
         menu.addSeparator()
@@ -2041,21 +2259,49 @@ class TodoPanel(QWidget):
         self._add_tag_menu(menu, t)
         menu.addSeparator()
 
-        act_clear = menu.addAction("완료 항목 정리", self.clear_done)
-        act_clear.setEnabled(self.has_done())
+        self._add_clear_menu(menu)
+        self._add_export_menu(menu, bool(page_items))
+
+        menu.exec(pos)
+
+    def _add_clear_menu(self, menu: QMenu):
+        """우클릭 "완료 항목 정리" 서브메뉴: 선택 항목 / 이 페이지 / 모든 페이지(경고 확인 창)"""
+        clear = QMenu("완료 항목 정리", menu)  # 부모를 준다 - _add_history_menu 참고
+        menu.addMenu(clear)
+        clear.setStyleSheet(menu.styleSheet())
+        any_done = False
+        for scope, label in (
+            ("selected", "선택 항목"),
+            ("page", "이 페이지"),
+            ("all", "모든 페이지…"),
+        ):
+            count = len(self._done_ids(scope))
+            action = clear.addAction(
+                f"{label}  ({count})" if count else label,
+                lambda _=False, sc=scope: self.clear_done(sc),
+            )
+            action.setEnabled(bool(count))
+            any_done = any_done or bool(count)
+        clear.setEnabled(any_done)
+
+    def _add_export_menu(self, menu: QMenu, has_page_items: bool):
+        """우클릭 "내보내기" 서브메뉴: 현재 페이지 / 전체 페이지 / 보관 항목 전체 (Markdown)"""
         export_menu = QMenu("내보내기", menu)  # 부모를 준다 - _add_history_menu 참고
         menu.addMenu(export_menu)
         export_menu.setStyleSheet(menu.styleSheet())
-        act_active = export_menu.addAction(
-            "화면 목록…", lambda: self.export_requested.emit(False)
+        act_page = export_menu.addAction(
+            "현재 페이지…", lambda: self.export_requested.emit(todo_export.PAGE)
         )
-        act_active.setEnabled(bool(page_items))
+        act_page.setEnabled(has_page_items)
+        act_all = export_menu.addAction(
+            "전체 페이지…", lambda: self.export_requested.emit(todo_export.ALL)
+        )
+        act_all.setEnabled(bool(self._items))
         act_archived = export_menu.addAction(
-            "보관 항목 전체…", lambda: self.export_requested.emit(True)
+            "보관 항목 전체…",
+            lambda: self.export_requested.emit(todo_export.ARCHIVED),
         )
         act_archived.setEnabled(bool(todo_store.load_archived()))
-
-        menu.exec(pos)
 
     def _add_tag_menu(self, menu: QMenu, t: theme.Theme):
         """우클릭 "태그" 서브메뉴: 기본 6색 -> 태그 없음 -> 사용자 태그 -> + 태그 추가"""
@@ -2127,7 +2373,7 @@ class TodoPanel(QWidget):
         menu.addMenu(move_menu)
         move_menu.setStyleSheet(menu.styleSheet())
         others = [page for page in self._pages if page["id"] != self._page_id]
-        move_menu.setEnabled(bool(self._selected) and bool(others))
+        move_menu.setEnabled(bool(self._selected) and bool(others) and not self._pending())
         for page in others:
             move_menu.addAction(
                 page["name"], lambda _=False, pid=page["id"]: self.move_to_page(pid)
@@ -2147,8 +2393,9 @@ class TodoPanel(QWidget):
         item_id = row.item["id"]
         if item_id not in self._selected:
             self._select_only(item_id)
-        if self._shown_ids is not None:
-            return  # 거르는 중에는 옮기지 않는다 - 숨은 형제 사이 어디에 놓일지 알 수 없다
+        if self._shown_ids is not None or self._pending():
+            # 거르는 중에는 옮기지 않는다 - 숨은 형제 사이 어디에 놓일지 알 수 없다 (미완료 페이지는 자리가 없다)
+            return
         self._drag_ids = todo_tree.top_selected(self._items, self._selected_ids())
         self._drag_moving = set(self._drag_ids)
         for moving_id in self._drag_ids:
@@ -2525,7 +2772,10 @@ class TodoPanel(QWidget):
         return min(self._rows, key=lambda row: abs(row.geometry().center().y() - y))
 
     def _tree_step(self, row: "TodoRow", expand: bool):
-        """← / →: 접기 / 펴기는 그 자리에서 하고 None, 이동할 때는 옮겨 갈 행"""
+        """← / →: 접기 / 펴기는 그 자리에서 하고 None, 이동할 때는 옮겨 갈 행.
+        미완료 페이지는 계층 없이 보이므로 아무것도 하지 않는다."""
+        if self._pending():
+            return None
         item = row.item
         if todo_tree.has_children(self._items, item["id"]):
             # 거르는 중에는 접힘을 무시한다 - 바꿔도 화면이 그대로라 이동만 한다
@@ -2556,7 +2806,10 @@ class TodoPanel(QWidget):
             row.start_edit()
 
     def focus_input(self):
-        """할 일 추가 단축키 / 우클릭 "추가": 입력칸으로 커서 이동 (선택은 유지 - 하위로 추가)"""
+        """할 일 추가 단축키 / 우클릭 "추가": 입력칸으로 커서 이동 (선택은 유지 - 하위로 추가)
+        미완료 페이지에서는 입력칸이 꺼져 있다."""
+        if self._pending():
+            return
         self.input.setFocus(Qt.ShortcutFocusReason)
         self.input.end(False)
 

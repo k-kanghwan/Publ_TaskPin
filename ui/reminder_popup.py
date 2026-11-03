@@ -5,6 +5,8 @@
 폭과 글자 크기는 설정창 Appearance "알림 창"(theme.popup_width / popup_scale)을 따른다.
 글자 배율은 창 폭 / 여백 / 아이콘에도 곱한다 (글자만 커지고 창은 그대로이지 않게).
 설정창은 preview=True 로 같은 팝업을 실제 크기 그대로 예시로 넣는다.
+버튼이 아닌 곳을 누르면 opened(할 일 id) 를 보내고 닫힌다 - 위젯이 그 할 일을 찾아 보여준다.
+닫히면(어떤 방법이든) closed 를 보내 위젯이 남은 팝업을 위로 당긴다.
 """
 
 from datetime import datetime, timedelta
@@ -42,6 +44,8 @@ def snooze_targets(now: datetime) -> list:
 class ReminderPopup(QWidget):
     done_requested = Signal(str)  # item id
     snooze_requested = Signal(str, object)  # item id, datetime
+    opened = Signal(str)  # 버튼이 아닌 곳을 누름 - item id (위젯이 그 할 일을 보여준다)
+    closed = Signal()
 
     def __init__(
         self,
@@ -56,6 +60,7 @@ class ReminderPopup(QWidget):
         preview: 설정창 예시 - 창이 아니라 parent 안의 자식으로, 눌러도 반응하지 않는다"""
         super().__init__(parent)
         self.item_id = item_id
+        self._pressed = False  # 버튼이 아닌 곳을 눌렀는지 (떼면 opened)
 
         if preview:
             self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
@@ -66,6 +71,9 @@ class ReminderPopup(QWidget):
             self.setAttribute(Qt.WA_TranslucentBackground, True)
             self.setAttribute(Qt.WA_ShowWithoutActivating, True)
             self.setAttribute(Qt.WA_DeleteOnClose, True)
+            # 눌러서 할 일 보기 (버튼은 자기 툴팁이 있어 이 툴팁이 버튼 위에 뜨지 않는다)
+            self.setCursor(Qt.PointingHandCursor)
+            self.setToolTip("눌러서 할 일 보기")
 
         t = self._theme = look or theme.current()
         s = t.popup_scale
@@ -117,8 +125,11 @@ class ReminderPopup(QWidget):
         buttons = QHBoxLayout()
         buttons.setSpacing(px(6, s))
         btn_done = QPushButton("완료")
+        btn_done.setToolTip("할 일을 완료합니다")
         btn_later = QPushButton("나중에 ▾")
+        btn_later.setToolTip("나중에 다시 알림")
         btn_close = QPushButton("닫기")
+        btn_close.setToolTip("알림만 닫습니다")
         for btn in (btn_done, btn_later, btn_close):
             btn.setCursor(Qt.PointingHandCursor)
             buttons.addWidget(btn)
@@ -130,6 +141,30 @@ class ReminderPopup(QWidget):
         # 높이는 폭에 맞춰 줄바꿈한 내용 높이로 정한다. adjustSize() 는 줄바꿈 라벨의 높이를
         # 넉넉하게 어림해 빈 줄이 생기고, 설정창 예시(레이아웃 안)와 크기가 달라진다
         self.setFixedHeight(self.heightForWidth(width))
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self._pressed = True
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        """버튼이 아닌 곳을 눌렀다 떼면 그 할 일을 보여 달라고 알리고 닫는다 (팝업 밖에서 떼면 취소)."""
+        pressed, self._pressed = self._pressed, False
+        if (
+            pressed
+            and event.button() == Qt.LeftButton
+            and self.rect().contains(event.position().toPoint())
+        ):
+            self.opened.emit(self.item_id)
+            self.close()
+            return
+        super().mouseReleaseEvent(event)
+
+    def closeEvent(self, event):
+        super().closeEvent(event)
+        self.closed.emit()
 
     def _on_done(self):
         self.done_requested.emit(self.item_id)
