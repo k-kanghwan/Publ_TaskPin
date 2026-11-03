@@ -2,7 +2,17 @@ from datetime import datetime
 
 import pytest
 
-from manager import os_win, paths, todo_pages, todo_store, todo_trash, widget_config
+from manager import (
+    db,
+    os_win,
+    paths,
+    profiles,
+    task_store,
+    todo_pages,
+    todo_store,
+    todo_trash,
+    widget_config,
+)
 from tools import debug_seed
 
 NOW = datetime(2026, 11, 2, 10, 0)
@@ -22,8 +32,9 @@ def _page_items(name):
 
 def test_ensure_creates_every_page_once(seed_env):
     made = debug_seed.ensure(NOW, check_dir=False)
-    assert made == [name for name, _ in debug_seed.PAGES]
+    assert made == [name for name, _ in debug_seed.PAGES] + [debug_seed.PROFILE_B]
     assert debug_seed.ensure(NOW, check_dir=False) == []  # 이미 있으면 그대로
+    made.remove(debug_seed.PROFILE_B)
 
     for name in made:
         items = _page_items(name)
@@ -35,7 +46,8 @@ def test_ensure_creates_every_page_once(seed_env):
 
     cfg = widget_config.load_config()
     assert cfg["always_on_top"] is True
-    assert cfg["todo_page"] == todo_pages.load()[1]["id"]  # 첫 예제 페이지 ("페이지 1" 다음)
+    assert todo_pages.last_page() == todo_pages.load()[1]["id"]  # 첫 예제 페이지 ("페이지 1" 다음)
+    assert cfg["profile"] == debug_seed.SEED_PROFILE
     assert any(t["name"] == debug_seed.CUSTOM_TAG[0] for t in widget_config.custom_tags(cfg))
 
 
@@ -69,7 +81,7 @@ def test_deleted_page_comes_back_and_reset(seed_env):
     page = next(p for p in todo_pages.load() if p["name"] == name)
     todo_pages.remove(page["id"])
     assert debug_seed.ensure(NOW, check_dir=False) == [name]
-    assert widget_config.load_config()["todo_page"] != page["id"]
+    assert todo_pages.last_page() != page["id"]
 
     before = len(todo_store.load_todos())
     debug_seed.reset(NOW, check_dir=False)
@@ -88,3 +100,41 @@ def test_refuses_real_data_dir(seed_env, monkeypatch):
         os_win, "user_data_dir", lambda: r"C:\repo\.debug_appdata\TaskPin"
     )
     assert debug_seed.is_debug_data()
+
+
+def test_profile_b_has_its_own_todos_and_task(seed_env, temp_db):
+    debug_seed.ensure(NOW, check_dir=False)
+    assert db.path() == str(temp_db)  # 지금 DB 로 돌아와 있다
+    assert task_store.latest() is None
+    assert debug_seed.PROFILE_B in profiles.names()
+
+    db.connect(profiles.path(debug_seed.PROFILE_B))
+    texts = [i["text"] for i in todo_store.load_todos()]
+    assert texts[0] == debug_seed.CHECK_TITLE
+    assert any("B 프로필 리마인더" in t for t in texts)
+    assert task_store.latest().title == debug_seed.PROFILE_B_TASK
+    db.connect(str(temp_db))
+
+    # 지운 예제 프로필은 다시 생기고, reset 은 새로 만든다
+    import os
+
+    os.remove(profiles.path(debug_seed.PROFILE_B))
+    assert debug_seed.ensure(NOW, check_dir=False) == [debug_seed.PROFILE_B]
+    debug_seed.reset(NOW, check_dir=False)
+    assert profiles.names().count(debug_seed.PROFILE_B) == 1
+
+
+def test_pages_only_go_to_seed_profile(seed_env, monkeypatch):
+    monkeypatch.setattr(
+        os_win, "user_data_dir", lambda: str(seed_env / ".debug_appdata" / "TaskPin")
+    )
+    assert debug_seed.is_debug_data()
+    # 시험하며 만든 다른 프로필: 예제 페이지를 넣지 않는다 (예제 프로필만 만든다)
+    db.connect(profiles.path("내 시험"))
+    assert debug_seed.ensure(NOW) == [debug_seed.PROFILE_B]
+    assert [p["name"] for p in todo_pages.load()] == ["페이지 1"]
+    assert debug_seed.reset(NOW) == []
+
+    db.connect(profiles.path(debug_seed.SEED_PROFILE))
+    assert debug_seed.is_seed_profile()
+    assert debug_seed.ensure(NOW) == [name for name, _ in debug_seed.PAGES]

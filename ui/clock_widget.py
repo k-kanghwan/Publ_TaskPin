@@ -57,7 +57,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from manager import os_win, snippets, todo_export, todo_store, widget_config
+from manager import os_win, snippets, todo_export, todo_pages, todo_store, widget_config
 from ui import painted, theme
 from ui.confirm_dialog import ConfirmDialog
 from ui.painted import EditableLabel
@@ -99,6 +99,9 @@ POPUP_SLIDE_MS = 180  # 알림이 닫혀 아래 알림이 위로 올라오는 �
 
 TASK_DOT_COLOR = "#4caf50"  # Task 시간이 등록되어 있을 때 헤더의 점
 USER_NAME_MAX_LEN = 20
+# 헤더 오른쪽 프로필 칩 (프로필이 둘 이상일 때 - set_profile). 긴 이름은 이 폭(배율 전)에서 말줄임
+PROFILE_CHIP_MAX_WIDTH = 110
+PROFILE_CHIP_RADIUS = 8
 TASK_BADGE_H_SPACE = 2 * 8 + 2 * 1  # 좌우 padding + border (말줄임 폭 계산용)
 # 업무명 배지 위 상세업무 - 세로 모드 최대 줄 수 (가로 모드는 남는 높이만큼)
 TASK_DETAIL_MAX_LINES = 3
@@ -342,6 +345,10 @@ class ClockWidget(QWidget):
         self._shortcuts = []
         self._separators = []  # 테마가 바뀌면 다시 칠할 구분선
         self._task_title = ""  # 업무명 배지 원문 (말줄임 전)
+        # 지금 프로필 (헤더 칩 / 우클릭 "프로필" 메뉴 제목 - set_profile)
+        self._profile_name = ""
+        # (QMenu) -> None: 프로필 메뉴를 채운다 (TaskPinApp)
+        self._profile_menu_filler = None
         self._task_detail = ""  # 상세업무 원문 (말줄임 전)
         # 트레이 클릭으로 다른 앱보다 위에 꺼내 둔 상태
         self._front = False
@@ -573,10 +580,19 @@ class ClockWidget(QWidget):
         self.name_edit.focus_lost.connect(self._commit_name_edit)
         self.name_edit.escaped.connect(self._finish_name_edit)
 
+        # 프로필이 둘 이상이면 이름 오른쪽에 지금 프로필 - 누르면 프로필 메뉴 (set_profile)
+        self.profile_button = QPushButton()
+        self.profile_button.setObjectName("profile")
+        self.profile_button.setCursor(Qt.PointingHandCursor)
+        self.profile_button.setFocusPolicy(Qt.NoFocus)
+        self.profile_button.clicked.connect(self._show_profile_menu)
+        self.profile_button.hide()
+
         header.addWidget(self.status_dot)
         # 테두리가 글자만 감싸도록 남는 폭은 늘리지 않는다 (편집칸은 남는 폭을 모두 받음)
         header.addWidget(self.name_label, 1, Qt.AlignLeft | Qt.AlignVCenter)
         header.addWidget(self.name_edit, 1)
+        header.addWidget(self.profile_button, 0, Qt.AlignRight | Qt.AlignVCenter)
         info.addLayout(header)
 
         # ---- 현재시간 ----
@@ -665,7 +681,7 @@ class ClockWidget(QWidget):
             self._add_custom_tag,
             lambda: widget_config.undo_limit(self._cfg),
             self._confirm_todo_delete,
-            page_id=self._cfg.get("todo_page"),
+            page_id=todo_pages.last_page(),  # 프로필(DB)마다 따로 기억한다
         )
         self.todo_panel.export_requested.connect(self._export_todos)
         self.todo_panel.page_changed.connect(self._save_todo_page)
@@ -691,9 +707,30 @@ class ClockWidget(QWidget):
                 color: {t.text_main};
                 font-family: {t.font_family};
             }}
+            QPushButton#profile {{
+                font-size: {px(11, s)}px;
+                color: {t.text_sub};
+                padding: 1px 7px;
+            }}
+            QPushButton#profile:hover {{ color: {t.text_main}; }}
             """
         )
-        painted.set_boxes(self, [(QPushButton, None, painted.button_box(t))])
+        painted.set_boxes(
+            self,
+            [
+                (
+                    QPushButton,
+                    "profile",
+                    painted.box(
+                        PROFILE_CHIP_RADIUS,
+                        t.overlay_color(14),
+                        hover_bg=t.overlay_color(36),
+                        down_bg=t.overlay_color(52),
+                    ),
+                ),
+                (QPushButton, None, painted.button_box(t)),
+            ],
+        )
         self.name_edit.setStyleSheet(
             f"""
             QLineEdit {{
@@ -739,6 +776,7 @@ class ClockWidget(QWidget):
         self.todo_panel.apply_appearance()
 
         self.set_user_name(self._cfg.get("user_name", ""))
+        self._refresh_profile_chip()  # 글자 배율이 바뀌면 말줄임 폭도 바뀐다
         self._set_remaining_style(warn=self.remaining_label.text().startswith("+"))
         self._apply_task_dot(self._has_task())
         if self._task_title:
@@ -1089,9 +1127,9 @@ class ClockWidget(QWidget):
         return tag_id
 
     def _save_todo_page(self, page_id: int):
-        """마지막으로 본 TODO 페이지 - 다음 실행 때 그 페이지부터 보여준다."""
-        self._cfg["todo_page"] = page_id
-        widget_config.save_config(self._cfg)
+        """마지막으로 본 TODO 페이지 - 다음 실행 / 이 프로필로 돌아올 때 그 페이지부터 보여준다.
+        페이지 id 는 DB 마다 다르므로 설정이 아니라 프로필 DB 에 둔다."""
+        todo_pages.set_last_page(page_id)
 
     def _confirm_todo_delete(self, count: int) -> bool:
         """할 일 삭제(행의 ✕ / 우클릭 "삭제"): 지우기 전에 묻는다. "다시 묻지 않음"을 켜고 삭제하면
@@ -1236,12 +1274,56 @@ class ClockWidget(QWidget):
         act_auto.setChecked(os_win.is_autostart_enabled())
         act_auto.toggled.connect(self._on_autostart_toggled)
 
+        menu.addSeparator()
+        if self._profile_menu_filler is not None:
+            # 헬퍼가 채우는 서브메뉴는 부모를 줘야 참조가 사라져도 지워지지 않는다
+            sub = QMenu(f"프로필 · {self._profile_name}".replace("&", "&&"), menu)
+            self._profile_menu_filler(sub)
+            menu.addMenu(sub)
         menu.addAction("설정", self.settings_requested.emit)
         menu.addAction("위젯 숨기기", self.hide_widget)
         menu.addSeparator()
         menu.addAction("프로그램 종료", self.quit_requested.emit)
 
         menu.exec(event.globalPos())
+
+    # ==================================================
+    # 프로필 (DB 파일 하나 = 프로필 하나 - 목록 / 바꾸기는 TaskPinApp, manager/profiles)
+    # ==================================================
+    def set_profile_menu(self, filler):
+        """filler: (QMenu) -> None. 우클릭 "프로필" 서브메뉴와 헤더 칩 메뉴를 채운다 (열 때마다 다시)."""
+        self._profile_menu_filler = filler
+
+    def set_profile(self, name: str, show_chip: bool):
+        """지금 프로필 이름. show_chip: 헤더 오른쪽에 칩으로 보일지 (프로필이 둘 이상일 때)"""
+        self._profile_name = name
+        self.profile_button.setVisible(show_chip)
+        self._refresh_profile_chip()
+
+    def _refresh_profile_chip(self):
+        """칩 글자: 긴 이름은 말줄임 + 툴팁. & 는 단축 글자 표시가 되므로 && 로"""
+        font = self.font()
+        font.setPixelSize(px(11, theme.current().left_scale))
+        width = px(PROFILE_CHIP_MAX_WIDTH, theme.current().left_scale)
+        text = QFontMetrics(font).elidedText(self._profile_name, Qt.ElideRight, width)
+        self.profile_button.setText(text.replace("&", "&&"))
+        self.profile_button.setToolTip(
+            f"프로필: {self._profile_name}\n눌러서 프로필 바꾸기"
+        )
+
+    def _show_profile_menu(self):
+        """헤더 프로필 칩: 칩 바로 아래에 프로필 메뉴 (우클릭 "프로필" 서브메뉴와 같은 내용)"""
+        if self._profile_menu_filler is None:
+            return
+        menu = QMenu(self)
+        menu.setStyleSheet(theme.menu_style(theme.current()))
+        self._profile_menu_filler(menu)
+        btn = self.profile_button
+        menu.exec(btn.mapToGlobal(btn.rect().bottomLeft()))
+
+    def finish_editing(self):
+        """프로필(DB)을 바꾸기 전에: 그 자리에서 고치던 할 일을 지금 DB 에 저장한다."""
+        self.todo_panel.finish_editing()
 
     def _export_todos(self, kind: str):
         """우패널 "내보내기": TODO 를 Markdown 체크리스트 파일로 저장한다. 마지막 저장 폴더를 기억한다.
@@ -1378,11 +1460,13 @@ class ClockWidget(QWidget):
     # ==================================================
     # 리마인더
     # ==================================================
-    def reload_data(self):
-        """설정창 "모든 데이터 초기화" 뒤: 떠 있는 리마인더 알림을 닫고 할 일 목록을 DB 에서 다시 읽는다."""
+    def reload_data(self, keep_copy: bool = False):
+        """DB 가 바뀐 뒤 ("모든 데이터 초기화" / 프로필 바꾸기): 떠 있는 리마인더 알림을 닫고 할 일 목록을
+        DB 에서 다시 읽어 그 DB 에서 마지막으로 본 페이지를 보여준다.
+        keep_copy: 복사해 둔 할 일을 남긴다 (다른 프로필에 붙여넣기)"""
         for popup in list(self._popups):
             popup.close()
-        self.todo_panel.reload()
+        self.todo_panel.reload(todo_pages.last_page(), keep_copy=keep_copy)
 
     def check_reminders(self):
         """시각이 된 리마인더를 팝업 + reminder_due 시그널로 알린다."""

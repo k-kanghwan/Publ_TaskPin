@@ -4,6 +4,9 @@ TASKPIN_DEBUG=1 실행(TaskPinApp)이 시작할 때 ensure() 를 부른다. 데�
 만들고, 이미 있는 예제 페이지는 건드리지 않는다 - 체크하던 상태가 저장 시 재시작(dev_run)에도 남는다.
 예제 페이지를 지우면(또는 "모든 데이터 초기화") 다음 디버그 실행 때 새로 만든다.
 
+예제 페이지는 디버그 기본 프로필(SEED_PROFILE = "기본")에만 넣는다 - 시험하며 만든 새 프로필이 재시작마다
+예제로 차지 않게. 프로필 바꾸기를 시험할 두 번째 프로필(PROFILE_B)은 없을 때마다 만든다.
+
     python tools/debug_seed.py          # 없는 예제 페이지만 만들기
     python tools/debug_seed.py --reset  # 예제 페이지를 지우고 다시 만들기 (리마인더 시각도 지금 기준으로)
 
@@ -24,6 +27,8 @@ if __name__ == "__main__":  # python tools/debug_seed.py
 from manager import (
     db,
     os_win,
+    profiles,
+    task_store,
     todo_pages,
     todo_store,
     todo_trash,
@@ -35,6 +40,10 @@ PREFIX = "🧪 "
 CHECK_TITLE = "✅ 확인할 것"
 CUSTOM_TAG = ("🧪검토", "#8e7cc3")  # 예제용 사용자 태그 (이름, 색)
 DELETED_TAG = "custom-deleted0"  # 설정에 없는 사용자 태그 - 태그 없음으로 보여야 함
+SEED_PROFILE = profiles.DEFAULT_NAME  # 예제 페이지를 넣는 프로필
+# 프로필 바꾸기 시험용 두 번째 프로필 (이모지 / 공백이 든 파일 이름)
+PROFILE_B = "🧪 프로필 B"
+PROFILE_B_TASK = "🧪 B 프로필 업무"
 
 
 def is_debug_data() -> bool:
@@ -266,6 +275,44 @@ def _page_settings_page(ctx):
     ]
 
 
+def _profile_page(ctx):
+    return [
+        _check(
+            "좌패널 우클릭 → '프로필 · 기본': 목록(지금 프로필 체크) · 새 프로필 · 다른 이름으로 저장"
+            " · 이름 바꾸기 · 삭제 · 프로필 폴더 열기",
+            "프로필이 둘 이상이면 이름 오른쪽에 프로필 칩 → 클릭하면 같은 메뉴, 트레이 툴팁에도 프로필 이름",
+            f"'{PROFILE_B}'로 바꾸기 → 할 일 · 페이지 · 좌패널 Task('{PROFILE_B_TASK}')가 그 프로필 것으로",
+            "다시 '기본'으로 → 마지막으로 보던 페이지가 열림 (페이지는 프로필마다 기억)",
+            "할 일을 고치는 중(F2)에 프로필 칩 클릭 → 고친 글자가 원래 프로필에 저장됨",
+            "할 일 복사(Ctrl+C) → 다른 프로필로 바꿔 붙여넣기(Ctrl+V) 됨 / 잘라내기(Ctrl+X)는 바꾸면 풀림",
+            '새 프로필… → 이름에 \\ / : * ? " < > | 나 CON, 같은 이름(대소문자 무시)이면 빨간 안내 + 확인 꺼짐',
+            "새 프로필 → '페이지 1'만 있는 빈 목록, Task 없음 (설정 · 태그 · 단축키는 그대로)",
+            "다른 이름으로 저장… → 지금 내용 그대로인 새 프로필로 바뀜, 원래 프로필도 목록에 남음",
+            "이름 바꾸기 → 프로필 폴더 열기로 파일 이름(이름.db)도 바뀐 것 확인, 대소문자만 바꾸기도 됨",
+            "삭제… → '프로필 삭제'를 입력해야 켜짐, 지우면 목록 앞 프로필로 / 하나만 남으면 삭제 꺼짐",
+            "프로필 폴더에 .db 를 복사해 넣으면 메뉴에 바로 보임, 텍스트 파일을 x.db 로 넣고 고르면 '열지 못했습니다'",
+            "설정 → Application '모든 데이터 초기화' 설명에 지금 프로필 이름, 초기화해도 다른 프로필은 그대로",
+            "앱을 껐다 켜면 마지막으로 연 프로필로 시작",
+            f"지운 '{PROFILE_B}'는 다음 디버그 실행 때 다시 생김",
+        ),
+    ]
+
+
+def _profile_b_page(ctx):
+    now = ctx.now.replace(second=0, microsecond=0)
+    return [
+        _check(
+            f"이 목록 · 페이지 · 좌패널 Task('{PROFILE_B_TASK}')는 '{PROFILE_B}' 프로필에만 있음",
+            "헤더 오른쪽 프로필 칩 클릭 → '기본'으로 돌아가기",
+            "아래 리마인더는 이 프로필을 연 동안에만 알림 (다른 프로필에서는 울리지 않음)",
+            "'기본'에서 복사(Ctrl+C)한 할 일을 여기에 붙여넣기(Ctrl+V)",
+        ),
+        "---",
+        f"B 프로필 리마인더 (3분 뒤) {_token(now + timedelta(minutes=3))}",
+        {"text": "B 프로필 할 일", "children": ["B 프로필 하위"]},
+    ]
+
+
 def _bulk_page(ctx):
     nodes = []
     for n in range(1, 121):
@@ -298,6 +345,7 @@ PAGES = (
     (f"{PREFIX}리마인더·검색", _reminder_page),
     (f"{PREFIX}편집·이력", _edit_page),
     (f"{PREFIX}페이지·설정", _page_settings_page),
+    (f"{PREFIX}프로필", _profile_page),
     (f"{PREFIX}대량 150", _bulk_page),
 )
 
@@ -350,16 +398,54 @@ class _Builder:
             self.add(child, item["id"])
 
 
+def is_seed_profile() -> bool:
+    """지금 연 DB 가 예제를 넣는 디버그 기본 프로필인지"""
+    current = db.path()
+    return current is not None and os.path.normcase(current) == os.path.normcase(
+        profiles.path(SEED_PROFILE)
+    )
+
+
+def ensure_profile_b(now: datetime) -> bool:
+    """프로필 바꾸기를 시험할 두 번째 프로필을 만든다 (없을 때만). 할 일 / Task 를 넣는 동안만 그 DB 를
+    열고 지금 DB 로 되돌린다. 만들었으면 True"""
+    if profiles.find(PROFILE_B) is not None:
+        return False
+    current = db.path()
+    profiles.create(PROFILE_B)
+    db.connect(profiles.path(PROFILE_B))
+    try:
+        builder = _Builder(todo_pages.load()[0]["id"], now, {})
+        for node in _profile_b_page(builder):
+            builder.add(node)
+        todo_store.save_todos(builder.items)
+        start = now.replace(second=0, microsecond=0).astimezone()
+        start -= timedelta(minutes=30)
+        task_store.register(
+            PROFILE_B_TASK,
+            f"{PROFILE_B} 프로필에만 있는 Task",
+            start,
+            start + timedelta(hours=2),
+        )
+    finally:
+        db.connect(current)
+    return True
+
+
 def ensure(now: datetime | None = None, check_dir: bool = True) -> list:
-    """없는 예제 페이지를 만들고 만든 페이지 이름 목록을 돌려준다.
-    처음 만들 때는 디버그 위젯을 항상 위로 두고, 새로 만든 첫 예제 페이지를 연다(cfg todo_page)."""
+    """없는 예제 페이지를 만들고 만든 페이지 이름 목록을 돌려준다 (예제 프로필 PROFILE_B 도 없으면 만든다).
+    check_dir 이면 .debug_appdata 의 디버그 기본 프로필(SEED_PROFILE)일 때만 페이지를 넣는다.
+    처음 만들 때는 디버그 위젯을 항상 위로 두고, 새로 만든 첫 예제 페이지를 연다(프로필의 마지막 페이지)."""
     if check_dir and not is_debug_data():
         return []
     now = now or datetime.now()
+    made_profile = ensure_profile_b(now)
+    if check_dir and not is_seed_profile():
+        return [PROFILE_B] if made_profile else []
     have = {page["name"] for page in todo_pages.load()}
     missing = [(name, build) for name, build in PAGES if name not in have]
     if not missing:
-        return []
+        return [PROFILE_B] if made_profile else []
 
     cfg = widget_config.load_config()
     first_seed = not (have & {name for name, _ in PAGES})
@@ -383,15 +469,22 @@ def ensure(now: datetime | None = None, check_dir: bool = True) -> list:
     if created:
         if first_seed:
             cfg["always_on_top"] = True  # 디버그는 위에 띄워 두고 시작 (메뉴로 끌 수 있음)
-        cfg["todo_page"] = created[0]["id"]
+        # 명령줄로 다시 만들었으면 다음 실행은 예제 프로필로
+        cfg["profile"] = SEED_PROFILE
         widget_config.save_config(cfg)
-    return [page["name"] for page in created]
+        todo_pages.set_last_page(created[0]["id"])
+    return [page["name"] for page in created] + ([PROFILE_B] if made_profile else [])
 
 
 def reset(now: datetime | None = None, check_dir: bool = True) -> list:
-    """예제 페이지와 그 할 일(보관 포함)을 지우고 다시 만든다."""
-    if check_dir and not is_debug_data():
+    """예제 페이지와 그 할 일(보관 포함), 예제 프로필(PROFILE_B, 지금 연 것이 아니면)을 지우고 다시 만든다."""
+    if check_dir and not (is_debug_data() and is_seed_profile()):
         return []
+    found = profiles.find(PROFILE_B)
+    if found is not None and os.path.normcase(profiles.path(found)) != os.path.normcase(
+        db.path() or ""
+    ):
+        os.remove(profiles.path(found))
     names = {name for name, _ in PAGES}
     page_ids = [page["id"] for page in todo_pages.load() if page["name"] in names]
     c = db.conn()
@@ -408,5 +501,8 @@ if __name__ == "__main__":
     if not is_debug_data():
         print(f"APPDATA 가 {DEBUG_DIR} 가 아니라서 하지 않습니다: {os_win.user_data_dir()}")
         sys.exit(1)
+    # 앱처럼 예전 데이터 파일을 프로필 폴더로 옮긴 뒤, 예제를 넣는 프로필을 연다 (없으면 만든다)
+    profiles.migrate_legacy()
+    db.connect(profiles.path(SEED_PROFILE))
     made = reset() if "--reset" in sys.argv[1:] else ensure()
-    print("만든 예제 페이지:", ", ".join(made) if made else "없음 (이미 모두 있음)")
+    print("만든 예제:", ", ".join(made) if made else "없음 (이미 모두 있음)")

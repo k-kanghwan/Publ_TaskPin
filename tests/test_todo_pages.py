@@ -81,3 +81,11 @@ def test_pending_page_is_pinned_and_not_a_db_id(temp_db):
     # DB 의 페이지 id 와 겹치지 않는다
     assert all(p["id"] != todo_pages.PENDING_ID for p in todo_pages.load())
     assert todo_pages.add("새 페이지")["id"] > 0
+
+
+def test_last_page_is_kept_in_db(temp_db):
+    assert todo_pages.last_page() is None
+    todo_pages.set_last_page(todo_pages.PENDING_ID)  # 고정 페이지 "미완료"도 기억한다
+    assert todo_pages.last_page() == todo_pages.PENDING_ID
+    db.set_meta(todo_pages.LAST_PAGE_KEY, "깨진 값")
+    assert todo_pages.last_page() is None

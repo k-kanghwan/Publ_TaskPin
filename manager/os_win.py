@@ -24,6 +24,30 @@ def user_data_dir() -> str:
     return os.path.join(base, APP_ID)
 
 
+# 파일 이름 규칙 (프로필 이름 = DB 파일 이름 - manager/profiles)
+INVALID_FILENAME_CHARS = '\\/:*?"<>|'
+# 확장자를 붙여도(CON.db) 장치 이름으로 읽혀 만들 수 없는 이름
+_RESERVED_FILENAMES = {
+    "CON",
+    "PRN",
+    "AUX",
+    "NUL",
+    *(f"COM{i}" for i in range(1, 10)),
+    *(f"LPT{i}" for i in range(1, 10)),
+}
+
+
+def bad_filename_chars(name: str) -> list:
+    """파일 이름에 쓸 수 없는 글자 (처음 나온 순서, 겹치지 않게). 제어 문자도 넣는다."""
+    unique = dict.fromkeys(name)
+    return [c for c in unique if c in INVALID_FILENAME_CHARS or ord(c) < 32]
+
+
+def is_reserved_filename(name: str) -> bool:
+    """CON / NUL / COM1 처럼 Windows 가 장치 이름으로 쓰는 이름인지 (첫 마침표 앞부분으로 본다)"""
+    return name.split(".")[0].strip().upper() in _RESERVED_FILENAMES
+
+
 # ==================================================
 # Win32 z-order
 # ==================================================

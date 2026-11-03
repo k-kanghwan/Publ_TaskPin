@@ -30,6 +30,18 @@ DIALOG_WIDTH = 260
 BORDER_ALPHA = 210  # 강조색 테두리
 
 
+def fit_height(dialog: QWidget):
+    """폭이 고정된 창의 높이를 그 폭에서 줄바꿈한 글자에 맞춘다.
+    adjustSize 는 라벨의 한 줄 기준 sizeHint 로 높이를 정해, 폭이 넓은 글꼴(D2Coding 등)로 줄이 늘면
+    아래 줄이 잘린다 - 레이아웃의 heightForWidth 로 다시 잰다."""
+    dialog.adjustSize()
+    layout = dialog.layout()
+    if layout is not None and layout.hasHeightForWidth():
+        height = layout.totalHeightForWidth(dialog.width())
+        if height > dialog.height():
+            dialog.resize(dialog.width(), height)
+
+
 class ConfirmDialog(QDialog):
     def __init__(
         self,
@@ -188,7 +200,7 @@ class ConfirmDialog(QDialog):
 
     def exec_over(self, anchor: QWidget) -> bool:
         """anchor(위젯) 가운데에 띄우고 화면 안쪽으로 맞춘 뒤 결과를 돌려준다."""
-        self.adjustSize()
+        fit_height(self)
         center = anchor.mapToGlobal(anchor.rect().center())
         screen = QApplication.screenAt(center) or QApplication.primaryScreen()
         area = screen.availableGeometry()

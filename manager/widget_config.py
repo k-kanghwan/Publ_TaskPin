@@ -1,6 +1,7 @@
 """바탕화면 위젯 설정 영속화 (%APPDATA%\\TaskPin\\config.json)
 
 위젯 설정은 "없는 것이 정상"(첫 실행)이므로 파일이 없어도 예외를 던지지 않고 기본값을 돌려준다.
+모든 프로필(manager/profiles)이 이 설정 하나를 함께 쓴다.
 자동 실행 등록은 OS 의존 코드라 os_win 에 있다.
 """
 
@@ -196,13 +197,17 @@ DEFAULT_CONFIG = {
     # 행의 ✕ 로 할 일을 지울 때 확인 창 (확인 창의 "다시 묻지 않음" -> False, 설정창 Application)
     "confirm_delete": True,
     "undo_limit": DEFAULT_UNDO_LIMIT,  # 되돌릴 수 있는 최근 삭제 수 (UNDO_LIMITS 중 하나)
-    "todo_page": None,  # 마지막으로 본 TODO 페이지 id (없는 id 면 첫 페이지)
+    # 마지막으로 연 프로필 이름 (manager/profiles - 없는 이름이면 기본 / 첫 프로필).
+    # 마지막으로 본 TODO 페이지는 프로필(DB)마다 따로 기억한다 (todo_pages.last_page)
+    "profile": None,
     "app_icon": APP_ICONS[0],  # 트레이 / 창 아이콘 (APP_ICONS 중 하나)
 }
 CUSTOM_TAG_PREFIX = "custom-"  # 사용자 태그 id (todos.tag 에 저장되는 값)
 CUSTOM_TAG_NAME_MAX = 20
 # 기본값은 없지만 저장될 수 있는 키 (설정 가져오기에서도 받는다)
 EXTRA_KEYS = ("export_dir",)  # TODO / 설정 내보내기 마지막 폴더
+# v0.1.29 까지 마지막으로 본 TODO 페이지 id - 이제 프로필 DB 에 둔다 (TaskPinApp 이 처음 한 번 옮기고 지움)
+LEGACY_TODO_PAGE_KEY = "todo_page"
 
 
 def load_config() -> dict:

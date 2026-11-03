@@ -2,8 +2,8 @@
 
 이름과 색을 고른다. 색은 미리 고른 색 중에서 또는 "직접…" 으로 색 선택 창에서.
 저장은 부르는 쪽이 한다(widget_config.add_custom_tag).
-색 칸 없이(with_color=False) TODO 페이지 이름 바꾸기에도 쓴다 (snippets_provider 를 주면 이름에서도
-`:트리거:` 스니펫이 바뀐다).
+색 칸 없이(with_color=False) TODO 페이지 이름 바꾸기 / 프로필 이름에도 쓴다 (snippets_provider 를 주면
+이름에서도 `:트리거:` 스니펫이 바뀐다). validate 를 주면 쓸 수 없는 이름에 까닭을 보이고 확인 버튼을 끈다.
 
 키보드
   - Enter : 추가, Esc : 취소
@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 from manager import widget_config
 from ui import painted, theme
 from ui.color_dialog import pick_color
+from ui.confirm_dialog import fit_height
 from ui.text_input import SnippetLineEdit
 from ui.theme import CORNER_RADIUS
 
@@ -54,14 +55,19 @@ class TagDialog(QDialog):
         placeholder: str = "이름 (예: Work)",
         max_length: int = widget_config.CUSTOM_TAG_NAME_MAX,
         snippets_provider=None,
+        note: str = "",
+        validate=None,
         parent=None,
     ):
-        """snippets_provider: () -> {트리거: 문구}. 주면 이름 칸에서 스니펫을 바꾼다 (페이지 이름)"""
+        """snippets_provider: () -> {트리거: 문구}. 주면 이름 칸에서 스니펫을 바꾼다 (페이지 이름)
+        note: 제목 아래 흐린 설명
+        validate: (이름) -> 쓸 수 없는 까닭 / "" (프로필 이름 - 파일 이름 규칙 / 같은 이름)"""
         super().__init__(parent, Qt.Dialog | Qt.FramelessWindowHint)
         self.setAttribute(Qt.WA_TranslucentBackground, True)
         self.setModal(True)
         self.setFixedWidth(DIALOG_WIDTH)
         self._color = color or PRESET_COLORS[0]
+        self._validate = validate
 
         t = self._theme = theme.current()
         self.setStyleSheet(
@@ -73,6 +79,8 @@ class TagDialog(QDialog):
                 color: {t.text_main};
                 font-family: {t.font_family};
             }}
+            QLabel#note {{ color: {t.text_sub}; font-size: 12px; }}
+            QLabel#error {{ color: {t.text_warn}; font-size: 12px; }}
             QPushButton {{ padding: 6px 0px; }}
             QPushButton#ok {{ color: {t.on_accent}; font-weight: bold; }}
             QPushButton#ok:disabled {{ color: {t.text_disabled}; }}
@@ -94,6 +102,11 @@ class TagDialog(QDialog):
         title_label = QLabel(title)
         title_label.setStyleSheet("font-size: 14px; font-weight: bold;")
         root.addWidget(title_label)
+        if note:
+            note_label = QLabel(note)
+            note_label.setObjectName("note")
+            note_label.setWordWrap(True)
+            root.addWidget(note_label)
 
         # 조합 중인 한글까지 읽는 칸 (확인 버튼을 눌러도 마지막 글자가 빠지지 않게 - name())
         self.name_edit = SnippetLineEdit(snippets_provider or dict)
@@ -103,6 +116,12 @@ class TagDialog(QDialog):
         self.name_edit.textChanged.connect(self._update_ok)
         self.name_edit.preedit_changed.connect(self._update_ok)
         root.addWidget(self.name_edit)
+        # 쓸 수 없는 이름의 까닭 (validate - 없으면 숨김)
+        self.error_label = QLabel()
+        self.error_label.setObjectName("error")
+        self.error_label.setWordWrap(True)
+        self.error_label.hide()
+        root.addWidget(self.error_label)
 
         # ---- 색 ----
         swatches = QWidget()
@@ -177,7 +196,16 @@ class TagDialog(QDialog):
             self._set_color(color)
 
     def _update_ok(self):
-        self.btn_ok.setEnabled(bool(self.name()))
+        name = self.name()
+        error = self._validate(name) if self._validate is not None and name else ""
+        if self.error_label.text() != error:
+            self.error_label.setText(error)
+            # isVisible 은 창을 띄우기 전에는 늘 False 라 isHidden 으로 본다
+            if self.error_label.isHidden() == bool(error):
+                self.error_label.setHidden(not error)
+                if self.isVisible():
+                    fit_height(self)  # 까닭 줄만큼 창 높이를 맞춘다 (폭은 고정)
+        self.btn_ok.setEnabled(bool(name) and not error)
 
     def name(self) -> str:
         return self.name_edit.full_text().strip()
@@ -201,7 +229,7 @@ class TagDialog(QDialog):
 
     def exec_over(self, anchor: QWidget) -> bool:
         """anchor 가운데에 띄우고(화면 안쪽으로 맞춤) 이름 칸에 커서를 둔 뒤 결과를 돌려준다."""
-        self.adjustSize()
+        fit_height(self)  # 설명 / 까닭이 넓은 글꼴로 여러 줄이어도 잘리지 않게
         center = anchor.mapToGlobal(anchor.rect().center())
         screen = QApplication.screenAt(center) or QApplication.primaryScreen()
         area = screen.availableGeometry()

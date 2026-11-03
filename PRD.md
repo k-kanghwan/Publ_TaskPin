@@ -100,8 +100,12 @@
 - 배포: Nuitka standalone 빌드 + Inno Setup 사용자 단위 설치본(관리자 권한 불필요, onefile은 쓰지 않음)
 - 앱관련 정보(기존 src/에 저장하는 것들은 appdata에 저장해야함)
 - AppData : `%APPDATA%\TaskPin\`
-  - `config.json` : 위젯 설정(위치·크기·투명도·모드 등), 사용자 이름
-  - `taskpin.db` : SQLite — TODO, 정리된 완료 항목, Task 시간 등록 정보
+  - `config.json` : 위젯 설정(위치·크기·투명도·모드 등), 사용자 이름 - 모든 프로필이 함께 씀
+  - `profiles\<프로필 이름>.db` : SQLite — TODO, 정리된 완료 항목, Task 시간 등록 정보 (DB 파일 하나가 프로필 하나)
+- 프로필 (Obsidian의 vault처럼)
+  - appdata에 저장된 프로필 DB를 골라 바꾼다. 할 일·페이지·Task는 프로필마다 따로
+  - 새 프로필 / 다른 이름으로 저장(지금 프로필 복사) / 이름 바꾸기 / 삭제
+  - DB 파일 이름 = 프로필 이름
 - 할 일 완료 후 "완료 항목 정리"를 해도 삭제하지 않고 DB에 보관
 - "TODO 내보내기 → 보관 항목 전체"는 보관된 항목의 상위도 함께 저장 (상위가 아직 끝나지 않았으면 체크하지 않은 상태로)
 
