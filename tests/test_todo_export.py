@@ -21,7 +21,7 @@ def _body(markdown):
 
 def test_markdown_header():
     lines = todo_export.to_markdown([], NOW).splitlines()
-    assert lines[0] == "# Task알림 TODO — 화면 목록"
+    assert lines[0] == "# Task알림 TODO — 현재 페이지"
     assert lines[1] == "내보낸 시각: 2026-10-23 14:05"
 
 
@@ -105,8 +105,14 @@ def test_archived_parent_from_other_day_repeats_in_each_section():
 
 
 def test_default_filename():
-    assert todo_export.default_filename(False, NOW) == "TaskPin-TODO-20261023.md"
-    assert todo_export.default_filename(True, NOW) == "TaskPin-TODO-보관-20261023.md"
+    page, every, archived = todo_export.PAGE, todo_export.ALL, todo_export.ARCHIVED
+    assert todo_export.default_filename(page, NOW) == "TaskPin-TODO-20261023.md"
+    assert todo_export.default_filename(every, NOW, "Dev") == (
+        "TaskPin-TODO-전체-20261023.md"
+    )
+    assert todo_export.default_filename(archived, NOW) == (
+        "TaskPin-TODO-보관-20261023.md"
+    )
 
 
 def test_load_archived_excludes_active(temp_db):
@@ -122,18 +128,19 @@ def test_load_archived_excludes_active(temp_db):
 
 def test_markdown_page_name_in_header_and_filename():
     lines = todo_export.to_markdown([], NOW, "Dev").splitlines()
-    assert lines[0] == "# Task알림 TODO — Dev · 화면 목록"
-    assert todo_export.default_filename(False, NOW, "Dev") == (
+    assert lines[0] == "# Task알림 TODO — Dev · 현재 페이지"
+    page = todo_export.PAGE
+    assert todo_export.default_filename(page, NOW, "Dev") == (
         "TaskPin-TODO-Dev-20261023.md"
     )
     # 파일 이름에 쓸 수 없는 글자는 _ (보관 항목은 모든 페이지라 이름을 넣지 않는다)
-    assert todo_export.default_filename(False, NOW, ' 업무 / 2:3? ') == (
+    assert todo_export.default_filename(page, NOW, ' 업무 / 2:3? ') == (
         "TaskPin-TODO-업무 _ 2_3_-20261023.md"
     )
-    assert todo_export.default_filename(True, NOW, "Dev") == (
+    assert todo_export.default_filename(todo_export.ARCHIVED, NOW, "Dev") == (
         "TaskPin-TODO-보관-20261023.md"
     )
-    assert todo_export.default_filename(False, NOW, " .. ") == "TaskPin-TODO-20261023.md"
+    assert todo_export.default_filename(page, NOW, " .. ") == "TaskPin-TODO-20261023.md"
 
 
 def test_markdown_separator_and_collapsed_children():
@@ -157,3 +164,47 @@ def test_to_text_for_clipboard_is_markdown_checklist():
     assert todo_export.to_text([parent, child, sep]) == (
         "- [ ] 상위 (@2026-10-24 09:00)\n  - [x] 하위\n---"
     )
+
+
+def _on(page_id, item):
+    item["page_id"] = page_id
+    return item
+
+
+def test_all_pages_one_section_per_page_in_order():
+    pages = [{"id": 2, "name": "업무"}, {"id": 1, "name": "개인"}, {"id": 3, "name": "빈"}]
+    parent = _on(1, _item("장보기"))
+    child = _on(1, _item("우유", done=True, parent=parent))
+    work = _on(2, _item("보고서 (@2026-10-24 09:00)"))
+    lines = todo_export.pages_to_markdown(pages, [parent, child, work], NOW)
+    assert lines.splitlines()[0] == "# Task알림 TODO — 전체 페이지"
+    assert _body(lines) == [
+        "## 업무",
+        "",
+        "- [ ] 보고서 (@2026-10-24 09:00)",
+        "",
+        "## 개인",
+        "",
+        "- [ ] 장보기",
+        "  - [x] 우유",
+        "",
+        "## 빈",  # 할 일이 없는 페이지는 머리줄만
+    ]
+
+
+def test_pending_grouped_by_page_keeps_given_order():
+    pages = [{"id": 1, "name": "개인"}, {"id": 2, "name": "업무"}]
+    late = _on(2, _item("발표 (@2026-10-25 10:00)"))
+    parent = _on(1, _item("상위"))
+    early = _on(1, _item("병원 (@2026-10-24 09:00)", parent=parent))
+    lines = todo_export.pending_to_markdown(pages, [early, late], NOW)
+    assert lines.splitlines()[0] == "# Task알림 TODO — 미완료 · 현재 페이지"
+    assert _body(lines) == [
+        "## 개인",
+        "",
+        "- [ ] 병원 (@2026-10-24 09:00)",  # 상위 없이 한 단계
+        "",
+        "## 업무",
+        "",
+        "- [ ] 발표 (@2026-10-25 10:00)",
+    ]

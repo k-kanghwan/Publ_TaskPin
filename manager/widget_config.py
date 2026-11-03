@@ -44,6 +44,10 @@ DEFAULT_SHORTCUTS = {
     "todo_search": "Ctrl+F",  # 할 일 검색 / 날짜별 보기 줄 열기
     "todo_page_prev": "Ctrl+PgUp",  # 할 일 이전 페이지 (엑셀 시트 이동과 같음)
     "todo_page_next": "Ctrl+PgDown",  # 할 일 다음 페이지
+    "todo_page_first": "Ctrl+Shift+PgUp",  # 맨 앞 페이지 (고정 페이지 "미완료")
+    "todo_page_last": "Ctrl+Shift+PgDown",  # 맨 뒤 페이지
+    "todo_page_new": "Ctrl+T",  # 새 페이지 (브라우저 새 탭과 같음)
+    "todo_page_jump": "F5",  # 페이지 바로가기 창 (이름으로 찾아 이동)
     "settings": "Ctrl+,",  # 설정 열기
 }
 

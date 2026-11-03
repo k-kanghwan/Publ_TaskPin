@@ -3,6 +3,9 @@
 엑셀 시트처럼 페이지마다 독립된 할 일 목록을 둔다. 할 일은 todos.page_id 로 페이지에 속한다.
 페이지는 적어도 한 장 있다 (load 가 없으면 만든다 / 마지막 한 장은 지우지 않는다 - TodoPanel).
 순서는 position, 이름은 사용자가 바꾼다 (새 페이지는 "페이지 N").
+
+맨 앞에는 DB 에 없는 고정 페이지 "미완료"(PENDING_ID)를 보여준다 - 모든 페이지에서 날짜(리마인더)가 있고
+아직 하지 않은 할 일을 시각 순으로 모은다 (todo_filter.pending, TodoPanel). 이름 바꾸기 / 옮기기 / 삭제는 없다.
 """
 
 import re
@@ -12,6 +15,10 @@ from manager import db
 
 NAME_PREFIX = "페이지"
 NAME_MAX = 20
+# 맨 앞 고정 페이지 "미완료" (DB 의 페이지 id 는 1 부터라 겹치지 않는다)
+PENDING_ID = -1
+PENDING_NAME = "미완료"
+PENDING_TIP = "모든 페이지에서 날짜가 있고 아직 하지 않은 할 일"
 _NUMBERED_RE = re.compile(rf"{NAME_PREFIX} (\d+)")
 
 
@@ -31,6 +38,11 @@ def load() -> list:
         print(f"TODO 페이지 불러오기 실패: {e}")
         return [{"id": 1, "name": f"{NAME_PREFIX} 1"}]
     return [{"id": row["id"], "name": row["name"]} for row in rows]
+
+
+def pending_page() -> dict:
+    """페이지 표시 / 넘기기 목록 맨 앞에 붙이는 고정 페이지 (pinned: 끌기 / 이름 바꾸기 / 삭제 없음)"""
+    return {"id": PENDING_ID, "name": PENDING_NAME, "pinned": True, "tip": PENDING_TIP}
 
 
 def clean_name(name: str, fallback: str) -> str:

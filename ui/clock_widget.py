@@ -13,14 +13,19 @@ Priv_dtcal/dtcal_poc.py 에서 검증된 기법을 이식:
 입력칸이 먼저 가져가므로(ShortcutOverride) 할 일이나 이름을 입력하는 중에는 글자로 들어간다.
 투명도는 설정창 Appearance 의 슬라이더로 정한다 (config opacity).
 Task 등록 / 수정 창이 떠 있는 동안에는 투명한 막(_InputBlocker)이 위젯을 덮어 끌어 옮기기만 된다.
+등록 / 수정 창과 내보내기 파일 창이 떠 있는 동안은 "항상 위에 보이기" 설정과 관계없이 위에 둔다 (hold_on_top).
+리마인더 알림 팝업은 주 모니터 우측 상단부터 쌓고, 하나가 닫히면 아래 팝업이 위로 미끄러져 올라온다.
+팝업의 버튼이 아닌 곳을 누르면 위젯을 띄워 그 할 일로 가서 깜빡인다 (show_todo).
 """
 
 import os
 from datetime import datetime
 
 from PySide6.QtCore import (
+    QEasingCurve,
     QEvent,
     QPoint,
+    QPropertyAnimation,
     QRectF,
     QSize,
     QStandardPaths,
@@ -90,6 +95,7 @@ FRONT_CHECK_MS = 300  # 앞으로 꺼낸 동안 다른 앱이 활성화됐는지
 REMINDER_CHECK_MS = 20 * 1000  # 리마인더 확인 주기
 REMINDER_STARTUP_DELAY_MS = 3 * 1000  # 앱이 꺼져있던 동안 지난 알림을 시작 직후 확인
 POPUP_GAP = 8
+POPUP_SLIDE_MS = 180  # 알림이 닫혀 아래 알림이 위로 올라오는 시간
 
 TASK_DOT_COLOR = "#4caf50"  # Task 시간이 등록되어 있을 때 헤더의 점
 USER_NAME_MAX_LEN = 20
@@ -328,6 +334,8 @@ class ClockWidget(QWidget):
         super().__init__()
 
         self._cfg = cfg
+        # 설정과 관계없이 잠깐 위에 붙잡아 두는 이유들 ("picker" 등록 창 / "export" 내보내기 창 - hold_on_top)
+        self._top_holds = set()
         self._locked = bool(cfg.get("locked", False))
         self._drag_offset = None
         self._popups = []
@@ -413,8 +421,25 @@ class ClockWidget(QWidget):
             return value
         return ORIENTATION_VERTICAL
 
-    def _on_top(self) -> bool:
+    def _cfg_on_top(self) -> bool:
+        """설정 "항상 위에 보이기" (좌패널 메뉴의 체크)"""
         return bool(self._cfg.get("always_on_top", False))
+
+    def _on_top(self) -> bool:
+        """실제로 위에 둘지: 설정이 켜졌거나, 등록 창 / 내보내기 창 때문에 잠깐 붙잡아 둔 동안 (hold_on_top)"""
+        return self._cfg_on_top() or bool(self._top_holds)
+
+    def hold_on_top(self, key: str, on: bool):
+        """등록 / 수정 창, 내보내기 파일 창이 떠 있는 동안은 설정과 관계없이 위젯을 위에 둔다 (key 별로 붙잡음).
+        다른 앱을 눌러도 위젯과 그 창이 뒤로 숨지 않는다. 다 풀리면 설정대로 돌아간다
+        (이 앱의 창을 쓰는 중이면 바로 바탕화면으로 내리지 않고 앞으로 꺼낸 상태 - _apply_stay_mode)."""
+        before = self._on_top()
+        if on:
+            self._top_holds.add(key)
+        else:
+            self._top_holds.discard(key)
+        if self._on_top() != before:
+            self._apply_stay_mode()
 
     def _apply_window_flags(self):
         stay_hint = (
@@ -1007,6 +1032,10 @@ class ClockWidget(QWidget):
             "todo_search": self.todo_panel.open_search,
             "todo_page_prev": lambda: self.todo_panel.step_page(-1),
             "todo_page_next": lambda: self.todo_panel.step_page(1),
+            "todo_page_first": lambda: self.todo_panel.go_page_edge(last=False),
+            "todo_page_last": lambda: self.todo_panel.go_page_edge(last=True),
+            "todo_page_new": self.todo_panel.add_page,
+            "todo_page_jump": self.todo_panel.open_page_switcher,
             "settings": self.settings_requested.emit,
         }
         for action, keys in mapping.items():
@@ -1199,7 +1228,7 @@ class ClockWidget(QWidget):
         # 다른 앱을 보며 등록 / 할 일 추가를 할 때 위젯이 뒤로 사라지지 않게
         act_top = menu.addAction("항상 위에 보이기")
         act_top.setCheckable(True)
-        act_top.setChecked(self._on_top())
+        act_top.setChecked(self._cfg_on_top())
         act_top.toggled.connect(self.set_always_on_top)
 
         act_auto = menu.addAction("윈도우 시작 시 실행")
@@ -1214,40 +1243,54 @@ class ClockWidget(QWidget):
 
         menu.exec(event.globalPos())
 
-    def _export_todos(self, archived: bool):
-        """우패널 "내보내기": TODO 를 Markdown 체크리스트 파일로 저장한다. 마지막 저장 폴더를 기억한다."""
+    def _export_todos(self, kind: str):
+        """우패널 "내보내기": TODO 를 Markdown 체크리스트 파일로 저장한다. 마지막 저장 폴더를 기억한다.
+        kind: todo_export.PAGE 현재 페이지 / ALL 전체 페이지 / ARCHIVED 보관 항목 전체.
+        파일 창이 떠 있는 동안은 "항상 위" 설정과 관계없이 위에 둔다 (다른 앱 뒤로 숨지 않게)."""
         now = datetime.now()
-        page_name = self.todo_panel.page_name()  # 화면 목록은 지금 페이지 (제목 / 파일 이름에 넣는다)
-        if archived:
+        panel = self.todo_panel
+        page_name = panel.page_name()  # 현재 페이지는 제목 / 파일 이름에 넣는다
+        if kind == todo_export.ARCHIVED:
+            # 보관 항목의 상위는 어느 페이지에든 남아 있을 수 있다
             text = todo_export.archived_to_markdown(
-                todo_store.load_archived(), now, self.todo_panel.items()
+                todo_store.load_archived(), now, panel.all_items()
+            )
+        elif kind == todo_export.ALL:
+            text = todo_export.pages_to_markdown(panel.pages(), panel.all_items(), now)
+        elif panel.is_pending_page():
+            text = todo_export.pending_to_markdown(
+                panel.pages(), panel.items(), now, page_name
             )
         else:
-            text = todo_export.to_markdown(self.todo_panel.items(), now, page_name)
+            text = todo_export.to_markdown(panel.items(), now, page_name)
 
         folder = self._cfg.get("export_dir") or QStandardPaths.writableLocation(
             QStandardPaths.DocumentsLocation
         )
-        path, _ = QFileDialog.getSaveFileName(
-            self,
-            "TODO 내보내기",
-            os.path.normpath(
-                os.path.join(
-                    folder, todo_export.default_filename(archived, now, page_name)
-                )
-            ),
-            "Markdown (*.md)",
-        )
-        if not path:
-            return
+        self.hold_on_top("export", True)
         try:
-            with open(path, "w", encoding="utf-8") as f:
-                f.write(text)
-        except OSError as e:
-            QMessageBox.warning(
-                self, "TODO 내보내기", f"파일을 저장하지 못했습니다.\n{e}"
+            path, _ = QFileDialog.getSaveFileName(
+                self,
+                "TODO 내보내기",
+                os.path.normpath(
+                    os.path.join(
+                        folder, todo_export.default_filename(kind, now, page_name)
+                    )
+                ),
+                "Markdown (*.md)",
             )
-            return
+            if not path:
+                return
+            try:
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(text)
+            except OSError as e:
+                QMessageBox.warning(
+                    self, "TODO 내보내기", f"파일을 저장하지 못했습니다.\n{e}"
+                )
+                return
+        finally:
+            self.hold_on_top("export", False)
         self._cfg["export_dir"] = os.path.dirname(path)
         widget_config.save_config(self._cfg)
 
@@ -1298,8 +1341,11 @@ class ClockWidget(QWidget):
         self.windowHandle().setFlags(flags)
         self.repaint()
         self._apply_z_order()
-        if not self._on_top() and self.isActiveWindow():
+        if not self._on_top() and (
+            self.isActiveWindow() or os_win.is_own_window(os_win.foreground_window())
+        ):
             # 끄자마자 사라지지 않게 - 다른 앱을 누르면 그때 바탕화면 층으로
+            # (등록 창을 닫는 중이면 아직 그 창이 활성이라 전경 창이 이 앱의 창인지도 본다)
             self.bring_to_front()
 
     def reload_config(self):
@@ -1351,28 +1397,56 @@ class ClockWidget(QWidget):
         popup = ReminderPopup(item_id, text, due)
         popup.done_requested.connect(lambda _id: self.todo_panel.set_done(_id, True))
         popup.snooze_requested.connect(self.todo_panel.snooze)
-        popup.destroyed.connect(lambda _=None, p=popup: self._popups.remove(p))
-        popup.move(self._popup_position(popup))
+        popup.opened.connect(self.show_todo)
+        popup.closed.connect(lambda p=popup: self._on_popup_closed(p))
+        popup.destroyed.connect(lambda _=None, p=popup: self._on_popup_closed(p))
         self._popups.append(popup)
+        popup.move(self._popup_slots(self._popups)[-1])
         popup.show()
 
-    def _popup_position(self, popup: QWidget) -> QPoint:
-        """위젯 위치와 상관없이 주 모니터 우측 상단부터 아래로 쌓고,
+    def show_todo(self, item_id: str):
+        """알림 팝업을 누름: 위젯을 띄워 앞으로 꺼내고 그 할 일의 페이지로 가서 골라 깜빡인다."""
+        if not self.isVisible():
+            self.show_widget()  # visibility_changed 로 트레이 체크도 맞춰진다
+        self.bring_to_front()
+        self.todo_panel.reveal_item(item_id)
+
+    def _on_popup_closed(self, popup):
+        """알림이 닫힘(완료 / 나중에 / 닫기 / 눌러서 보기): 남은 알림을 위로 당긴다. 다른 알림은 그대로 둔다."""
+        if popup in self._popups:
+            self._popups.remove(popup)
+            self._layout_popups()
+
+    def _popup_slots(self, popups: list) -> list:
+        """popups 를 차례로 놓을 자리. 위젯 위치와 상관없이 주 모니터 우측 상단부터 아래로 쌓고,
         아래 공간이 없으면 왼쪽 열로 넘어가 다시 위에서부터 쌓는다. (팝업 폭은 설정의 알림 창 크기)"""
         area = QApplication.primaryScreen().availableGeometry()
         top = area.top() + SCREEN_MARGIN
         bottom = area.bottom() + 1 - SCREEN_MARGIN
         right = area.right() + 1 - SCREEN_MARGIN
-
-        # 이미 떠 있는 팝업들을 같은 규칙으로 배치해 본 다음 칸이 새 팝업 자리
-        y = top
-        for p in self._popups + [popup]:
+        slots, y = [], top
+        for p in popups:
             if y > top and y + p.height() > bottom:
                 right -= p.width() + POPUP_GAP
                 y = top
-            pos = QPoint(max(right - p.width(), area.left()), y)
+            slots.append(QPoint(max(right - p.width(), area.left()), y))
             y += p.height() + POPUP_GAP
-        return pos
+        return slots
+
+    def _layout_popups(self):
+        """남은 알림을 쌓는 규칙대로 다시 놓는다 - 위 알림이 닫히면 아래 알림이 미끄러지듯 올라온다."""
+        for popup, pos in zip(self._popups, self._popup_slots(self._popups)):
+            anim = getattr(popup, "_slide_anim", None)
+            if anim is not None:
+                anim.stop()  # 옮기는 중에 또 닫히면 새 자리로 다시
+            if popup.pos() == pos:
+                continue
+            anim = QPropertyAnimation(popup, b"pos", popup)
+            anim.setDuration(POPUP_SLIDE_MS)
+            anim.setEasingCurve(QEasingCurve.OutCubic)
+            anim.setEndValue(pos)
+            popup._slide_anim = anim
+            anim.start()
 
     # ==================================================
     # 표시 / 숨김

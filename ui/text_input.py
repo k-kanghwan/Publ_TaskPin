@@ -1,4 +1,4 @@
-"""입력칸 공통 보조: Win+. 이모지 패널 입력 보정, 스니펫 치환, Enter 를 창 단축키보다 먼저 받는 입력칸"""
+"""입력칸 공통 보조: Win+. 이모지 패널 입력 보정, 스니펫 치환(SnippetLineEdit), Enter 를 창 단축키보다 먼저 받는 입력칸"""
 
 from PySide6.QtCore import QAbstractNativeEventFilter, QEvent, Qt, QTimer, Signal
 from PySide6.QtGui import QInputMethodEvent
@@ -90,6 +90,23 @@ class PreeditLineEdit(LineEdit):
             pos = py_cursor(self)
             text = text[:pos] + self.preedit + text[pos:]
         return text
+
+
+class SnippetLineEdit(PreeditLineEdit):
+    """스니펫(`:트리거:`)을 문구로 바꾸는 한 줄 입력칸 (Task 업무명 / TODO 페이지 이름).
+
+    마지막 글자를 조합하는 중에 확인 버튼(NoFocus)을 누르면 조합이 확정되지 않아
+    text() 에 빠지므로, 확인할 때는 full_text() 로 preedit 을 함께 읽는다.
+    snippets_provider: () -> {트리거: 문구}"""
+
+    def __init__(self, snippets_provider, parent=None):
+        super().__init__(parent)
+        self._snippets_provider = snippets_provider
+        self.textEdited.connect(self._on_text_edited)
+
+    def _on_text_edited(self, _text: str):
+        if not self.preedit:
+            expand_snippet_later(self, self._snippets_provider)
 
 
 def expand_snippet_later(edit: QLineEdit, snippets_provider):

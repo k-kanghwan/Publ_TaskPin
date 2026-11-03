@@ -42,7 +42,7 @@ from PySide6.QtWidgets import (
 
 from manager import task_clock
 from ui import painted, theme
-from ui.text_input import PreeditLineEdit, expand_snippet_later
+from ui.text_input import SnippetLineEdit
 
 DURATIONS = list(
     range(task_clock.STEP_MIN, task_clock.MAX_DURATION_MIN + 1, task_clock.STEP_MIN)
@@ -50,22 +50,6 @@ DURATIONS = list(
 PICKER_WIDTH = 470
 FORM_WIDTH = 210  # 왼쪽 업무명 / 시간 칸 (나머지는 상세 업무)
 ANCHOR_GAP = 4
-
-
-class _TitleEdit(PreeditLineEdit):
-    """업무명 칸. 스니펫을 치환한다.
-
-    마지막 글자를 조합하는 중에 확인 버튼(NoFocus)을 누르면 조합이 확정되지 않아
-    text() 에 빠지므로, 확인 시 full_text() 로 preedit 을 함께 읽는다."""
-
-    def __init__(self, snippets_provider, parent=None):
-        super().__init__(parent)
-        self._snippets_provider = snippets_provider
-        self.textEdited.connect(self._on_text_edited)
-
-    def _on_text_edited(self, _text: str):
-        if not self.preedit:
-            expand_snippet_later(self, self._snippets_provider)
 
 
 class _DetailEdit(QPlainTextEdit):
@@ -110,7 +94,10 @@ class TaskPicker(QFrame):
         """task: None 이면 새 등록(기본값), 있으면 그 Task 를 수정 (값을 채우고 제목이 "Task 수정")
         snippets_provider: () -> {트리거: 문구} (업무명 스니펫 치환)
         draft: 새 등록일 때 미리 채울 (업무명, 상세 업무) - 지난번에 취소한 내용"""
-        super().__init__(parent, Qt.Tool | Qt.FramelessWindowHint)
+        # 떠 있는 동안 위젯도 "항상 위"로 붙잡아 두므로(ClockWidget.hold_on_top) 창도 늘 위에
+        super().__init__(
+            parent, Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint
+        )
         self.setAttribute(Qt.WA_DeleteOnClose, True)
         # 둥근 모서리 바깥을 투명하게 (배경은 paintEvent 가 그림)
         self.setAttribute(Qt.WA_TranslucentBackground, True)
@@ -216,7 +203,8 @@ class TaskPicker(QFrame):
 
         # Enter 는 returnPressed 로 연결하지 않는다 - QLineEdit 가 Enter 를 부모로 넘겨
         # keyPressEvent 에서도 처리되므로 두 번 등록된다.
-        self.title_edit = _TitleEdit(self._snippets_provider)
+        # 업무명 칸: 스니펫을 치환하고, 확인 시 조합 중인 한글까지 읽는다 (full_text)
+        self.title_edit = SnippetLineEdit(self._snippets_provider)
         self.title_edit.setPlaceholderText("업무명 (필수)")
         # 조합 중인 한글까지 보고 확인 버튼을 켠다 (마지막 글자는 확정 전까지 text() 에 없다)
         self.title_edit.textChanged.connect(self._update_ok)

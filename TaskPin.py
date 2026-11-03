@@ -206,15 +206,18 @@ class TaskPinApp(TrayApp):
         return True
 
     def _show_picker(self, picker: TaskPicker, anchor):
-        """등록 / 수정 창을 띄우는 동안 위젯은 끌어 옮기기만 된다 (항목 클릭 / 우클릭 / 단축키 막음)."""
+        """등록 / 수정 창을 띄우는 동안 위젯은 끌어 옮기기만 된다 (항목 클릭 / 우클릭 / 단축키 막음).
+        "항상 위에 보이기" 설정과 관계없이 위젯과 창을 위에 둔다 - 다른 앱을 보며 적어도 뒤로 숨지 않게."""
         self._picker = picker
         picker.closed.connect(self._on_picker_closed)
         self.widget.set_input_blocked(True)
+        self.widget.hold_on_top("picker", True)
         picker.popup_for(anchor)
 
     def _on_picker_closed(self):
         self._picker = None
         self.widget.set_input_blocked(False)
+        self.widget.hold_on_top("picker", False)
 
     def _keep_task_draft(self, title: str, detail: str):
         """등록 창을 확인 없이 닫음: 적던 내용을 다음 등록 때까지 남긴다 (둘 다 비었으면 비운다)."""

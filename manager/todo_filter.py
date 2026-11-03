@@ -4,6 +4,7 @@
   - 지연: 시각이 지남 / 오늘: 오늘 안에 남음 / 예정: 내일 이후
 - 검색은 리마인더 토큰을 뺀 본문에서 대소문자 구분 없이 찾는다. 공백으로 나눈 단어가 모두 들어 있어야 맞다.
 - 조건에 맞는 항목의 상위는 트리 문맥으로 함께 보여준다 (조건에는 맞지 않는 "문맥" 항목).
+- 미완료 페이지(pending): 모든 페이지에서 리마인더가 있고 아직 하지 않은 할 일을 시각 순으로 모은다.
 """
 
 import re
@@ -27,6 +28,17 @@ def bucket(item: dict, now: datetime):
     if due.date() == now.date():
         return "today"
     return "upcoming"
+
+
+def pending(items: list) -> list:
+    """미완료 페이지 목록: 완료하지 않았고 리마인더 시각이 있는 할 일 (구분선 제외).
+    todo_store.due_at(미룬 시각 우선 - 행에 표시되는 시각) 이 빠른 순, 같으면 items 순서 그대로"""
+    dated = [
+        (todo_store.due_at(item), idx, item)
+        for idx, item in enumerate(items)
+        if not item.get("done") and not todo_store.is_separator(item.get("text", ""))
+    ]
+    return [item for due, _, item in sorted(d for d in dated if d[0] is not None)]
 
 
 def _words(query: str) -> list:

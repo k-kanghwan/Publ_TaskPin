@@ -3,6 +3,9 @@
 하위 항목은 레벨마다 공백 2칸 들여쓴다(CommonMark / Obsidian 중첩 목록).
 텍스트는 그대로 쓰므로 `(@YYYY-MM-DD HH:mm)` 리마인더 토큰도 obsidian-reminder 에서 그대로 읽힌다.
 구분선 할 일은 Markdown 가로줄(---)로 쓴다.
+
+종류(KINDS): 현재 페이지(PAGE) / 전체 페이지(ALL, 페이지마다 ## 섹션) / 보관 항목(ARCHIVED, 보관 날짜별 섹션).
+고정 페이지 "미완료"의 현재 페이지는 pending_to_markdown (원래 페이지별 섹션에 시각 순).
 """
 
 import re
@@ -11,6 +14,11 @@ from datetime import datetime
 from manager import todo_store, todo_tree
 
 TITLE = "Task알림 TODO"
+# 내보내기 종류 (TodoPanel.export_requested -> ClockWidget._export_todos)
+PAGE = "page"  # 현재 페이지
+ALL = "all"  # 전체 페이지
+ARCHIVED = "archived"  # 보관 항목 전체
+KINDS = (PAGE, ALL, ARCHIVED)
 STAMP_FMT = "%Y-%m-%d %H:%M"
 # 파일 이름에 쓸 수 없는 글자 (Windows)
 _UNSAFE_FILENAME_RE = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
@@ -36,9 +44,33 @@ def _header(subtitle: str, now: datetime) -> list:
 
 
 def to_markdown(items: list, now: datetime, page_name: str = "") -> str:
-    """화면 목록 (상위/하위 계층 그대로). page_name: 내보내는 페이지 이름 (제목에 넣는다)"""
-    subtitle = f"{page_name} · 화면 목록" if page_name else "화면 목록"
+    """현재 페이지 (상위/하위 계층 그대로). page_name: 내보내는 페이지 이름 (제목에 넣는다)"""
+    subtitle = f"{page_name} · 현재 페이지" if page_name else "현재 페이지"
     return "\n".join(_header(subtitle, now) + _checklist(items)) + "\n"
+
+
+def pages_to_markdown(pages: list, items: list, now: datetime) -> str:
+    """전체 페이지: 페이지 순서대로 `## 이름` 섹션 + 그 페이지의 체크리스트 (빈 페이지는 머리줄만).
+    pages: [{"id", "name"}], items: 모든 페이지의 할 일"""
+    lines = _header("전체 페이지", now)
+    for page in pages:
+        page_items = [item for item in items if item.get("page_id") == page["id"]]
+        lines += [f"## {page['name']}", ""] + _checklist(page_items) + [""]
+    return "\n".join(lines).rstrip("\n") + "\n"
+
+
+def pending_to_markdown(
+    pages: list, items: list, now: datetime, title: str = "미완료"
+) -> str:
+    """고정 페이지 "미완료"의 현재 페이지: 원래 페이지별 `## 이름` 섹션에 할 일을 받은 순서(시각 순) 그대로
+    한 단계로 쓴다 (상위 없이 - 화면처럼 한 목록). 할 일이 없는 페이지는 쓰지 않는다."""
+    lines = _header(f"{title} · 현재 페이지", now)
+    for page in pages:
+        page_items = [item for item in items if item.get("page_id") == page["id"]]
+        if page_items:
+            lines += [f"## {page['name']}", ""]
+            lines += [_line(item, 0) for item in page_items] + [""]
+    return "\n".join(lines).rstrip("\n") + "\n"
 
 
 def to_text(items: list, sort_key=None) -> str:
@@ -73,7 +105,7 @@ def archived_to_markdown(items: list, now: datetime, active: list = ()) -> str:
 
     상위가 화면 목록에 남아 있거나(미완료) 다른 날짜에 보관됐어도 섹션마다 상위를 함께 쓴다.
     상위는 지금 체크 상태 그대로라, 하위가 다른 항목의 하위나 최상위처럼 보이지 않는다.
-    active: 화면 목록 (보관하지 않은 상위를 찾는 데 쓴다)
+    active: 보관하지 않은 할 일 - 모든 페이지 (보관하지 않은 상위를 찾는 데 쓴다)
     """
     by_id = {item["id"]: item for item in list(active) + list(items)}
     groups = {}
@@ -92,10 +124,13 @@ def filename_part(name: str) -> str:
     return _UNSAFE_FILENAME_RE.sub("_", " ".join(name.split())).strip(" .")
 
 
-def default_filename(archived: bool, now: datetime, page_name: str = "") -> str:
-    """보관 항목은 모든 페이지라 페이지 이름을 넣지 않는다."""
-    kind = "TODO-보관" if archived else "TODO"
-    page = "" if archived else filename_part(page_name)
-    if page:
-        kind += f"-{page}"
-    return f"TaskPin-{kind}-{now.strftime('%Y%m%d')}.md"
+def default_filename(kind: str, now: datetime, page_name: str = "") -> str:
+    """kind: PAGE / ALL / ARCHIVED. 현재 페이지만 페이지 이름을 넣는다 (나머지는 모든 페이지)."""
+    if kind == ARCHIVED:
+        name = "TODO-보관"
+    elif kind == ALL:
+        name = "TODO-전체"
+    else:
+        page = filename_part(page_name)
+        name = f"TODO-{page}" if page else "TODO"
+    return f"TaskPin-{name}-{now.strftime('%Y%m%d')}.md"

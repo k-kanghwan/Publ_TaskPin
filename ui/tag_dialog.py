@@ -2,7 +2,8 @@
 
 이름과 색을 고른다. 색은 미리 고른 색 중에서 또는 "직접…" 으로 색 선택 창에서.
 저장은 부르는 쪽이 한다(widget_config.add_custom_tag).
-색 칸 없이(with_color=False) TODO 페이지 이름 바꾸기에도 쓴다.
+색 칸 없이(with_color=False) TODO 페이지 이름 바꾸기에도 쓴다 (snippets_provider 를 주면 이름에서도
+`:트리거:` 스니펫이 바뀐다).
 
 키보드
   - Enter : 추가, Esc : 취소
@@ -15,7 +16,6 @@ from PySide6.QtWidgets import (
     QDialog,
     QHBoxLayout,
     QLabel,
-    QLineEdit,
     QPushButton,
     QVBoxLayout,
     QWidget,
@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 from manager import widget_config
 from ui import painted, theme
 from ui.color_dialog import pick_color
+from ui.text_input import SnippetLineEdit
 from ui.theme import CORNER_RADIUS
 
 DIALOG_WIDTH = 280
@@ -52,8 +53,10 @@ class TagDialog(QDialog):
         with_color: bool = True,
         placeholder: str = "이름 (예: Work)",
         max_length: int = widget_config.CUSTOM_TAG_NAME_MAX,
+        snippets_provider=None,
         parent=None,
     ):
+        """snippets_provider: () -> {트리거: 문구}. 주면 이름 칸에서 스니펫을 바꾼다 (페이지 이름)"""
         super().__init__(parent, Qt.Dialog | Qt.FramelessWindowHint)
         self.setAttribute(Qt.WA_TranslucentBackground, True)
         self.setModal(True)
@@ -92,10 +95,13 @@ class TagDialog(QDialog):
         title_label.setStyleSheet("font-size: 14px; font-weight: bold;")
         root.addWidget(title_label)
 
-        self.name_edit = QLineEdit(name)
+        # 조합 중인 한글까지 읽는 칸 (확인 버튼을 눌러도 마지막 글자가 빠지지 않게 - name())
+        self.name_edit = SnippetLineEdit(snippets_provider or dict)
+        self.name_edit.setText(name)
         self.name_edit.setMaxLength(max_length)
         self.name_edit.setPlaceholderText(placeholder)
         self.name_edit.textChanged.connect(self._update_ok)
+        self.name_edit.preedit_changed.connect(self._update_ok)
         root.addWidget(self.name_edit)
 
         # ---- 색 ----
@@ -171,10 +177,10 @@ class TagDialog(QDialog):
             self._set_color(color)
 
     def _update_ok(self):
-        self.btn_ok.setEnabled(bool(self.name_edit.text().strip()))
+        self.btn_ok.setEnabled(bool(self.name()))
 
     def name(self) -> str:
-        return self.name_edit.text().strip()
+        return self.name_edit.full_text().strip()
 
     def color(self) -> str:
         return self._color
