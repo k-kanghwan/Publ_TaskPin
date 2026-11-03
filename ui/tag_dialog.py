@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 from manager import widget_config
 from ui import painted, theme
 from ui.color_dialog import pick_color
+from ui.confirm_dialog import fit_height
 from ui.text_input import SnippetLineEdit
 from ui.theme import CORNER_RADIUS
 
@@ -203,7 +204,7 @@ class TagDialog(QDialog):
             if self.error_label.isHidden() == bool(error):
                 self.error_label.setHidden(not error)
                 if self.isVisible():
-                    self.adjustSize()  # 까닭 줄만큼 창 높이를 맞춘다 (폭은 고정)
+                    fit_height(self)  # 까닭 줄만큼 창 높이를 맞춘다 (폭은 고정)
         self.btn_ok.setEnabled(bool(name) and not error)
 
     def name(self) -> str:
@@ -228,7 +229,7 @@ class TagDialog(QDialog):
 
     def exec_over(self, anchor: QWidget) -> bool:
         """anchor 가운데에 띄우고(화면 안쪽으로 맞춤) 이름 칸에 커서를 둔 뒤 결과를 돌려준다."""
-        self.adjustSize()
+        fit_height(self)  # 설명 / 까닭이 넓은 글꼴로 여러 줄이어도 잘리지 않게
         center = anchor.mapToGlobal(anchor.rect().center())
         screen = QApplication.screenAt(center) or QApplication.primaryScreen()
         area = screen.availableGeometry()
