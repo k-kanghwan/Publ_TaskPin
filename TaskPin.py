@@ -56,7 +56,7 @@ from ui.text_input import ImeCharFilter
 from ui.tray_app import TrayApp
 from version import VERSION
 
-# VS Code 디버그 실행(.vscode/launch.json): 실제 앱과 분리, 기능별 예제 TODO 페이지(tools/debug_seed)
+# VS Code 디버그 실행(.vscode/launch.json): 실제 앱과 분리, 실행마다 처음 상태의 예제 데이터(tools/debug_seed)
 # (데이터는 launch.json 이 APPDATA 를 .debug_appdata 로 바꿔 분리한다)
 DEBUG = os.environ.get("TASKPIN_DEBUG") == "1"
 # Task 를 내리는 방식별 화면 문구 (task_store.COMPLETED / RELEASED)
@@ -85,11 +85,15 @@ class TaskPinApp(TrayApp):
         # ==========================
         # 설정(모든 프로필이 함께 씀) + 프로필(DB 파일 하나 - manager/profiles)
         # 단일 인스턴스를 확인한 뒤에 연다 (처음 한 번 예전 데이터 파일을 프로필 폴더로 옮긴다)
+        if DEBUG:
+            # 디버그 실행: .debug_appdata 를 처음 상태의 예제 데이터로 새로 만든다 (tools/debug_seed.prepare,
+            # TASKPIN_DEBUG_KEEP=1 이면 이어서). 단일 인스턴스를 확인한 뒤라 켜 둔 디버그 앱의 데이터는 지우지
+            # 않고, 설정 / 프로필을 읽기 전이라 새로 만든 값을 그대로 읽는다.
+            # importlib 로 불러 Nuitka 가 tools/ 를 빌드에 넣지 않게 한다.
+            seed = importlib.import_module("tools.debug_seed")
+            print(f"[debug] {seed.prepare()}", flush=True)
         self.widget_cfg = widget_config.load_config()
         self._profile = self._open_startup_profile()
-        if DEBUG and self._seed_debug_examples():
-            # 예제가 설정(사용자 태그 / 항상 위)을 고쳐 저장했다 - 위젯이 그 값을 쓰게 다시 읽는다
-            self.widget_cfg = widget_config.load_config()
 
         # ==========================
         # Task 시간 (지금 프로필의 가장 최근 등록 1건)
@@ -182,16 +186,6 @@ class TaskPinApp(TrayApp):
             self.widget.set_clock(
                 now.strftime("%H:%M:%S"), task_clock.remaining_display(end, now)
             )
-
-    @staticmethod
-    def _seed_debug_examples() -> bool:
-        """디버그 실행: 없는 예제 페이지("🧪 ...")와 예제 프로필을 만든다 (.debug_appdata 일 때만, 위젯을
-        만들기 전에). 무엇이든 만들었으면 True. importlib 로 불러 Nuitka 가 tools/ 를 빌드에 넣지 않게 한다."""
-        made = importlib.import_module("tools.debug_seed").ensure()
-        if made:
-            # 이름은 찍지 않는다 - 이모지는 cp949 콘솔에서 깨짐
-            print(f"[debug] 예제 {len(made)}개를 만들었습니다", flush=True)
-        return bool(made)
 
     def _load_task(self):
         """지금 프로필의 가장 최근 Task. 이미 끝난 Task 는 알린 것으로 친다 (켜자마자 / 프로필을 바꾸자마자

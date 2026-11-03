@@ -1,8 +1,11 @@
 {
   // F5 디버그 실행
-  //   - TASKPIN_DEBUG=1 : 기능별 예제 TODO 페이지(tools/debug_seed), 설치본과 단일 인스턴스 분리, 자동 실행 레지스트리/mutex 건드리지 않음
+  //   - TASKPIN_DEBUG=1 : 실행마다 .debug_appdata 를 처음 상태(기능별 예제 TODO 페이지 · 예제 프로필, tools/debug_seed)로
+  //                       새로 만듦, 설치본과 단일 인스턴스 분리, 자동 실행 레지스트리/mutex 건드리지 않음
   //   - APPDATA         : 데이터를 .debug_appdata\TaskPin 에 저장 (실제 %APPDATA%\TaskPin 은 그대로)
   //   - PYTHONUSERBASE  : user site-packages(%APPDATA%\Python)는 원래 위치를 쓴다 (APPDATA 를 바꾸면 pip --user 패키지를 못 찾음)
+  //   - TASKPIN_DEBUG_KEEP=1 : 새로 만들지 않고 지난 디버그 데이터로 이어서 ("데이터 유지" 구성,
+  //                            "저장 시 재시작"은 처음 한 번만 새로 만들고 저장해서 다시 띄울 때는 이어서)
   "version": "0.2.0",
   "configurations": [
     {
@@ -30,6 +33,23 @@
       "justMyCode": true,
       "env": {
         "TASKPIN_DEBUG": "1",
+        "APPDATA": "${workspaceFolder}\\.debug_appdata",
+        "PYTHONUSERBASE": "${env:APPDATA}\\Python"
+      }
+    },
+    {
+      // 껐다 켜도 남는 것(마지막 프로필 · 페이지 · 설정)을 확인할 때: 지난 디버그 데이터 그대로 저장 시 재시작
+      "name": "Task알림: 디버그 (데이터 유지)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/tools/dev_run.py",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "subProcess": true,
+      "justMyCode": true,
+      "env": {
+        "TASKPIN_DEBUG": "1",
+        "TASKPIN_DEBUG_KEEP": "1",
         "APPDATA": "${workspaceFolder}\\.debug_appdata",
         "PYTHONUSERBASE": "${env:APPDATA}\\Python"
       }
