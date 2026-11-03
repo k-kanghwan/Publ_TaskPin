@@ -24,6 +24,36 @@ def user_data_dir() -> str:
     return os.path.join(base, APP_ID)
 
 
+class _GUID(ctypes.Structure):
+    _fields_ = [
+        ("Data1", wintypes.DWORD),
+        ("Data2", wintypes.WORD),
+        ("Data3", wintypes.WORD),
+        ("Data4", ctypes.c_ubyte * 8),
+    ]
+
+
+# FOLDERID_RoamingAppData {3EB685DB-65F9-4CF6-A03A-E3EF65729F3D}
+_FOLDERID_ROAMING_APPDATA = _GUID(
+    0x3EB685DB, 0x65F9, 0x4CF6, (ctypes.c_ubyte * 8)(0xA0, 0x3A, 0xE3, 0xEF, 0x65, 0x72, 0x9F, 0x3D)
+)
+
+
+def real_user_data_dir() -> str:
+    """APPDATA 환경변수와 관계없는 실제 사용자 데이터 폴더 (알려진 폴더 RoamingAppData\\TaskPin).
+    디버그 실행은 APPDATA 를 .debug_appdata 로 바꾸므로 실제 설정을 참고할 때 쓴다 (tools/debug_seed, 읽기만)."""
+    ptr = ctypes.c_void_p()
+    hr = ctypes.windll.shell32.SHGetKnownFolderPath(
+        ctypes.byref(_FOLDERID_ROAMING_APPDATA), 0, None, ctypes.byref(ptr)
+    )
+    try:
+        if hr == 0 and ptr.value:
+            return os.path.join(ctypes.wstring_at(ptr.value), APP_ID)
+    finally:
+        ctypes.windll.ole32.CoTaskMemFree(ptr)
+    return os.path.join(os.path.expanduser("~"), "AppData", "Roaming", APP_ID)
+
+
 # 파일 이름 규칙 (프로필 이름 = DB 파일 이름 - manager/profiles)
 INVALID_FILENAME_CHARS = '\\/:*?"<>|'
 # 확장자를 붙여도(CON.db) 장치 이름으로 읽혀 만들 수 없는 이름
