@@ -26,9 +26,10 @@ import sqlite3
 from dataclasses import replace
 from datetime import datetime
 
-from PySide6.QtCore import QPointF, QRectF, QSize, QStandardPaths, Qt, Signal
+from PySide6.QtCore import QPointF, QRectF, QSize, QStandardPaths, Qt, QUrl, Signal
 from PySide6.QtGui import (
     QColor,
+    QDesktopServices,
     QFont,
     QFontDatabase,
     QIcon,
@@ -55,7 +56,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from manager import db, os_win, snippets, widget_config
+from manager import db, os_win, profiles, snippets, widget_config
 from ui import painted, theme
 from ui.color_dialog import pick_color
 from ui.confirm_dialog import ConfirmDialog
@@ -195,7 +196,12 @@ ACCENT_SWATCHES = [
 DEFAULT_FONT_LABEL = "기본 (맑은 고딕)"
 EXPORT_HINT = "폴더를 고르면 지금 설정을 JSON 파일로 그대로 저장합니다"
 IMPORT_HINT = "내보낸 JSON 파일로 지금 설정을 바꾸고 바로 적용합니다"
-RESET_HINT = "할 일 · 페이지 · 삭제 이력 · Task 기록을 모두 지웁니다 (설정은 그대로)"
+# {name}: 지금 프로필 (초기화는 지금 프로필의 DB 만 비운다)
+RESET_HINT = "지금 프로필({name})의 할 일 · 페이지 · 삭제 이력 · Task 기록을 모두 지웁니다 (설정과 다른 프로필은 그대로)"
+PROFILE_FOLDER_HINT = (
+    "프로필마다 DB 파일(이름.db)이 하나씩 있습니다. 이 폴더에 넣은 .db 파일도 프로필 목록에 보입니다 "
+    "(바꾸기는 좌패널 우클릭 → 프로필). 설정은 모든 프로필이 함께 씁니다"
+)
 
 
 def _settings_theme(cfg: dict) -> theme.Theme:
@@ -1445,8 +1451,17 @@ class SettingsDialog(QWidget):
         for note in (self._export_note, self._import_note):
             note.setWordWrap(True)
 
-        # ---- 데이터: 모든 데이터 초기화 ----
+        # ---- 데이터: 프로필 폴더 / 모든 데이터 초기화 ----
         card_layout = self._add_group(layout, "데이터")
+        btn_folder = QPushButton("폴더 열기")
+        btn_folder.setObjectName("small")
+        btn_folder.setCursor(Qt.PointingHandCursor)
+        btn_folder.clicked.connect(
+            lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(profiles.folder()))
+        )
+        self._add_row(
+            card_layout, "프로필 폴더", PROFILE_FOLDER_HINT, btn_folder
+        ).setWordWrap(True)
         btn_reset = QPushButton("초기화…")
         btn_reset.setObjectName("danger")
         btn_reset.setCursor(Qt.PointingHandCursor)
@@ -1454,13 +1469,21 @@ class SettingsDialog(QWidget):
         self._reset_note = self._add_row(
             card_layout,
             "모든 데이터 초기화",
-            RESET_HINT,
+            "",  # 지금 프로필 이름이 들어간다 (refresh_profile)
             btn_reset,
         )
         self._reset_note.setWordWrap(True)
+        self.refresh_profile()
         layout.addStretch(1)
         self._refresh_application()
         return page
+
+    def _profile_name(self) -> str:
+        return self._cfg.get("profile") or profiles.DEFAULT_NAME
+
+    def refresh_profile(self):
+        """프로필을 바꾸면(TaskPinApp) 초기화 설명의 프로필 이름을 맞춘다."""
+        self._show_note(self._reset_note, RESET_HINT.format(name=self._profile_name()))
 
     def _set_app_icon(self, value: str):
         self._cfg["app_icon"] = value
@@ -1542,10 +1565,10 @@ class SettingsDialog(QWidget):
         (백업 이야기는 따로 하지 않는다). 백업하지 못하면 지우지 않는다."""
         dialog = ConfirmDialog(
             "모든 데이터 초기화",
-            "할 일 · 페이지 · 삭제 이력 · Task 기록을 모두 지웁니다.\n"
+            f"'{self._profile_name()}' 프로필의 할 일 · 페이지 · 삭제 이력 · Task 기록을 모두 지웁니다.\n"
             "지운 데이터는 앱에서 되돌릴 수 없습니다.",
             confirm_text="초기화",
-            note=f"계속하려면 아래에 '{RESET_PHRASE}'를 입력하세요. 설정은 그대로 둡니다.",
+            note=f"계속하려면 아래에 '{RESET_PHRASE}'를 입력하세요. 설정과 다른 프로필은 그대로 둡니다.",
             danger=True,
             confirm_phrase=RESET_PHRASE,
             parent=self,

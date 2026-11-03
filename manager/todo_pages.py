@@ -3,6 +3,7 @@
 엑셀 시트처럼 페이지마다 독립된 할 일 목록을 둔다. 할 일은 todos.page_id 로 페이지에 속한다.
 페이지는 적어도 한 장 있다 (load 가 없으면 만든다 / 마지막 한 장은 지우지 않는다 - TodoPanel).
 순서는 position, 이름은 사용자가 바꾼다 (새 페이지는 "페이지 N").
+마지막으로 본 페이지는 DB(프로필)마다 기억한다 (db meta - last_page / set_last_page).
 
 맨 앞에는 DB 에 없는 고정 페이지 "미완료"(PENDING_ID)를 보여준다 - 모든 페이지에서 날짜(리마인더)가 있고
 아직 하지 않은 할 일을 시각 순으로 모은다 (todo_filter.pending, TodoPanel). 이름 바꾸기 / 옮기기 / 삭제는 없다.
@@ -19,6 +20,7 @@ NAME_MAX = 20
 PENDING_ID = -1
 PENDING_NAME = "미완료"
 PENDING_TIP = "모든 페이지에서 날짜가 있고 아직 하지 않은 할 일"
+LAST_PAGE_KEY = "todo_page"  # db meta: 마지막으로 본 페이지 id (미완료 페이지 포함)
 _NUMBERED_RE = re.compile(rf"{NAME_PREFIX} (\d+)")
 
 
@@ -38,6 +40,19 @@ def load() -> list:
         print(f"TODO 페이지 불러오기 실패: {e}")
         return [{"id": 1, "name": f"{NAME_PREFIX} 1"}]
     return [{"id": row["id"], "name": row["name"]} for row in rows]
+
+
+def last_page():
+    """이 DB(프로필)에서 마지막으로 본 페이지 id. 없거나 깨졌으면 None (TodoPanel 이 첫 페이지로)"""
+    value = db.get_meta(LAST_PAGE_KEY)
+    try:
+        return int(value) if value is not None else None
+    except ValueError:
+        return None
+
+
+def set_last_page(page_id: int) -> None:
+    db.set_meta(LAST_PAGE_KEY, str(page_id))
 
 
 def pending_page() -> dict:

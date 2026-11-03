@@ -1,17 +1,19 @@
-"""SQLite 연결 (%APPDATA%\\TaskPin\\taskpin.db)
+"""SQLite 연결 (지금 프로필의 DB - %APPDATA%\\TaskPin\\profiles\\<이름>.db, manager/profiles)
 
-연결은 하나만 열어 앱이 끝날 때까지 쓴다. 모든 작업은 UI 스레드에서만 한다.
+연결은 하나만 열어 둔다 (프로필을 바꾸면 닫고 그 프로필의 DB 를 연다). 모든 작업은 UI 스레드에서만 한다.
 스키마 버전은 PRAGMA user_version 으로 관리한다.
-"모든 데이터 초기화"(설정창 Application)는 지우기 전에 같은 폴더에 백업 파일을 남긴다 (reset_all).
+"모든 데이터 초기화"(설정창 Application)는 지우기 전에 데이터 폴더에 백업 파일을 남긴다 (reset_all).
 """
 
+import os
 import sqlite3
 from datetime import datetime
 
 from manager import paths
 
-DB_NAME = "taskpin.db"
-BACKUP_PREFIX = "taskpin-backup"  # 초기화 전 백업: taskpin-backup-YYYYMMDD-HHMMSS.db
+# 초기화 / 프로필 삭제 전 백업: taskpin-backup-<프로필>-YYYYMMDD-HHMMSS.db
+# (데이터 폴더에 둔다 - 프로필 폴더 밖이라 프로필 목록에 보이지 않는다)
+BACKUP_PREFIX = "taskpin-backup"
 # 초기화로 비우는 테이블 (스키마 / user_version 은 그대로)
 DATA_TABLES = ("todos", "tasks", "todo_deletions", "todo_pages")
 # 초기화 뒤 남기는 첫 페이지 (스키마 v9 가 만드는 것과 같다)
@@ -108,6 +110,15 @@ ALTER TABLE todos ADD COLUMN page_id INTEGER NOT NULL DEFAULT 1;
 PRAGMA user_version = 9;
 """
 
+# user_version 9 -> 10: 프로필(DB 파일)마다 따로 기억할 값 (마지막으로 본 TODO 페이지 등 - get_meta / set_meta)
+_SCHEMA_V10 = """
+CREATE TABLE meta (
+    key   TEXT PRIMARY KEY,
+    value TEXT
+);
+PRAGMA user_version = 10;
+"""
+
 _MIGRATIONS = (
     (1, _SCHEMA_V1),
     (2, _SCHEMA_V2),
@@ -118,23 +129,36 @@ _MIGRATIONS = (
     (7, _SCHEMA_V7),
     (8, _SCHEMA_V8),
     (9, _SCHEMA_V9),
+    (10, _SCHEMA_V10),
 )
 
 _conn = None
+_path = None  # 마지막으로 연 DB 파일 (닫은 뒤에 conn() 을 부르면 다시 연다)
 
 
-def connect(path: str | None = None) -> sqlite3.Connection:
-    """DB 를 열고(없으면 스키마 생성) 전역 연결로 둔다. path 는 테스트용"""
-    global _conn
+def connect(path: str) -> sqlite3.Connection:
+    """DB 를 열고(없으면 만들어 스키마 생성) 전역 연결로 둔다. 열려 있던 연결은 닫는다."""
+    global _conn, _path
     close()
-    _conn = sqlite3.connect(path or paths.data_path(DB_NAME))
+    _conn = sqlite3.connect(path)
     _conn.row_factory = sqlite3.Row
+    _path = path
     _migrate(_conn)
     return _conn
 
 
 def conn() -> sqlite3.Connection:
-    return _conn if _conn is not None else connect()
+    if _conn is not None:
+        return _conn
+    if _path is None:
+        # 실제 데이터 폴더에 엉뚱한 DB 를 만들지 않도록 알아서 열지 않는다 (TaskPinApp 이 프로필을 연다)
+        raise RuntimeError("DB 가 열려 있지 않습니다 (db.connect 를 먼저)")
+    return connect(_path)
+
+
+def path() -> str | None:
+    """지금 연 (또는 마지막으로 연) DB 파일"""
+    return _path
 
 
 def close():
@@ -153,6 +177,72 @@ def backup(path: str) -> None:
         target.close()
 
 
+def copy_file(source: str, target: str) -> None:
+    """닫혀 있는 DB 파일 source 를 target 에 복사한다 (sqlite backup). 실패하면 sqlite3.Error"""
+    src = sqlite3.connect(source)
+    try:
+        dst = sqlite3.connect(target)
+        try:
+            src.backup(dst)
+        finally:
+            dst.close()
+    finally:
+        src.close()
+
+
+def init_file(path: str) -> None:
+    """새 DB 파일을 만들고 스키마를 넣는다 (전역 연결은 그대로). 이미 있으면 FileExistsError"""
+    if os.path.exists(path):
+        raise FileExistsError(path)
+    c = sqlite3.connect(path)
+    try:
+        _migrate(c)
+    finally:
+        c.close()
+
+
+def check_file(path: str) -> None:
+    """있는 파일 path 가 이 앱의 DB(또는 빈 파일)인지 연결을 따로 열어 확인한다 (읽기만 한다).
+    DB 가 아니거나 깨졌으면 sqlite3.DatabaseError, 다른 앱의 DB 면 ValueError.
+    (URI mode=ro 는 이름의 # / % / ? 를 따로 바꿔야 해서 쓰지 않는다)"""
+    if not os.path.isfile(path):
+        raise FileNotFoundError(path)
+    c = sqlite3.connect(path)
+    try:
+        tables = {
+            row[0]
+            for row in c.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+        }
+    finally:
+        c.close()
+    if tables and "todos" not in tables:
+        raise ValueError("Task알림 DB 가 아닙니다")
+
+
+def get_meta(key: str, default: str | None = None) -> str | None:
+    """지금 DB(프로필)에 기억해 둔 값 (meta 테이블). 없거나 읽지 못하면 default"""
+    try:
+        row = conn().execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
+    except sqlite3.Error as e:
+        print(f"DB meta 읽기 실패: {e}")
+        return default
+    return default if row is None or row["value"] is None else row["value"]
+
+
+def set_meta(key: str, value: str | None) -> None:
+    """지금 DB(프로필)에 값을 기억한다. 실패해도 앱 동작을 막지 않는다."""
+    c = conn()
+    try:
+        with c:
+            c.execute(
+                "INSERT INTO meta (key, value) VALUES (?, ?)"
+                " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (key, value),
+            )
+    except sqlite3.Error as e:
+        print(f"DB meta 저장 실패: {e}")
+
+
 def wipe() -> None:
     """모든 데이터를 지우고 첫 페이지("페이지 1")만 남긴다. 번호(AUTOINCREMENT)도 처음부터.
     VACUUM 으로 지운 내용이 파일의 빈 공간에 남지 않게 한다. 실패하면 sqlite3.Error"""
@@ -165,14 +255,16 @@ def wipe() -> None:
     c.execute("VACUUM")
 
 
-def backup_path(now: datetime) -> str:
-    return paths.data_path(f"{BACKUP_PREFIX}-{now:%Y%m%d-%H%M%S}.db")
+def backup_path(name: str, now: datetime) -> str:
+    """name(프로필) 의 백업 파일 경로 - 데이터 폴더(프로필 폴더 밖)라 프로필 목록에 보이지 않는다"""
+    return paths.data_path(f"{BACKUP_PREFIX}-{name}-{now:%Y%m%d-%H%M%S}.db")
 
 
 def reset_all(now: datetime) -> str:
-    """ "모든 데이터 초기화": 데이터 폴더에 백업을 남긴 뒤 비운다. 백업 경로를 돌려준다.
+    """ "모든 데이터 초기화": 데이터 폴더에 지금 DB(프로필)의 백업을 남긴 뒤 비운다. 백업 경로를 돌려준다.
     백업하지 못하면 지우지 않는다 (sqlite3.Error / OSError 를 그대로 던짐)."""
-    path = backup_path(now)
+    name = os.path.splitext(os.path.basename(_path or "taskpin"))[0]
+    path = backup_path(name, now)
     backup(path)
     wipe()
     return path

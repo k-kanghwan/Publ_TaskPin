@@ -745,6 +745,14 @@ class TodoRow(QWidget):
         self.editor.setFocus()
         self.editor.end(False)
 
+    def commit_edit(self):
+        """고치던 글자로 마친다 (프로필을 바꾸기 전 - TodoPanel.finish_editing)"""
+        self._commit_edit()
+
+    def cancel_edit(self):
+        """고치던 칸을 저장하지 않고 닫는다 (TodoPanel.reload)"""
+        self._cancel_edit()
+
     def _commit_edit(self):
         if not self._editing:
             return
@@ -1374,17 +1382,31 @@ class TodoPanel(QWidget):
         if row is not None:
             self._reveal(row, NAV_SCROLL_MARGIN)
 
-    def reload(self):
-        """설정창 "모든 데이터 초기화" 뒤: DB 에서 페이지 / 할 일을 다시 읽어 첫 페이지를 보여준다.
-        선택 / 잘라내기 / 검색도 푼다 (행은 항목이 없어졌으므로 모두 지워진다)."""
+    def reload(self, page_id=None, keep_copy: bool = False):
+        """DB 가 바뀐 뒤 ("모든 데이터 초기화" / 프로필 바꾸기): 페이지 / 할 일을 다시 읽어 page_id 페이지
+        (없으면 첫 페이지)를 보여준다. 선택 / 잘라내기 / 검색도 푼다 (없어진 항목의 행은 지워진다).
+        keep_copy: 복사해 둔 항목은 남긴다 - 사본이라 다른 프로필에도 붙여넣을 수 있다 (잘라낸 것은 푼다)."""
         self._end_drag()
+        # 여기서 고치던 글자를 저장하면 이미 바뀐 DB 에 옛 목록을 쓴다 (save_todos 는 목록에 없는 행을 지움).
+        # 저장은 DB 를 바꾸기 전에 finish_editing 으로 하고, 여기서는 고치던 칸을 닫기만 한다
+        for row in self._rows:
+            if row.editing:
+                row.cancel_edit()
         self._pages = todo_pages.load()
-        self._page_id = self._pages[0]["id"]
+        page_ids = [page["id"] for page in self._pages]
         self._items = todo_store.load_todos()
+        # 페이지가 사라진 할 일은 첫 페이지로 (__init__ 과 같이)
+        for item in self._items:
+            if item["page_id"] not in page_ids:
+                item["page_id"] = page_ids[0]
+        todo_tree.detach_orphans(self._items)
+        self._page_id = page_id if page_id in self._nav_ids() else page_ids[0]
         self._selected.clear()
         self._anchor_id = None
         self._last_ids.clear()
-        self._clipboard = None
+        clip = self._clipboard
+        if not (keep_copy and clip is not None and not clip["cut"]):
+            self._clipboard = None
         self._cut_ids = set()
         self._show_all()
         self._apply_page_mode()
@@ -1392,6 +1414,15 @@ class TodoPanel(QWidget):
         self.scroll.verticalScrollBar().setValue(0)
         self._sync_page_bar()
         self.page_changed.emit(self._page_id)
+        # 새 DB 의 다른 페이지 행도 미리 만들어 둔다
+        QTimer.singleShot(WARM_DELAY_MS, self._warm_rows)
+
+    def finish_editing(self):
+        """그 자리에서 고치던 행이 있으면 지금 글자로 마친다 - 프로필(DB)을 바꾸기 **전에** 불러
+        지금 DB 에 저장되게 한다 (reload 는 고치던 칸을 저장하지 않고 닫는다)."""
+        for row in self._rows:
+            if row.editing:
+                row.commit_edit()
 
     def toggle_collapse(self, item_id: str):
         """▸/▾ 버튼: 하위를 접거나 펼친다 (숨은 하위는 _rebuild 가 선택에서 뺀다).
