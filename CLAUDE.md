@@ -112,7 +112,7 @@ python tools/debug_seed.py                   # 앱을 띄우지 않고 .debug_ap
 - 이모지
   - Qt 6.8은 `WM_IME_CHAR`/`WM_CHAR`의 서로게이트 쌍을 버린다. 그래서 Win+. 이모지 패널로 고른 🚀 같은 이모지가 들어가지 않는다. `ui/text_input.ImeCharFilter`(앱 전체 네이티브 이벤트 필터)가 이 메시지를 대신 받아 IME 확정 문자열로 넣는다.
   - `QLineEdit` 위치는 UTF-16 단위다. 파이썬 문자열 index와 섞을 때는 `text_input.py_cursor()`/`utf16_pos()`를 쓴다.
-  - 앱 폰트에 `PreferNoHinting`을 걸지 않는다. DirectWrite(Qt 6.8 기본)에서는 힌팅이 꺼져 한글이 흐려진다. 컬러 이모지는 TODO 행에서 14px로 키워 그린다(`todo_store.to_html(text, emoji_style)`).
+  - 앱 폰트에 `PreferNoHinting`을 걸지 않는다. DirectWrite(Qt 6.8 기본)에서는 힌팅이 꺼져 한글이 흐려진다. 컬러 이모지는 TODO 행에서 14px로 키워 그린다(`todo_store.to_html(text, emoji_style)`). 직접 그리는 페이지 칩(`PageTabs`)·F5 바로가기 창도 11~12px 컬러 이모지가 계단처럼 깨지므로 `painted.draw_emoji_text`(이모지만 `EMOJI_GROW_PX` 키움, 폭은 `emoji_text_width`, 말줄임은 이모지 덩어리를 쪼개지 않는 `elide_emoji_text`)로 그린다.
 - 리마인더 알림 팝업(`ReminderPopup`)은 주 모니터 우측 상단부터 아래로 쌓는다(`ClockWidget._popup_slots`, 공간이 없으면 왼쪽 열). 버튼이 아닌 곳을 누르면(손 모양 커서) `opened` → `ClockWidget.show_todo`가 숨은 위젯을 다시 띄우고 앞으로 꺼낸 뒤 `reveal_item`으로 그 할 일의 원래 페이지로 가서 깜빡이고, 그 팝업만 닫힌다. 어떻게 닫히든 `closed` → `_layout_popups`가 남은 팝업을 새 자리로 미끄러뜨린다(`QPropertyAnimation(pos)`, 위 팝업이 닫히면 아래가 올라옴). 버튼마다 툴팁을 둬서 팝업의 "눌러서 할 일 보기" 툴팁이 버튼 위에 뜨지 않게 한다.
 - 이미 실행 중일 때 다시 실행하면 경고 없이 기존 앱의 위젯을 띄운다(`TrayApp.on_second_instance`). 기존 앱은 백그라운드라 전경 잠금에 걸리므로, 두 번째 실행이 `os_win.allow_set_foreground()`로 권한을 넘기고 연결이 끊길 때까지 기다린다.
 - TODO 레벨: `todos.parent_id`(NULL이면 최상위)와 형제 사이 순서 `position`. 트리 규칙은 `manager/todo_tree.py`에 있다. 행 가운데에 놓으면 그 항목의 하위로, 행 위/아래 1/3에 놓으면 그 자리로 간다. "완료된 상위 ⇒ 하위도 모두 완료"를 유지하고(해제하면 상위와 하위를 모두 해제), 상위를 삭제하면 하위는 한 단계 올린다. 들여쓰기는 레벨 수 제한 없이 `INDENT_STEP`씩 늘어난다(좁은 세로 모드에서 아주 깊으면 글자 폭이 줄어듦).
