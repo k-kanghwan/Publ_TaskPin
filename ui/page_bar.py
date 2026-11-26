@@ -7,7 +7,8 @@
     이름 뒤에 그 페이지의 체크 안 한 할 일 수를 강조색 배지로 (0 이면 숨김, 구분선은 세지 않음,
     하위 포함 / 최상위만은 설정 - TodoPanel._open_counts).
     칩이 폭을 넘치면 지금 페이지 칩이 보이게 옆으로 밀고, 칩 아래 얇은 스크롤바(끌기 / 트랙 클릭)와
-    휠로 칩 줄을 가로로 스크롤한다 (휠로 페이지를 넘기지 않는다).
+    휠로 칩 줄을 가로로 스크롤한다 (휠로 페이지를 넘기지 않는다). 휠 / 트랙 클릭 / 페이지를 넘겨 지금 칩을
+    보이게 밀 때는 짧게 미끄러지고(애니메이션), 손잡이 끌기 / 터치패드 / 칩 끌기는 손을 바로 따라간다.
   - 왼쪽 / 오른쪽: 세로로 [점들][+]   (이름은 점의 툴팁)
   - 점: 지금 페이지는 강조색 알약, 나머지는 작은 점. 누르면 그 페이지로 (바뀔 때 알약이 옮겨 가며 늘었다 줄어든다)
   - 칩을 끌면 브라우저 탭처럼 순서를 바꾼다 (나머지 칩이 비켜서고, 넘치면 끝에서 밀림, Esc 취소).
@@ -84,6 +85,7 @@ SCROLL_TRACK_ALPHA = 18  # 트랙 (테마의 덧칠 색)
 SCROLL_THUMB_ALPHA = 70
 SCROLL_THUMB_HOVER_ALPHA = 140
 WHEEL_STEP = 48  # 휠 한 칸(120)에 칩 줄을 미는 폭(px)
+SCROLL_ANIM_MS = 220  # 칩 줄이 미끄러지는 시간 (휠 / 트랙 클릭 / 페이지 넘김)
 
 
 class PageDots(QWidget):
@@ -244,6 +246,12 @@ class PageTabs(QWidget):
         self._offset = 0.0  # 넘칠 때 왼쪽으로 민 만큼(px)
         self._bar_hover = False  # 마우스가 스크롤바 위에
         self._bar_drag = None  # 스크롤바 손잡이 끌기: (누른 x, 그때의 _offset)
+        # 칩 줄 미끄러지기: _offset 을 지금 자리에서 _scroll_target 으로 옮긴다 (휠을 이어 굴리면 목표가 쌓인다)
+        self._scroll_target = 0.0
+        self._scroll_anim = QVariantAnimation(self)
+        self._scroll_anim.setDuration(SCROLL_ANIM_MS)
+        self._scroll_anim.setEasingCurve(QEasingCurve.OutCubic)
+        self._scroll_anim.valueChanged.connect(self._set_scroll_offset)
         # 칩 드래그
         # 드래그를 시작하기 전 누른 칩 (페이지 id, 누른 x - 내용 좌표, 누른 x - 위젯 좌표)
         self._press = None
@@ -280,8 +288,8 @@ class PageTabs(QWidget):
             self._end_drag()  # 끄는 중에 그 페이지가 없어짐
         self._drag_slot = min(self._drag_slot, max(0, len(self._pages) - 1))
         self.updateGeometry()
-        if changed:
-            self._keep_current_visible()
+        if changed:  # 페이지를 넘기면 지금 칩이 보이게 미끄러진다 (처음 보일 때는 바로)
+            self._keep_current_visible(animate=self.isVisible())
         else:
             self._clamp_offset()
         self.update()
@@ -387,42 +395,80 @@ class PageTabs(QWidget):
     def minimumSizeHint(self) -> QSize:
         return QSize(0, self._bar_height())
 
-    def _keep_current_visible(self):
-        """지금 페이지 칩이 다 보이도록 민다 (넘치지 않으면 0). 칩을 끄는 중에는 그대로 둔다."""
+    def _keep_current_visible(self, animate: bool = False):
+        """지금 페이지 칩이 다 보이도록 민다 (넘치지 않으면 0). 칩을 끄는 중에는 그대로 둔다.
+        animate: 미끄러지듯 (페이지를 넘길 때) / 아니면 바로 (크기 / 글자 배율이 바뀔 때)"""
         if self._drag_id is not None:
             return
         ids = self._ids()
         rects = self._rects()
-        if self._current not in ids or not rects:
-            self._offset = 0.0
-            return
-        rect = rects[ids.index(self._current)]
-        width = self.width()
-        if rect.right() + 1 - self._offset > width:
-            self._offset = rect.right() + 1 - width
-        if rect.left() - self._offset < 0:
-            self._offset = rect.left() - 0.5
-        self._clamp_offset()
+        base = self._scroll_target if self._scrolling() else self._offset
+        target = base
+        if self._current in ids and rects:
+            rect = rects[ids.index(self._current)]
+            width = self.width()
+            if rect.right() + 1 - target > width:
+                target = rect.right() + 1 - width
+            if rect.left() - target < 0:
+                target = rect.left() - 0.5
+        else:
+            target = 0.0
+        if animate:
+            self._scroll_to(target)
+        else:
+            self._jump_to(target)
 
     def _max_offset(self) -> float:
         return max(0.0, self._total_width() - self.width())
 
+    def _clamp(self, offset: float) -> float:
+        return min(max(0.0, offset), self._max_offset())
+
     def _clamp_offset(self):
-        self._offset = min(max(0.0, self._offset), self._max_offset())
+        self._offset = self._clamp(self._offset)
+        if self._scrolling():  # 미끄러지는 중에 칩 폭이 바뀌면 목표도 범위 안으로
+            self._scroll_target = self._clamp(self._scroll_target)
+
+    def _scrolling(self) -> bool:
+        return self._scroll_anim.state() == QVariantAnimation.Running
+
+    def _scroll_to(self, target: float):
+        """지금 자리에서 target 으로 미끄러진다 (범위 안으로 맞춤)"""
+        target = self._clamp(target)
+        self._scroll_anim.stop()
+        self._scroll_target = target
+        if target == self._offset:
+            return
+        self._scroll_anim.setStartValue(float(self._offset))
+        self._scroll_anim.setEndValue(float(target))
+        self._scroll_anim.start()
+
+    def _jump_to(self, target: float):
+        """미끄러지지 않고 바로 (손잡이 끌기 / 칩 끌기 / 크기 변경)"""
+        self._scroll_anim.stop()
+        self._offset = self._scroll_target = self._clamp(target)
+        self.update()
+
+    def _set_scroll_offset(self, value):
+        self._offset = self._clamp(value)
+        self.update()
 
     def overflowing(self) -> bool:
         """칩이 폭을 넘치는지 (스크롤바를 그리고 휠로 민다)"""
         return self._max_offset() > 0
 
-    def scroll_by(self, dx: float) -> bool:
-        """칩 줄을 dx 만큼 민다 (휠 / 스크롤바). 움직였으면 True"""
-        before = self._offset
-        self._offset += dx
-        self._clamp_offset()
-        if self._offset != before:
-            self.update()
-            return True
-        return False
+    def scroll_by(self, dx: float, animate: bool = True) -> bool:
+        """칩 줄을 dx 만큼 민다 (휠 / 스크롤바 트랙). 미끄러지는 중이면 그 목표에서 더 민다 - 휠을 이어 굴려도
+        끊기지 않고 쌓인다. animate=False 는 바로 (터치패드는 이미 매끄럽게 조금씩 온다). 움직일 곳이 있으면 True"""
+        base = self._scroll_target if self._scrolling() else self._offset
+        target = self._clamp(base + dx)
+        if target == base:
+            return False
+        if animate:
+            self._scroll_to(target)
+        else:
+            self._jump_to(target)
+        return True
 
     # ---- 칩 줄 아래 스크롤바 ----
     def _track_rect(self) -> QRectF:
@@ -460,6 +506,7 @@ class PageTabs(QWidget):
         """스크롤바를 누름: 손잡이면 끌기 시작, 트랙이면 그쪽으로 한 화면만큼"""
         thumb = self._thumb_rect()
         if thumb.left() <= x <= thumb.right():
+            self._jump_to(self._offset)  # 미끄러지던 중이면 그 자리에서 멈추고 손잡이를 잡는다
             self._bar_drag = (x, self._offset)
         else:
             self.scroll_by(self.width() if x > thumb.right() else -self.width())
@@ -469,9 +516,7 @@ class PageTabs(QWidget):
         start_x, start_offset = self._bar_drag
         room = self._track_rect().width() - self._thumb_rect().width()
         if room > 0:
-            self._offset = start_offset + (x - start_x) * self._max_offset() / room
-            self._clamp_offset()
-            self.update()
+            self._jump_to(start_offset + (x - start_x) * self._max_offset() / room)
 
     def _set_bar_hover(self, hover: bool):
         if hover != self._bar_hover:
@@ -647,6 +692,7 @@ class PageTabs(QWidget):
         ids = self._ids()
         if page_id not in ids or ids.index(page_id) < self._pinned_count():
             return  # 고정 칩은 끌지 않는다
+        self._jump_to(self._offset)  # 칩 줄이 미끄러지던 중이면 그 자리에서 멈춘다 (끄는 칩이 커서를 따라가게)
         widths = self._widths()
         left = self._lefts(ids, widths)[page_id]
         self._drag_id = page_id
@@ -697,7 +743,7 @@ class PageTabs(QWidget):
             step = DRAG_SCROLL_STEP
         offset = min(max(0.0, self._offset + step), limit)
         if offset != self._offset:
-            self._offset = offset
+            self._jump_to(offset)
             self._update_slot()
             self.update()
 
@@ -903,11 +949,10 @@ class PageBar(QWidget):
         if amount and not self.tabs.dragging():
             if self.tabs.isVisible():
                 pixel = event.pixelDelta()
-                if pixel.isNull():
-                    step = amount * WHEEL_STEP / 120
-                else:  # 터치패드는 픽셀 단위로 매끄럽게
-                    step = pixel.y() or pixel.x()
-                self.tabs.scroll_by(-step)
+                if pixel.isNull():  # 마우스 휠: 한 칸씩 미끄러지게
+                    self.tabs.scroll_by(-amount * WHEEL_STEP / 120)
+                else:  # 터치패드는 이미 픽셀 단위로 매끄럽게 온다 - 바로 따라간다
+                    self.tabs.scroll_by(-(pixel.y() or pixel.x()), animate=False)
             else:
                 self.step_requested.emit(-1 if amount > 0 else 1)
         event.accept()  # 목록이 스크롤되지 않게
