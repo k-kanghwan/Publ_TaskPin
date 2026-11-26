@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 프로젝트 상태
 
-- 현재 버전은 `version.py`의 `VERSION`(지금 0.1.33). 초기 구현 계획은 `.claude/plans/init-todo.md`, 요구사항 원본은 `PRD.md`이고, 기능 판단은 PRD를 따른다.
+- 현재 버전은 `version.py`의 `VERSION`(지금 0.1.34). 초기 구현 계획은 `.claude/plans/init-todo.md`, 요구사항 원본은 `PRD.md`이고, 기능 판단은 PRD를 따른다.
 - 앱 표시명은 **Task알림**(창 제목·exe 표시명). 폴더명·자동 실행 레지스트리 키·단일 인스턴스 ID·mutex 같은 내부 식별자는 ASCII **TaskPin**을 쓴다.
 - 앱 아이콘은 `ico/01_original_navy-coral/`의 `icon.svg`(트레이·창)와 `icon.ico`(exe/설치본)다. 트레이·창 아이콘은 설정 Application "앱 아이콘"(cfg `app_icon`: `dark`=01 navy-coral / `light`=`ico/03_light-indigo/icon.svg`, `TaskPin.APP_ICONS` → `TaskPinApp._apply_app_icon` → `TrayApp.set_icon`)으로 바로 바꾼다. exe·바로가기 아이콘은 빌드 때 박히므로 늘 01이다. 디버그 실행(`TASKPIN_DEBUG=1`)은 설정과 관계없이 트레이·창 아이콘을 `ico/02_graphite-lime/icon.svg`로 바꿔 설치본과 구별한다(`TaskPinApp.TRAY_ICON`, 빌드에는 넣지 않음). SVG를 고쳤을 때만 `python tools/make_ico.py`로 같은 폴더의 `icon.ico`를 다시 만든다. `img/image.png`는 참고 앱 화면이라 PRD의 FE 변경사항이 반영되지 않았다.
 - 스택: Python 3.11.4 이상, PySide6, SQLite(내장 `sqlite3`), Nuitka standalone + Inno Setup 설치본. 버전은 Semantic Versioning.
