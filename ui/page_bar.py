@@ -308,10 +308,10 @@ class PageTabs(QWidget):
         return [str(self._counts.get(page["id"]) or "") for page in self._pages]
 
     def _names(self) -> list:
-        """칩에 보일 이름 (길면 말줄임)"""
-        metrics = self.fontMetrics()
+        """칩에 보일 이름 (길면 말줄임 - 이모지는 키워 그리므로 그 폭으로 잰다)"""
+        font = self.font()
         return [
-            metrics.elidedText(page["name"], Qt.ElideRight, CHIP_TEXT_MAX)
+            painted.elide_emoji_text(font, page["name"], CHIP_TEXT_MAX)
             for page in self._pages
         ]
 
@@ -346,10 +346,10 @@ class PageTabs(QWidget):
 
     def _widths(self) -> dict:
         """페이지 id -> 칩 폭 (칩 사이 간격 제외)"""
-        metrics = self.fontMetrics()
+        font = self.font()
         widths = {}
         for page, name, count in zip(self._pages, self._names(), self._count_texts()):
-            width = metrics.horizontalAdvance(name) + CHIP_PAD_H * 2 + 2
+            width = painted.emoji_text_width(font, name) + CHIP_PAD_H * 2 + 2
             if page.get("pinned"):
                 width += self._pin_icon() + PIN_ICON_GAP
             if count:
@@ -632,7 +632,8 @@ class PageTabs(QWidget):
             painter.drawPixmap(QPointF(inner.left(), top), icon)
             inner.setLeft(inner.left() + size + PIN_ICON_GAP)
         painter.setPen(QColor(text))
-        painter.drawText(inner, Qt.AlignLeft | Qt.AlignVCenter, name)
+        # 작은 컬러 이모지는 깨지므로 이모지만 키워 그린다
+        painted.draw_emoji_text(painter, inner, name, self.font())
         if count:  # 오른쪽 끝에 강조색 알약 배지
             badge_h = rect.height() - 4
             badge = QRectF(

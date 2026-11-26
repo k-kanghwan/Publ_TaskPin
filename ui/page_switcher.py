@@ -143,9 +143,10 @@ class _PageList(QWidget):
                 painter.drawText(badge, Qt.AlignCenter, count)
                 painter.setFont(self.font())
                 inner.setRight(badge.left() - BADGE_GAP)
-            name = metrics.elidedText(row["name"], Qt.ElideRight, int(inner.width()))
+            # 작은 컬러 이모지는 깨지므로 이모지만 키워 그린다 (페이지 칩과 같이)
+            name = painted.elide_emoji_text(self.font(), row["name"], inner.width())
             painter.setPen(QColor(t.accent if current else t.text_main))
-            painter.drawText(inner, Qt.AlignLeft | Qt.AlignVCenter, name)
+            painted.draw_emoji_text(painter, inner, name, self.font())
 
     def mouseMoveEvent(self, event):
         idx = self._index_at(event.position().y())

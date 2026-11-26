@@ -10,6 +10,7 @@ Qt 스타일시트의 border-radius 는 안티앨리어싱 없이 그려져 둥�
   위젯이 그리기 전에(Paint 이벤트 필터) 상태(마우스 올림 / 누름 / 체크 / 포커스 / 사용 불가)에 맞는 색으로 칠한다.
 - alarm_pixmap / alarm_img : 리마인더 알람 시계 아이콘 (⏰ 이모지 대신 - 강조색 등 테마 색으로 그린다)
 - enter_pixmap : 할 일 입력칸 오른쪽의 Enter(↵) 아이콘
+- draw_emoji_text / emoji_text_width / elide_emoji_text : 이모지만 키워 그리는 한 줄 글자 (작은 컬러 이모지는 깨짐)
 """
 
 import math
@@ -26,7 +27,16 @@ from PySide6.QtCore import (
     QSize,
     Qt,
 )
-from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen, QPixmap
+from PySide6.QtGui import (
+    QColor,
+    QFont,
+    QFontInfo,
+    QFontMetrics,
+    QPainter,
+    QPainterPath,
+    QPen,
+    QPixmap,
+)
 from PySide6.QtWidgets import (
     QAbstractButton,
     QApplication,
@@ -37,6 +47,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from manager import todo_store
 from ui import theme
 
 CHECK_BOX_PX = (
@@ -495,3 +506,80 @@ def enter_pixmap(color: str, size: int, ratio: float = 1.0) -> QPixmap:
     painter.drawLine(QPointF(left, bottom), QPointF(left + head, bottom + head))
     painter.end()
     return pixmap
+
+
+# ==================================================
+# 이모지를 키워 그리는 한 줄 글자 (페이지 칩 / 페이지 바로가기 창)
+# ==================================================
+# 작은 글자 크기(11~12px)의 컬러 이모지는 계단처럼 깨진다 - 할 일 행(todo_panel.EMOJI_PX)처럼 이모지만
+# 글자보다 이만큼 키워 그린다
+EMOJI_GROW_PX = 3
+
+
+def _emoji_font(font: QFont) -> QFont:
+    """글자보다 EMOJI_GROW_PX 큰 글꼴 (pt 로 정한 글꼴은 pixelSize() 가 -1 이라 실제 px 로 잰다)"""
+    size = font.pixelSize() if font.pixelSize() > 0 else QFontInfo(font).pixelSize()
+    emoji = QFont(font)
+    emoji.setPixelSize(max(1, size) + EMOJI_GROW_PX)
+    return emoji
+
+
+def _emoji_units(text: str) -> list:
+    """글자를 [(조각, 이모지인지)] 로 - 이모지 덩어리(ZWJ / 피부색 포함)는 한 조각"""
+    units, pos = [], 0
+    for match in todo_store.EMOJI_RE.finditer(text):
+        units += [(ch, False) for ch in text[pos : match.start()]]
+        units.append((match.group(), True))
+        pos = match.end()
+    units += [(ch, False) for ch in text[pos:]]
+    return units
+
+
+def _runs(units: list) -> list:
+    """이웃한 같은 종류 조각을 묶는다 (글자는 한 번에 그려야 자간 / 커닝이 맞다)"""
+    runs = []
+    for part, is_emoji in units:
+        if runs and runs[-1][1] == is_emoji:
+            runs[-1] = (runs[-1][0] + part, is_emoji)
+        else:
+            runs.append((part, is_emoji))
+    return runs
+
+
+def emoji_text_width(font: QFont, text: str) -> float:
+    """emoji_text 로 그렸을 때의 폭"""
+    plain, emoji = QFontMetrics(font), QFontMetrics(_emoji_font(font))
+    return sum(
+        (emoji if is_emoji else plain).horizontalAdvance(part)
+        for part, is_emoji in _runs(_emoji_units(text))
+    )
+
+
+def elide_emoji_text(font: QFont, text: str, width: float) -> str:
+    """width 를 넘으면 뒤를 잘라 "…" 를 붙인다 (이모지 덩어리는 쪼개지 않는다)"""
+    if emoji_text_width(font, text) <= width:
+        return text
+    units = _emoji_units(text)
+    while units:
+        units.pop()
+        candidate = "".join(part for part, _ in units).rstrip() + "…"
+        if emoji_text_width(font, candidate) <= width:
+            return candidate
+    return "…"
+
+
+def draw_emoji_text(painter: QPainter, rect: QRectF, text: str, font: QFont):
+    """rect 왼쪽부터 세로 가운데에 text 를 그린다 - 이모지만 EMOJI_GROW_PX 키워서 (색은 painter 의 펜)"""
+    emoji_font = _emoji_font(font)
+    x = rect.left()
+    for part, is_emoji in _runs(_emoji_units(text)):
+        use = emoji_font if is_emoji else font
+        advance = QFontMetrics(use).horizontalAdvance(part)
+        painter.setFont(use)
+        painter.drawText(
+            QRectF(x, rect.top(), advance + 1, rect.height()),
+            Qt.AlignLeft | Qt.AlignVCenter,
+            part,
+        )
+        x += advance
+    painter.setFont(font)
