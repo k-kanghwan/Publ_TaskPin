@@ -58,6 +58,10 @@ SEED_TASK = "🧪 기본 프로필 업무"
 PROFILE_B = "🧪 프로필 B"
 PROFILE_B_TASK = "🧪 B 프로필 업무"
 EXPORT_FOLDER = "exports"  # 데이터 폴더 안 - 시험으로 내보낸 파일이 실제 폴더에 쌓이지 않게
+# exports 에 넣는 가져오기 시험 파일 (IMPORT_SAMPLES: 파일 이름 -> 글자를 만드는 함수, fresh 가 쓴다)
+IMPORT_SECTIONS = "가져오기 1 섹션.md"
+IMPORT_INDENT = "가져오기 2 들여쓰기 오류.md"
+IMPORT_LIST = "가져오기 3 목록.md"
 # 설정은 실제 앱의 config.json(real_config_path, 읽기만)에서 시작한다 - 테마 · 단축키 · 태그 · 글꼴 · 크기 등을
 # 디버그가 바꾸지 않는다. 디버그 데이터와 맞춰야 하는 아래 값만 덮어쓴다 (export_dir 는 데이터 폴더의 exports).
 DEBUG_CONFIG = {
@@ -302,6 +306,14 @@ def _edit_page(ctx):
             "우클릭 내보내기 → 현재 페이지 (.md, 페이지 이름이 제목·파일명에, 기본 폴더는 디버그 데이터의 exports)",
             "내보내기 → 전체 페이지 → 페이지마다 '## 이름' 섹션 (TaskPin-TODO-전체-날짜.md)",
             "내보내기 → 보관 항목 전체 / 미완료 페이지에서 현재 페이지 → 원래 페이지별 섹션",
+            f"우클릭 가져오기 → 섹션마다 페이지로 → exports 의 '{IMPORT_SECTIONS}' → 확인 창 → 새 페이지 3장 ('섹션 예제' / '업무' / '개인'), 할 일 없는 '## 빈 섹션'은 페이지 없음",
+            f"'{IMPORT_SECTIONS}'를 한 페이지로 → 새 페이지 '섹션 예제' 한 장에 모두 (섹션 제목은 무시), 지난 리마인더는 팝업 없이 지연(빨간 시각)",
+            "섹션 예제의 '완료 상위'(아래 미완료 하위) → 상위는 미완료로 들어옴",
+            f"가져오기 → 한 페이지로 → '{IMPORT_INDENT}' → 항목 글자의 '→ N단계'와 실제 레벨이 같음 (1칸·3칸·8칸·탭이 섞여도 바로 위의 덜 들여쓴 항목이 상위)",
+            f"'{IMPORT_INDENT}'의 '-[ ]'(기호 뒤 띄어쓰기 없음)·빈 체크박스 줄은 들어오지 않음, 구분선 아래 들여쓴 줄은 최상위",
+            f"가져오기 → 한 페이지로 → '{IMPORT_LIST}' → 체크박스 없는 -·*·+·1.·1) 목록이 미완료 할 일로, 인용·글자 줄은 건너뜀",
+            "이 페이지를 내보내기 → 현재 페이지 → 그 파일을 다시 가져오기 → 같은 목록, 페이지 이름은 제목에서 (🧪 편집·이력)",
+            "가져온 페이지는 페이지 삭제로 되돌림 (할 일은 삭제 이력으로)",
             "여러 개 고르고 우클릭 '페이지로 이동' → 대상 페이지 최상위 맨 뒤로",
         ),
         "---",
@@ -555,6 +567,115 @@ def _clear(base: str) -> None:
     shutil.rmtree(trash, ignore_errors=True)
 
 
+def _import_sections(now: datetime) -> str:
+    """## 섹션이 있는 파일: front matter, # 제목, 첫 ## 앞의 할 일, [x], 완료 상위 아래 미완료 하위,
+    구분선, 지난 / 앞으로의 리마인더, 할 일 없는 섹션 (섹션마다 페이지로 -> 3장)"""
+    now = now.replace(second=0, microsecond=0)
+    past = _token(now - timedelta(days=1))
+    later = _token(now + timedelta(hours=2))
+    return "\n".join(
+        [
+            "---",
+            "tags: [todo]",
+            "---",
+            "# 섹션 예제",
+            "이 글자 줄은 할 일이 아니라 건너뜀",
+            "",
+            "- [ ] 섹션 앞 할 일 → 첫 페이지 '섹션 예제'로",
+            "  - [x] 끝낸 하위",
+            "",
+            "## 업무",
+            "",
+            "- [ ] 보고서 쓰기",
+            "  - [x] 자료 수집",
+            f"  - [ ] 초안 작성 - 2시간 뒤 알림 {later}",
+            "- [x] 완료 상위 - 하위가 미완료라 미완료로 들어옴",
+            "  - [ ] 미완료 하위",
+            "---",
+            f"- [ ] 지난 리마인더 - 팝업 없이 지연 {past}",
+            "",
+            "## 개인",
+            "",
+            "- [ ] 운동",
+            "- [x] 장보기",
+            "  - [x] 우유",
+            "  - [x] 계란",
+            "",
+            "## 빈 섹션",
+            "",
+            "할 일 없이 글자만 있는 섹션은 페이지를 만들지 않음",
+            "---",
+            "",
+        ]
+    )
+
+
+def _import_indent(now: datetime) -> str:
+    """들여쓰기가 들쭉날쭉한 파일. 항목 글자의 '→ N단계' / '→ 최상위' 가 가져온 뒤의 레벨이다
+    (폭과 관계없이 바로 위의 덜 들여쓴 항목이 상위, 탭 = 4칸). 목록이 아닌 줄도 섞는다."""
+    return "\n".join(
+        [
+            "# 들여쓰기 오류 예제",
+            "   - [ ] 첫 줄부터 3칸 들여씀 → 최상위",
+            "- [ ] 1칸 하위의 상위 → 최상위",
+            " - [ ] 1칸 들여씀 → 1단계",
+            "- [ ] 한 번에 너무 깊이 → 최상위",
+            "        - [ ] 8칸 들여씀 → 1단계",
+            "- [ ] 들쭉날쭉한 하위 → 최상위",
+            "   - [ ] 3칸 → 1단계",
+            "     - [ ] 5칸 → 2단계",
+            "    - [ ] 4칸 (5칸보다 얕고 3칸보다 깊음) → 2단계",
+            "  - [ ] 2칸 (3칸보다 얕음) → 1단계",
+            "",
+            "      - [ ] 빈 줄 뒤 6칸 → 2단계",
+            "- [ ] 탭과 공백 섞기 → 최상위",
+            "\t- [ ] 탭 → 1단계",
+            "    - [ ] 공백 4칸 (탭과 같음) → 1단계",
+            "\t  - [ ] 탭 + 2칸 → 2단계",
+            "-[ ] 기호 뒤 띄어쓰기 없음 - 목록이 아니라 건너뜀",
+            "- [ ]",
+            "- [ ] 구분선 위 → 최상위",
+            "---",
+            "  - [ ] 구분선 아래 들여씀 (구분선은 하위를 두지 않음) → 최상위",
+            "",
+        ]
+    )
+
+
+def _import_list(now: datetime) -> str:
+    """체크박스 없는 목록(회의 메모 같은): - * + 1. 1) 목록과 중첩, 체크박스와 섞기, 인용 / 글자 줄"""
+    return "\n".join(
+        [
+            "# 회의 메모",
+            f"{now:%Y-%m-%d} 주간 회의 - 글자 줄은 건너뜀",
+            "",
+            "- 결정 사항 → 최상위",
+            "  - 배포는 다음 주 화요일 → 1단계",
+            "  - 가져오기 기능 추가 → 1단계",
+            "    - 예시 파일 만들기 → 2단계",
+            "* 별표 목록 → 최상위",
+            "  + 더하기 하위 → 1단계",
+            "1. 번호 목록 → 최상위",
+            "2. 두 번째 → 최상위",
+            "   1. 번호 하위 → 1단계",
+            "3) 괄호 번호 → 최상위",
+            "- [ ] 체크박스와 섞여도 됨 → 최상위",
+            "- [x] 끝낸 체크박스 → 최상위",
+            "",
+            "> 인용 줄은 건너뜀",
+            "마지막 글자 줄도 건너뜀",
+            "",
+        ]
+    )
+
+
+IMPORT_SAMPLES = {
+    IMPORT_SECTIONS: _import_sections,
+    IMPORT_INDENT: _import_indent,
+    IMPORT_LIST: _import_list,
+}
+
+
 def fresh(now: datetime | None = None) -> list:
     """데이터 폴더를 비우고 설정(실제 앱 설정 바탕) / 프로필을 예제로 새로 만든다. 만든 프로필 이름 목록.
     .debug_appdata 가 아니면 아무것도 하지 않는다(빈 목록). 쓰는 파일이 있으면 DataInUse (그대로 둠).
@@ -570,6 +691,9 @@ def fresh(now: datetime | None = None) -> list:
     cfg.update({key: old.get(key) for key in KEEP_CONFIG_KEYS})
     exports = paths.data_path(EXPORT_FOLDER)
     os.makedirs(exports, exist_ok=True)
+    for filename, make in IMPORT_SAMPLES.items():
+        with open(os.path.join(exports, filename), "w", encoding="utf-8") as f:
+            f.write(make(now))
     cfg["export_dir"] = exports
     _apply_overrides(cfg, _user_overrides() or {})  # 사용자가 적은 디버그 설정이 가장 나중 (이긴다)
     for name, pages, make_task in PROFILES:

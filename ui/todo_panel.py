@@ -93,6 +93,7 @@ from PySide6.QtWidgets import (
 from manager import (
     todo_export,
     todo_filter,
+    todo_import,
     todo_pages,
     todo_store,
     todo_trash,
@@ -887,6 +888,8 @@ class TodoPanel(QWidget):
 
     # 우클릭 "내보내기" - todo_export.KINDS 중 하나 ("page" 현재 페이지 / "all" 전체 페이지 / "archived" 보관 항목)
     export_requested = Signal(str)
+    # 우클릭 "가져오기" - todo_import.MODES 중 하나 ("single" 한 페이지로 / "sections" 섹션마다 페이지로)
+    import_requested = Signal(str)
     page_changed = Signal(int)  # 지금 페이지가 바뀜 - 페이지 id (위젯이 cfg 에 저장)
 
     def __init__(
@@ -1986,6 +1989,25 @@ class TodoPanel(QWidget):
             self._pages = todo_pages.load()
             self.set_page(page["id"])
 
+    def import_pages(self, pages: list) -> int:
+        """가져오기: todo_import.parse 결과([{"name", "items"}])를 페이지마다 맨 뒤 새 페이지로 넣고
+        첫 새 페이지로 넘어간다. 만든 페이지 수를 돌려준다 (페이지를 만들지 못하면 그 페이지는 건너뜀)."""
+        made_ids = []
+        for page in pages:
+            made = todo_pages.add(page["name"])
+            if made is None:
+                continue
+            for item in page["items"]:
+                item["page_id"] = made["id"]
+            self._items.extend(page["items"])  # 문서 순서 그대로 (형제 순서 = 목록 순서)
+            made_ids.append(made["id"])
+        if not made_ids:
+            return 0
+        self._pages = todo_pages.load()
+        todo_store.save_todos(self._items)
+        self.set_page(made_ids[0])  # 다시 그리기 / 페이지 표시까지
+        return len(made_ids)
+
     def rename_page(self):
         """지금 페이지 이름 바꾸기 (태그 추가 창을 색 칸 없이 쓴다, 이름에도 스니펫이 바뀐다).
         고정 페이지 "미완료"는 바꾸지 않는다."""
@@ -2292,6 +2314,7 @@ class TodoPanel(QWidget):
 
         self._add_clear_menu(menu)
         self._add_export_menu(menu, bool(page_items))
+        self._add_import_menu(menu)
 
         menu.exec(pos)
 
@@ -2333,6 +2356,20 @@ class TodoPanel(QWidget):
             lambda: self.export_requested.emit(todo_export.ARCHIVED),
         )
         act_archived.setEnabled(bool(todo_store.load_archived()))
+
+    def _add_import_menu(self, menu: QMenu):
+        """우클릭 "가져오기" 서브메뉴: Markdown 체크리스트를 새 페이지로 (한 페이지 / ## 섹션마다 페이지).
+        새 페이지를 만들므로 미완료 페이지에서도 켠다."""
+        import_menu = QMenu("가져오기", menu)  # 부모를 준다 - _add_history_menu 참고
+        menu.addMenu(import_menu)
+        import_menu.setStyleSheet(menu.styleSheet())
+        import_menu.addAction(
+            "한 페이지로…", lambda: self.import_requested.emit(todo_import.SINGLE)
+        )
+        import_menu.addAction(
+            "섹션마다 페이지로…",
+            lambda: self.import_requested.emit(todo_import.SECTIONS),
+        )
 
     def _add_tag_menu(self, menu: QMenu, t: theme.Theme):
         """우클릭 "태그" 서브메뉴: 기본 6색 -> 태그 없음 -> 사용자 태그 -> + 태그 추가"""
