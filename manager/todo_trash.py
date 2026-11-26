@@ -131,3 +131,15 @@ def mark_restored(batch: int) -> None:
             )
     except sqlite3.Error as e:
         print(f"삭제 이력 갱신 실패: {e}")
+
+
+def unmark_restored(batch: int) -> None:
+    """되돌린 표시를 지워 그 묶음을 다시 "삭제 이력"에 보이게 한다 (되돌리기 / 다시 실행 - manager/todo_undo)."""
+    c = db.conn()
+    try:
+        with c:
+            c.execute(
+                "UPDATE todo_deletions SET restored_at = NULL WHERE batch = ?", (batch,)
+            )
+    except sqlite3.Error as e:
+        print(f"삭제 이력 갱신 실패: {e}")

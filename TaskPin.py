@@ -46,7 +46,7 @@ from manager import (
     todo_pages,
     widget_config,
 )
-from ui import theme
+from ui import menus, theme
 from ui.clock_widget import ClockWidget
 from ui.confirm_dialog import ConfirmDialog
 from ui.settings_dialog import SettingsDialog
@@ -147,6 +147,9 @@ class TaskPinApp(TrayApp):
         # setChecked 가 toggled 를 발생시키므로 연결 전에 상태를 맞춘다
         self.action_toggle_widget.setChecked(widget_visible)
         self.action_toggle_widget.toggled.connect(self.toggle_widget)
+        # "항상 위에 보이기": 좌패널 메뉴 / 설정 가져오기로도 바뀌므로 메뉴를 열 때마다 설정으로 체크를 맞춘다
+        self.action_on_top.toggled.connect(self.widget.set_always_on_top)
+        self.tray_menu.aboutToShow.connect(self._sync_tray_menu)
 
         # 트레이 아이콘 좌클릭: 위젯을 다른 앱보다 위로 (다른 앱을 쓰면 다시 바탕화면으로)
         self.tray.activated.connect(self.on_tray_activated)
@@ -347,6 +350,7 @@ class TaskPinApp(TrayApp):
             self._settings.config_imported.connect(self.apply_imported_config)
             self._settings.app_icon_changed.connect(self._apply_app_icon)
             self._settings.opacity_changed.connect(self.widget.apply_opacity)
+            self._settings.popup_changed.connect(self.apply_popup_appearance)
             self._settings.data_reset.connect(self.reload_data)
             self._settings.destroyed.connect(self._on_settings_destroyed)
         self._settings.show_front()
@@ -425,13 +429,13 @@ class TaskPinApp(TrayApp):
             act.setChecked(name == self._profile)
             act.triggered.connect(lambda _=False, n=name: self.switch_profile(n))
         menu.addSeparator()
-        menu.addAction("새 프로필…", self.new_profile)
-        menu.addAction("다른 이름으로 저장…", self.save_profile_as)
-        menu.addAction("이름 바꾸기…", self.rename_profile)
-        act_delete = menu.addAction("삭제…", self.delete_profile)
+        menu.addAction(menus.icon("add"), "새 프로필…", self.new_profile)
+        menu.addAction(menus.icon("save"), "다른 이름으로 저장…", self.save_profile_as)
+        menu.addAction(menus.icon("rename"), "이름 바꾸기…", self.rename_profile)
+        act_delete = menu.addAction(menus.icon("delete"), "삭제…", self.delete_profile)
         act_delete.setEnabled(len(existing) > 1)  # 마지막 한 프로필은 지우지 않는다
         menu.addSeparator()
-        menu.addAction("프로필 폴더 열기", self.open_profile_folder)
+        menu.addAction(menus.icon("folder"), "프로필 폴더 열기", self.open_profile_folder)
 
     def switch_profile(self, name: str) -> bool:
         """그 프로필의 DB 로 바꾸고 Task / 할 일을 다시 읽는다. 바꿨으면(이미 그 프로필이어도) True.
@@ -596,7 +600,6 @@ class TaskPinApp(TrayApp):
         """설정의 Appearance 값으로 현재 테마와 앱 기본 글꼴(툴팁 등)을 건다."""
         appearance = widget_config.appearance(self.widget_cfg)
         theme.set_current(theme.build(appearance, theme.system_dark()))
-        self.tray_menu.setStyleSheet(theme.menu_style(theme.current()))
         font = QFont(self._base_font)
         if appearance["font_family"]:
             font.setFamilies([appearance["font_family"], self._base_font.family()])
@@ -612,6 +615,12 @@ class TaskPinApp(TrayApp):
         """설정창 Appearance 변경: 위젯을 다시 입힌다. 팝업은 다음에 띄울 때부터 따른다."""
         self._apply_theme()
         self.widget.apply_appearance()
+
+    def apply_popup_appearance(self):
+        """설정창 알림 창 폭 / 글자 크기 변경: 위젯에는 보이지 않으므로 다시 입히지 않고(깜빡임)
+        테마 값만 바꾼다 - 알림 팝업은 띄울 때 theme.current() 를 읽는다."""
+        appearance = widget_config.appearance(self.widget_cfg)
+        theme.set_current(theme.build(appearance, theme.system_dark()))
 
     def apply_imported_config(self, new: dict):
         """설정창 '설정 가져오기': 위젯 / 설정창이 함께 쓰는 cfg 를 제자리에서 바꾸고 모두 다시 적용한다."""
@@ -651,6 +660,12 @@ class TaskPinApp(TrayApp):
             self.widget.show_widget()  # visibility_changed 로 트레이 체크도 맞춰진다
         self.widget.bring_to_front()
 
+    def _sync_tray_menu(self):
+        """트레이 메뉴를 열 때: "항상 위에 보이기" 체크를 지금 설정으로 (toggled 가 다시 저장하지 않게)"""
+        self.action_on_top.blockSignals(True)
+        self.action_on_top.setChecked(bool(self.widget_cfg.get("always_on_top", False)))
+        self.action_on_top.blockSignals(False)
+
     def sync_widget_toggle_action(self, visible: bool):
         """위젯 쪽에서 숨김/표시가 일어났을 때 트레이 체크박스를 맞춤"""
         self.action_toggle_widget.blockSignals(True)
@@ -673,6 +688,8 @@ if __name__ == "__main__":
     app.setQuitOnLastWindowClosed(False)
     app.setApplicationName(APP_NAME)
     app.setApplicationVersion(VERSION)
+    # 우클릭 메뉴는 Windows 11 느낌으로 직접 그린다 (나머지는 원래 스타일 - ui/menus)
+    app.setStyle(menus.MenuStyle(app.style().name()))
 
     # Win+. 이모지 패널 입력 보정 (Qt 6.8 이 서로게이트 쌍을 버림 - ui/text_input 참고)
     ime_filter = ImeCharFilter()

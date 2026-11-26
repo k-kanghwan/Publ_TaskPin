@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ui import painted, theme
+from ui import menus, painted, theme
 from ui.theme import CORNER_RADIUS, px
 
 ALARM_PX = 14  # 제목 앞 알람 시계 (글자 배율을 곱한다)
@@ -172,9 +172,8 @@ class ReminderPopup(QWidget):
 
     def _show_snooze_menu(self, anchor: QPushButton):
         menu = QMenu(self)
-        menu.setStyleSheet(theme.menu_style(self._theme))
         for label, until in snooze_targets(datetime.now().astimezone()):
-            menu.addAction(label, lambda u=until: self._on_snooze(u))
+            menu.addAction(menus.icon("clock"), label, lambda u=until: self._on_snooze(u))
         menu.exec(anchor.mapToGlobal(anchor.rect().bottomLeft()))
 
     def _on_snooze(self, until: datetime):

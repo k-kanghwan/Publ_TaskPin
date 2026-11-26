@@ -134,3 +134,29 @@ def remove(page_id: int) -> None:
             c.execute("DELETE FROM todo_pages WHERE id = ?", (page_id,))
     except sqlite3.Error as e:
         print(f"TODO 페이지 삭제 실패: {e}")
+
+
+def restore(pages: list) -> None:
+    """페이지를 pages([{"id", "name"}] 순서대로)와 똑같이 맞춘다 - 되돌리기 / 다시 실행 (manager/todo_undo).
+    지운 페이지는 같은 id 로 다시 넣고, pages 에 없는 페이지는 지우고, 이름 / 순서를 맞춘다.
+    (AUTOINCREMENT 는 지운 id 를 다시 매기지 않으므로 같은 id 로 넣어도 겹치지 않는다)"""
+    wanted = [page["id"] for page in pages]
+    c = db.conn()
+    try:
+        with c:
+            existing = [row[0] for row in c.execute("SELECT id FROM todo_pages")]
+            c.executemany(
+                "DELETE FROM todo_pages WHERE id = ?",
+                [(page_id,) for page_id in existing if page_id not in wanted],
+            )
+            c.executemany(
+                "INSERT INTO todo_pages (id, name, position) VALUES (?, ?, ?)"
+                " ON CONFLICT(id) DO UPDATE SET"
+                " name = excluded.name, position = excluded.position",
+                [
+                    (page["id"], page["name"], position)
+                    for position, page in enumerate(pages)
+                ],
+            )
+    except sqlite3.Error as e:
+        print(f"TODO 페이지 되돌리기 실패: {e}")

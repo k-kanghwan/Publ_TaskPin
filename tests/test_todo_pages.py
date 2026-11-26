@@ -89,3 +89,18 @@ def test_last_page_is_kept_in_db(temp_db):
     assert todo_pages.last_page() == todo_pages.PENDING_ID
     db.set_meta(todo_pages.LAST_PAGE_KEY, "깨진 값")
     assert todo_pages.last_page() is None
+
+
+def test_restore_brings_back_ids_names_and_order(temp_db):
+    second = todo_pages.add("업무")
+    third = todo_pages.add("개인")
+    before = todo_pages.load()
+    todo_pages.remove(second["id"])
+    todo_pages.rename(third["id"], "바뀜")
+    extra = todo_pages.add("새 페이지")
+
+    todo_pages.restore(before)
+    assert todo_pages.load() == before  # 지운 페이지는 같은 id 로, 더한 페이지는 빠짐
+    assert extra["id"] not in [page["id"] for page in todo_pages.load()]
+    todo_pages.restore(before[::-1])
+    assert [p["id"] for p in todo_pages.load()] == [p["id"] for p in before[::-1]]

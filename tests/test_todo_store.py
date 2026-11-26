@@ -174,3 +174,40 @@ def test_is_separator():
         assert todo_store.is_separator(text)
     for text in ("--", "--- a", "-- -", "", None, "—"):
         assert not todo_store.is_separator(text)
+
+
+def test_unarchive_items_returns_rows_to_list(temp_db):
+    a, b = todo_store.new_item("a"), todo_store.new_item("b")
+    todo_store.save_todos([a, b])
+    todo_store.archive_items([a["id"]])
+    todo_store.save_todos([b])  # 보관한 행은 저장이 지우지 않는다
+    todo_store.unarchive_items([a["id"]])
+    todo_store.save_todos([a, b])
+    assert [i["text"] for i in todo_store.load_todos()] == ["a", "b"]
+    assert todo_store.load_archived() == []
+
+
+def test_important_mark():
+    assert todo_store.is_important("!계약서 제출")
+    assert todo_store.is_important("! 띄어쓰기 (@2026-01-01 09:00)")
+    assert todo_store.is_important("(@2026-01-01 09:00) !토큰 뒤")
+    assert not todo_store.is_important("!")  # 느낌표 하나뿐
+    assert not todo_store.is_important("보통 !중간")
+    assert todo_store.display_body("! 계약서 (@2026-01-01 09:00)") == "계약서"
+    assert todo_store.display_body("보통 할 일") == "보통 할 일"
+
+
+def test_to_html_char_colors():
+    html = todo_store.to_html(
+        "!a<\U0001f680",
+        "E;",
+        marks=[(0, 1)],
+        mark_style="M;",
+        body="a<\U0001f680",
+        char_colors=["#111111", "#222222"],
+    )
+    assert html == (
+        '<span style="color:#111111;M;">a</span>'
+        '<span style="color:#222222;">&lt;</span>'
+        '<span style="color:#111111;E;">\U0001f680</span>'
+    )

@@ -37,6 +37,7 @@ from PySide6.QtGui import (
     QColor,
     QContextMenuEvent,
     QFontMetrics,
+    QGuiApplication,
     QKeySequence,
     QPainter,
     QPainterPath,
@@ -66,7 +67,7 @@ from manager import (
     todo_store,
     widget_config,
 )
-from ui import painted, theme
+from ui import menus, painted, theme
 from ui.confirm_dialog import ConfirmDialog
 from ui.painted import EditableLabel
 from ui.reminder_popup import ReminderPopup
@@ -75,16 +76,11 @@ from ui.theme import CORNER_RADIUS, px
 from ui.todo_panel import TodoPanel
 
 # ========= ========= 테마 ========= =========
-# 세로 모드: 폭 280 ~ 364(1.3배), 높이 최소 ~ 583
+# 최소 크기 - 세로 모드: 폭 280 / 높이 324(글자 배율로 더 커질 수 있음), 가로 모드: 폭 540(좌 시간 280 + 우 TODO)
+# 최대 크기는 두 모드 모두 연결된 모니터 중 가장 작은 작업 영역의 80% (widget_config.screen_limit - _max_size)
 WIDGET_WIDTH = 280
 WIDGET_MIN_HEIGHT = 324
-WIDGET_MAX_HEIGHT = int(WIDGET_MIN_HEIGHT * 1.5)  # 486
-VERTICAL_MAX_HEIGHT = int(WIDGET_MAX_HEIGHT * 1.2)  # 583
-VERTICAL_MAX_WIDTH = int(WIDGET_WIDTH * 1.3)  # 364
-# 가로 모드: 폭과 높이 모두 조절 - 좌 시간(280) + 우 TODO. 높이는 최소 높이의 1.5배까지
 WIDGET_MIN_WIDTH_HORIZONTAL = 540
-WIDGET_MAX_WIDTH_HORIZONTAL = int(WIDGET_MIN_WIDTH_HORIZONTAL * 1.5)  # 810
-HORIZONTAL_MAX_HEIGHT_RATIO = 1.5
 RESIZE_MARGIN = 6  # 하단/우측 크기 조절 영역(px) - root 마진(14/16px) 안쪽
 TASK_BUTTON_REGISTER = "등록"  # [등록/해제] 버튼: Task 가 없을 때
 TASK_BUTTON_RELEASE = "해제"  # [등록/해제] 버튼: Task 가 진행 중일 때
@@ -114,6 +110,9 @@ TASK_BADGE_H_SPACE = 2 * 8 + 2 * 1  # 좌우 padding + border (말줄임 폭 계
 # 업무명 배지 위 상세업무 - 세로 모드 최대 줄 수 (가로 모드는 남는 높이만큼)
 TASK_DETAIL_MAX_LINES = 3
 FIXED_EDIT_KEY = "F2"  # 할 일 수정 고정 키 (설정 단축키 todo_edit 와 함께 - 기본 Enter)
+# 되돌리기 / 다시 실행 고정 키 (설정 단축키 todo_undo / todo_redo 와 함께)
+FIXED_UNDO_KEYS = ("Ctrl+Z",)
+FIXED_REDO_KEYS = ("Ctrl+Y", "Ctrl+Shift+Z")
 # ========= ========= ========= ========= =========
 
 
@@ -386,6 +385,7 @@ class ClockWidget(QWidget):
         # 3) 크기 범위 / 조절 방향은 모드별로 (세로: 높이만, 가로: 폭과 높이)
         self._orientation = None
         self._apply_orientation(self._cfg_orientation())
+        self._watch_screens()
         self.apply_appearance()
         self._restore_position()
         self.apply_shortcuts(widget_config.shortcuts(self._cfg))
@@ -396,39 +396,40 @@ class ClockWidget(QWidget):
         self.reminder_timer.start(REMINDER_CHECK_MS)
         QTimer.singleShot(REMINDER_STARTUP_DELAY_MS, self.check_reminders)
 
-    def _cfg_height(self) -> int:
+    @staticmethod
+    def _max_size() -> tuple:
+        """최대 크기 (폭, 높이): 연결된 모니터 중 가장 작은 작업 영역의 80% (모니터를 모르면 제한 없음)"""
+        limit = widget_config.screen_limit(
+            (geo.width(), geo.height())
+            for geo in (
+                screen.availableGeometry() for screen in QGuiApplication.screens()
+            )
+        )
+        return limit or (QWIDGETSIZE_MAX, QWIDGETSIZE_MAX)
+
+    def _limits(self) -> tuple:
+        """지금 모드의 (최소 폭, 최소 높이, 최대 폭, 최대 높이). 최대는 최소보다 작아지지 않는다."""
+        min_width = (
+            WIDGET_MIN_WIDTH_HORIZONTAL
+            if self._orientation == ORIENTATION_HORIZONTAL
+            else WIDGET_WIDTH
+        )
         min_height = self._min_height()
-        try:
-            value = int(self._cfg.get("height") or min_height)
-        except (TypeError, ValueError):
-            value = min_height
-        return min(max(VERTICAL_MAX_HEIGHT, min_height), max(min_height, value))
-
-    def _cfg_vertical_width(self) -> int:
-        """세로 모드 폭 (280 ~ 1.3배)"""
-        try:
-            value = int(self._cfg.get("vertical_width") or WIDGET_WIDTH)
-        except (TypeError, ValueError):
-            value = WIDGET_WIDTH
-        return min(VERTICAL_MAX_WIDTH, max(WIDGET_WIDTH, value))
-
-    def _cfg_horizontal_height(self, min_height: int) -> int:
-        """가로 모드 높이 (최소 높이 ~ 그 1.5배)"""
-        try:
-            value = int(self._cfg.get("horizontal_height") or min_height)
-        except (TypeError, ValueError):
-            value = min_height
-        return min(
-            int(min_height * HORIZONTAL_MAX_HEIGHT_RATIO), max(min_height, value)
+        max_width, max_height = self._max_size()
+        return (
+            min_width,
+            min_height,
+            max(min_width, max_width),
+            max(min_height, max_height),
         )
 
-    def _cfg_width(self) -> int:
-        """가로 모드 폭"""
+    def _cfg_size(self, key: str, default: int, low: int, high: int) -> int:
+        """설정에 저장된 크기 (없거나 깨졌으면 default) 를 low ~ high 로"""
         try:
-            value = int(self._cfg.get("width") or WIDGET_MIN_WIDTH_HORIZONTAL)
+            value = int(self._cfg.get(key) or default)
         except (TypeError, ValueError):
-            value = WIDGET_MIN_WIDTH_HORIZONTAL
-        return min(WIDGET_MAX_WIDTH_HORIZONTAL, max(WIDGET_MIN_WIDTH_HORIZONTAL, value))
+            value = default
+        return min(high, max(low, value))
 
     def _cfg_orientation(self) -> str:
         value = self._cfg.get("orientation")
@@ -690,10 +691,13 @@ class ClockWidget(QWidget):
             lambda: widget_config.undo_limit(self._cfg),
             self._confirm_todo_delete,
             page_id=todo_pages.last_page(),  # 프로필(DB)마다 따로 기억한다
+            show_pending=lambda: widget_config.show_pending_page(self._cfg),
+            remember_scroll=lambda: widget_config.remember_scroll(self._cfg),
         )
         self.todo_panel.export_requested.connect(self._export_todos)
         self.todo_panel.import_requested.connect(self._import_todos)
         self.todo_panel.page_changed.connect(self._save_todo_page)
+        self.todo_panel.pending_visibility_changed.connect(self._save_show_pending)
 
         # 세로 모드에서 폭을 바꾸면 업무명 배지 말줄임을 다시 (자식을 다 만든 뒤에 건다)
         self._left_col.installEventFilter(self)
@@ -706,10 +710,9 @@ class ClockWidget(QWidget):
         sub_style = f"font-size: {px(11, s)}px; color: {t.text_sub};"
         # WA_TranslucentBackground 사용 시 자식 위젯이 배경을 불투명하게 덮으므로
         # QLabel 배경을 반드시 transparent 로 강제해야 한다.
-        # menu_style 은 자식 입력칸의 기본 우클릭 메뉴(잘라내기 / 붙여넣기)까지 테마 메뉴로 칠한다
+        # 우클릭 메뉴(입력칸 기본 메뉴 포함)는 앱 스타일 ui/menus.MenuStyle 이 그린다 - QMenu 규칙은 넣지 않는다
         self.setStyleSheet(
             theme.button_style(t, px(12, s))
-            + theme.menu_style(t)
             + f"""
             QLabel {{
                 background: transparent;
@@ -851,23 +854,38 @@ class ClockWidget(QWidget):
         self._place_grip()
 
     def _apply_size_limits(self):
-        """세로: 폭 280 ~ 1.3배 / 높이 최소 ~ 583, 가로: 폭 540 ~ 810 / 높이 최소 ~ 1.5배"""
-        min_height = self._min_height()
+        """크기 범위를 지금 모드로 건다 - 최소는 모드마다(_limits), 최대는 가장 작은 모니터의 80%.
+        모드마다 따로 저장한 폭 / 높이로 맞춘다 (세로: vertical_width / height, 가로: width / horizontal_height)."""
+        min_width, min_height, max_width, max_height = self._limits()
         # 이전 모드의 min/max 와 엇갈리지 않도록 범위를 먼저 풀고 다시 건다
         self.setMinimumSize(0, 0)
+        self.setMaximumSize(max_width, max_height)
+        self.setMinimumSize(min_width, min_height)
         if self._orientation == ORIENTATION_HORIZONTAL:
-            self.setMaximumSize(
-                WIDGET_MAX_WIDTH_HORIZONTAL,
-                int(min_height * HORIZONTAL_MAX_HEIGHT_RATIO),
-            )
-            self.setMinimumSize(WIDGET_MIN_WIDTH_HORIZONTAL, min_height)
-            self.resize(self._cfg_width(), self._cfg_horizontal_height(min_height))
+            keys = ("width", "horizontal_height")
         else:
-            self.setMaximumSize(
-                VERTICAL_MAX_WIDTH, max(VERTICAL_MAX_HEIGHT, min_height)
-            )
-            self.setMinimumSize(WIDGET_WIDTH, min_height)
-            self.resize(self._cfg_vertical_width(), self._cfg_height())
+            keys = ("vertical_width", "height")
+        self.resize(
+            self._cfg_size(keys[0], min_width, min_width, max_width),
+            self._cfg_size(keys[1], min_height, min_height, max_height),
+        )
+
+    def _watch_screens(self):
+        """모니터를 붙이거나 떼거나 작업 영역(작업 표시줄)이 바뀌면 최대 크기를 다시 잰다."""
+        app = QGuiApplication.instance()
+        app.screenAdded.connect(self._on_screen_added)
+        app.screenRemoved.connect(lambda _screen: self._on_screens_changed())
+        for screen in QGuiApplication.screens():
+            screen.availableGeometryChanged.connect(self._on_screens_changed)
+
+    def _on_screen_added(self, screen):
+        screen.availableGeometryChanged.connect(self._on_screens_changed)
+        self._on_screens_changed()
+
+    def _on_screens_changed(self, *_):
+        if self._orientation is not None:
+            self._apply_size_limits()
+            self._place_grip()
 
     def _separator(self, vertical: bool = False) -> QFrame:
         line = QFrame()
@@ -1083,6 +1101,8 @@ class ClockWidget(QWidget):
             "todo_page_last": lambda: self.todo_panel.go_page_edge(last=True),
             "todo_page_new": self.todo_panel.add_page,
             "todo_page_jump": self.todo_panel.open_page_switcher,
+            "todo_undo": self.todo_panel.undo,
+            "todo_redo": self.todo_panel.redo,
             "settings": self.settings_requested.emit,
         }
         for action, keys in mapping.items():
@@ -1093,22 +1113,26 @@ class ClockWidget(QWidget):
             shortcut.setContext(Qt.WindowShortcut)
             shortcut.activated.connect(handlers[action])
             self._shortcuts.append(shortcut)
-        # 할 일 수정은 F2 가 고정 키로 늘 된다 (선택이 없으면 페이지 이름 바꾸기). 다른 동작이 F2 로 시작하면
-        # 같은 키의 단축키가 둘이 되어 둘 다 듣지 않으므로 그때는 걸지 않는다
-        fixed = QKeySequence(FIXED_EDIT_KEY, QKeySequence.PortableText)
-        if not any(
-            QKeySequence(keys, QKeySequence.PortableText).matches(fixed)
-            != QKeySequence.NoMatch
-            or fixed.matches(QKeySequence(keys, QKeySequence.PortableText))
-            != QKeySequence.NoMatch
-            for keys in mapping.values()
-            if keys
-        ):
+        # 고정 키: 할 일 수정 F2(선택이 없으면 페이지 이름 바꾸기), 되돌리기 Ctrl+Z, 다시 실행 Ctrl+Y / Ctrl+Shift+Z.
+        # 설정 키를 바꿔도 함께 된다. 어떤 설정 키가 고정 키와 같거나 앞부분이 겹치면 같은 키의 단축키가 둘이 되어
+        # 둘 다 듣지 않으므로 그 고정 키는 걸지 않는다 (같은 동작이면 설정 키가 이미 듣는다)
+        fixed_keys = [(FIXED_EDIT_KEY, lambda: self.todo_panel.edit_current(rename_page=True))]
+        fixed_keys += [(keys, self.todo_panel.undo) for keys in FIXED_UNDO_KEYS]
+        fixed_keys += [(keys, self.todo_panel.redo) for keys in FIXED_REDO_KEYS]
+        for fixed_text, handler in fixed_keys:
+            fixed = QKeySequence(fixed_text, QKeySequence.PortableText)
+            if any(
+                QKeySequence(keys, QKeySequence.PortableText).matches(fixed)
+                != QKeySequence.NoMatch
+                or fixed.matches(QKeySequence(keys, QKeySequence.PortableText))
+                != QKeySequence.NoMatch
+                for keys in mapping.values()
+                if keys
+            ):
+                continue
             shortcut = QShortcut(fixed, self)
             shortcut.setContext(Qt.WindowShortcut)
-            shortcut.activated.connect(
-                lambda: self.todo_panel.edit_current(rename_page=True)
-            )
+            shortcut.activated.connect(handler)
             self._shortcuts.append(shortcut)
 
     def _has_task(self) -> bool:
@@ -1140,6 +1164,11 @@ class ClockWidget(QWidget):
         페이지 id 는 DB 마다 다르므로 설정이 아니라 프로필 DB 에 둔다."""
         todo_pages.set_last_page(page_id)
 
+    def _save_show_pending(self, visible: bool):
+        """페이지 우클릭 "미완료 페이지 표시" (모든 프로필이 함께 쓰는 설정)"""
+        self._cfg["show_pending_page"] = visible
+        widget_config.save_config(self._cfg)
+
     def _confirm_todo_delete(self, count: int) -> bool:
         """할 일 삭제(행의 ✕ / 우클릭 "삭제"): 지우기 전에 묻는다. "다시 묻지 않음"을 켜고 삭제하면
         설정에 남겨 다음부터 묻지 않는다 (설정창 Application 에서 다시 켤 수 있다)."""
@@ -1151,7 +1180,7 @@ class ClockWidget(QWidget):
             if count == 1
             else f"선택된 항목 {count}개를 삭제하시겠습니까?",
             confirm_text="삭제",
-            note="우클릭 → 삭제 이력에서 되돌릴 수 있습니다.",
+            note="Ctrl+Z 나 우클릭 → 삭제 이력으로 되돌릴 수 있습니다.",
             danger=True,
             remember_text="다시 묻지 않음",
             parent=self,
@@ -1256,29 +1285,32 @@ class ClockWidget(QWidget):
             self.todo_panel.show_current_menu()
             return
         menu = QMenu(self)
-        menu.setStyleSheet(theme.menu_style(theme.current()))
 
         if self._orientation == ORIENTATION_HORIZONTAL:
             menu.addAction(
-                "세로 모드", lambda: self.set_orientation(ORIENTATION_VERTICAL)
+                menus.icon("rotate"),
+                "세로 모드",
+                lambda: self.set_orientation(ORIENTATION_VERTICAL),
             )
         else:
             menu.addAction(
-                "가로 모드", lambda: self.set_orientation(ORIENTATION_HORIZONTAL)
+                menus.icon("rotate"),
+                "가로 모드",
+                lambda: self.set_orientation(ORIENTATION_HORIZONTAL),
             )
 
-        act_lock = menu.addAction("위치/크기 잠금")
+        act_lock = menu.addAction(menus.icon("lock"), "위치/크기 잠금")
         act_lock.setCheckable(True)
         act_lock.setChecked(self._locked)
         act_lock.toggled.connect(self.set_locked)
 
         # 다른 앱을 보며 등록 / 할 일 추가를 할 때 위젯이 뒤로 사라지지 않게
-        act_top = menu.addAction("항상 위에 보이기")
+        act_top = menu.addAction(menus.icon("pin"), "항상 위에 보이기")
         act_top.setCheckable(True)
         act_top.setChecked(self._cfg_on_top())
         act_top.toggled.connect(self.set_always_on_top)
 
-        act_auto = menu.addAction("윈도우 시작 시 실행")
+        act_auto = menu.addAction(menus.icon("startup"), "윈도우 시작 시 실행")
         act_auto.setCheckable(True)
         act_auto.setChecked(os_win.is_autostart_enabled())
         act_auto.toggled.connect(self._on_autostart_toggled)
@@ -1287,12 +1319,13 @@ class ClockWidget(QWidget):
         if self._profile_menu_filler is not None:
             # 헬퍼가 채우는 서브메뉴는 부모를 줘야 참조가 사라져도 지워지지 않는다
             sub = QMenu(f"프로필 · {self._profile_name}".replace("&", "&&"), menu)
+            sub.setIcon(menus.icon("profile"))
             self._profile_menu_filler(sub)
             menu.addMenu(sub)
-        menu.addAction("설정", self.settings_requested.emit)
-        menu.addAction("위젯 숨기기", self.hide_widget)
+        menu.addAction(menus.icon("settings"), "설정", self.settings_requested.emit)
+        menu.addAction(menus.icon("hide"), "위젯 숨기기", self.hide_widget)
         menu.addSeparator()
-        menu.addAction("프로그램 종료", self.quit_requested.emit)
+        menu.addAction(menus.icon("power"), "프로그램 종료", self.quit_requested.emit)
 
         menu.exec(event.globalPos())
 
@@ -1325,7 +1358,6 @@ class ClockWidget(QWidget):
         if self._profile_menu_filler is None:
             return
         menu = QMenu(self)
-        menu.setStyleSheet(theme.menu_style(theme.current()))
         self._profile_menu_filler(menu)
         btn = self.profile_button
         menu.exec(btn.mapToGlobal(btn.rect().bottomLeft()))
@@ -1499,6 +1531,7 @@ class ClockWidget(QWidget):
         self._set_grips_enabled(not self._locked)
         self._apply_opacity()
         self.set_user_name(self._cfg.get("user_name", ""))
+        self.todo_panel.sync_pending_page()  # 미완료 페이지 표시
 
         on_top = bool(self.windowFlags() & Qt.WindowStaysOnTopHint)
         if on_top != self._on_top():
@@ -1534,7 +1567,7 @@ class ClockWidget(QWidget):
         """시각이 된 리마인더를 팝업 + reminder_due 시그널로 알린다."""
         now = datetime.now().astimezone()
         for item in self.todo_panel.pop_due(now):
-            text = todo_store.strip_reminder(item["text"])
+            text = todo_store.display_body(item["text"])  # 중요 항목의 "!" 는 빼고
             self._show_reminder_popup(item["id"], text, todo_store.due_at(item))
             self.reminder_due.emit(item["id"], text)
         self.todo_panel.refresh_rows()  # 지난 리마인더 색 갱신

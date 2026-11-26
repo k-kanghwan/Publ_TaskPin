@@ -9,6 +9,7 @@ Qt 스타일시트의 border-radius 는 안티앨리어싱 없이 그려져 둥�
   스타일시트는 배경을 transparent, 테두리를 같은 두께의 transparent 로 두고(글자 자리 유지)
   위젯이 그리기 전에(Paint 이벤트 필터) 상태(마우스 올림 / 누름 / 체크 / 포커스 / 사용 불가)에 맞는 색으로 칠한다.
 - alarm_pixmap / alarm_img : 리마인더 알람 시계 아이콘 (⏰ 이모지 대신 - 강조색 등 테마 색으로 그린다)
+- enter_pixmap : 할 일 입력칸 오른쪽의 Enter(↵) 아이콘
 """
 
 import math
@@ -462,3 +463,35 @@ def alarm_img(color: str, size: int, ratio: float = 1.0) -> str:
         uri = "data:image/png;base64," + bytes(data.toBase64()).decode("ascii")
         _ALARM_URIS[key] = uri
     return f'<img src="{uri}" width="{size}" height="{size}">'
+
+
+# ==================================================
+# 할 일 입력칸 Enter 아이콘
+# ==================================================
+def enter_pixmap(color: str, size: int, ratio: float = 1.0) -> QPixmap:
+    """Enter(↵) 아이콘: 오른쪽 위에서 내려와 왼쪽으로 꺾이는 둥근 선 + 화살촉. 선 하나 색으로 그린다.
+    ratio: 화면 배율 (그 배율의 실제 픽셀로 그려 흐리거나 깨지지 않게)"""
+    n = float(size)
+    pixmap = QPixmap(max(1, round(n * ratio)), max(1, round(n * ratio)))
+    pixmap.setDevicePixelRatio(ratio)
+    pixmap.fill(Qt.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.Antialiasing)
+    pen = QPen(QColor(color), max(1.4, n * 0.12))
+    pen.setCapStyle(Qt.RoundCap)
+    pen.setJoinStyle(Qt.RoundJoin)
+    painter.setPen(pen)
+    painter.setBrush(Qt.NoBrush)
+
+    right, top, bottom, left = n * 0.78, n * 0.2, n * 0.64, n * 0.2
+    corner = n * 0.2  # 꺾이는 곳의 둥근 반지름
+    path = QPainterPath(QPointF(right, top))
+    path.lineTo(right, bottom - corner)
+    path.quadTo(right, bottom, right - corner, bottom)
+    path.lineTo(left, bottom)
+    painter.drawPath(path)
+    head = n * 0.2  # 화살촉
+    painter.drawLine(QPointF(left, bottom), QPointF(left + head, bottom - head))
+    painter.drawLine(QPointF(left, bottom), QPointF(left + head, bottom + head))
+    painter.end()
+    return pixmap

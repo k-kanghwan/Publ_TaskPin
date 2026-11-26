@@ -26,6 +26,10 @@ DEFAULT_SHORTCUTS = {
     "todo_focus": "A",  # 할 일 입력칸으로 커서 이동
     # 선택한 할 일을 그 자리에서 수정. F2 는 고정 키로 늘 된다 (선택이 없으면 F2 는 페이지 이름 바꾸기)
     "todo_edit": "Return",
+    # 되돌리기 / 다시 실행 (할 일 · 페이지 변경). Ctrl+Z / Ctrl+Y · Ctrl+Shift+Z 는 고정 키로도 늘 된다
+    # (입력칸 안에서는 입력칸의 글자 되돌리기)
+    "todo_undo": "Ctrl+Z",
+    "todo_redo": "Ctrl+Y",
     # 목록 키 (LIST_SHORTCUTS): 할 일 목록에 포커스가 있을 때만 - 입력칸의 화살표는 그대로 둔다
     # 삭제 / 잘라내기 / 복사 / 붙여넣기 / 위 / 아래는 기본 키(Delete / Ctrl+X / Ctrl+C / Ctrl+V / ↑ / ↓)가
     # 고정 키로도 늘 동작한다 - 여기서 다른 키를 정하면 그 키도 함께 된다 (todo_panel.FIXED_NAV_KEYS)
@@ -79,6 +83,8 @@ POPUP_WIDTHS = (220, 260, 320, 380)
 POPUP_SCALES = (90, 100, 115, 130)
 # TODO 페이지 표시(현재 이름 + 점) 위치 - 왼쪽 / 오른쪽은 점만 세로로
 PAGE_BAR_POSITIONS = ("top", "bottom", "left", "right")
+# TODO 페이지 칩의 할 일 수 - "all": 하위 포함(기본) / "top": 최상위 할 일만
+PAGE_COUNTS = ("all", "top")
 DEFAULT_APPEARANCE = {
     "theme": "dark",
     "accent": "#4a7bd0",  # 강조색 (버튼 / 체크박스 / Task 배지 / 선택 표시)
@@ -91,6 +97,7 @@ DEFAULT_APPEARANCE = {
     "todo_row_lines": False,  # 할 일 행 사이 구분선
     "todo_guides": True,  # 하위 레벨 가이드 선 (상위의 접기 버튼에서 내려오는 강조색 세로선)
     "page_bar": "top",  # TODO 페이지 표시 위치 (PAGE_BAR_POSITIONS)
+    "page_count": "all",  # 페이지 칩의 할 일 수 (PAGE_COUNTS)
     "fade_text": False,  # 투명도가 글자까지 투명하게 할지 (False: 배경만)
     "popup_width": 260,  # 리마인더 알림 창 폭(px)
     "popup_scale": 100,  # 리마인더 알림 창 글자 배율(%)
@@ -176,6 +183,9 @@ APP_ICONS = ("dark", "light")
 OPACITY_MIN = 0.2  # 이보다 낮으면 위젯이 사라져 조작 불가
 TRANSPARENCY_MAX = round((1 - OPACITY_MIN) * 100)  # 슬라이더 최대 투명도(%) = 80
 
+# 위젯 최대 크기: 연결된 모니터 중 가장 작은 작업 영역(작업 표시줄 제외)의 이 비율 (폭 / 높이 따로)
+SCREEN_LIMIT_RATIO = 0.8
+
 DEFAULT_CONFIG = {
     "pos": None,  # [x, y] / None 이면 우측 상단 배치
     "locked": False,  # 위치 잠금
@@ -201,6 +211,10 @@ DEFAULT_CONFIG = {
     # 마지막으로 본 TODO 페이지는 프로필(DB)마다 따로 기억한다 (todo_pages.last_page)
     "profile": None,
     "app_icon": APP_ICONS[0],  # 트레이 / 창 아이콘 (APP_ICONS 중 하나)
+    # 맨 앞 고정 페이지 "미완료"를 보일지 (페이지 칩 우클릭 "미완료 페이지 표시")
+    "show_pending_page": True,
+    # 페이지를 넘겼다 돌아오면 보던 스크롤 자리로 (실행 중에만 기억, 설정창 Application)
+    "remember_scroll": True,
 }
 CUSTOM_TAG_PREFIX = "custom-"  # 사용자 태그 id (todos.tag 에 저장되는 값)
 CUSTOM_TAG_NAME_MAX = 20
@@ -208,6 +222,18 @@ CUSTOM_TAG_NAME_MAX = 20
 EXTRA_KEYS = ("export_dir",)  # TODO / 설정 내보내기 마지막 폴더
 # v0.1.29 까지 마지막으로 본 TODO 페이지 id - 이제 프로필 DB 에 둔다 (TaskPinApp 이 처음 한 번 옮기고 지움)
 LEGACY_TODO_PAGE_KEY = "todo_page"
+
+
+def screen_limit(sizes, ratio: float = SCREEN_LIMIT_RATIO):
+    """위젯 최대 크기 (폭, 높이): 모니터 작업 영역 [(폭, 높이)] 중 가장 작은 폭 / 가장 작은 높이의 ratio.
+    모니터를 몰라 sizes 가 비면 None (부르는 쪽이 제한 없이 둔다)"""
+    sizes = [(w, h) for w, h in sizes if w > 0 and h > 0]
+    if not sizes:
+        return None
+    return (
+        int(min(w for w, _ in sizes) * ratio),
+        int(min(h for _, h in sizes) * ratio),
+    )
 
 
 def load_config() -> dict:
@@ -270,6 +296,16 @@ def confirm_delete(cfg: dict) -> bool:
 def undo_limit(cfg: dict) -> int:
     """되돌릴 수 있는 최근 삭제 수. 정해진 값이 아니면 기본값"""
     return _scale(cfg.get("undo_limit"), UNDO_LIMITS, DEFAULT_UNDO_LIMIT)
+
+
+def show_pending_page(cfg: dict) -> bool:
+    """맨 앞 고정 페이지 "미완료"를 보일지 (False 로 저장했을 때만 숨긴다)"""
+    return cfg.get("show_pending_page") is not False
+
+
+def remember_scroll(cfg: dict) -> bool:
+    """페이지마다 보던 스크롤 자리를 기억할지 (False 로 저장했을 때만 끈다)"""
+    return cfg.get("remember_scroll") is not False
 
 
 def app_icon(cfg: dict) -> str:
@@ -350,6 +386,11 @@ def appearance(cfg: dict) -> dict:
             saved.get("page_bar")
             if saved.get("page_bar") in PAGE_BAR_POSITIONS
             else default["page_bar"]
+        ),
+        "page_count": (
+            saved.get("page_count")
+            if saved.get("page_count") in PAGE_COUNTS
+            else default["page_count"]
         ),
         "fade_text": saved.get("fade_text") is True,
         "popup_width": _scale(

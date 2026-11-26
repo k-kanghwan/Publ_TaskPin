@@ -72,6 +72,8 @@ def test_shortcuts_fill_missing_and_broken():
         "task_clear": "C",
         "todo_focus": "",  # 빈 문자열은 해제
         "todo_edit": "Return",
+        "todo_undo": "Ctrl+Z",
+        "todo_redo": "Ctrl+Y",
         "todo_delete": "Del",
         "todo_cut": "Ctrl+X",
         "todo_copy": "Ctrl+C",

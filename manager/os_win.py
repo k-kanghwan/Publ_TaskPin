@@ -144,6 +144,45 @@ def set_dark_title_bar(hwnd: int, dark: bool = True):
         pass
 
 
+DWMWA_WINDOW_CORNER_PREFERENCE = 33  # Windows 11 (빌드 22000) 이상
+DWMWA_BORDER_COLOR = 34
+DWMWCP_ROUNDSMALL = 3  # 메뉴 / 툴팁처럼 작은 둥근 모서리
+WIN11_BUILD = 22000
+
+
+def rounded_corners_supported() -> bool:
+    """창 모서리를 시스템이 둥글게 그려 주는지 (Windows 11 이상)"""
+    return sys.getwindowsversion().build >= WIN11_BUILD
+
+
+def round_popup(hwnd: int, border_color: str = "") -> bool:
+    """팝업(우클릭 메뉴)을 Windows 11 메뉴처럼 작은 둥근 모서리 + 시스템 그림자로, 테두리 색은 border_color
+    ("#rrggbb", "" 이면 시스템 색). Windows 10 등 지원하지 않으면 False (그대로 사각)."""
+    if not rounded_corners_supported():
+        return False
+    dwm = ctypes.windll.dwmapi
+    try:
+        corner = ctypes.c_int(DWMWCP_ROUNDSMALL)
+        dwm.DwmSetWindowAttribute(
+            wintypes.HWND(hwnd),
+            DWMWA_WINDOW_CORNER_PREFERENCE,
+            ctypes.byref(corner),
+            ctypes.sizeof(corner),
+        )
+        if border_color:
+            r, g, b = (int(border_color[i : i + 2], 16) for i in (1, 3, 5))
+            colorref = wintypes.DWORD(r | (g << 8) | (b << 16))  # COLORREF 0x00BBGGRR
+            dwm.DwmSetWindowAttribute(
+                wintypes.HWND(hwnd),
+                DWMWA_BORDER_COLOR,
+                ctypes.byref(colorref),
+                ctypes.sizeof(colorref),
+            )
+    except OSError:
+        return False
+    return True
+
+
 ASFW_ANY = 0xFFFFFFFF
 
 
