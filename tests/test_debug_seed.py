@@ -353,3 +353,21 @@ def test_refuses_real_data_dir(tmp_path, monkeypatch):
         os_win, "user_data_dir", lambda: r"C:\repo\.debug_appdata\TaskPin"
     )
     assert debug_seed.is_debug_data()
+
+
+def test_v0132_page_first_with_important_examples(debug_dir):
+    debug_seed.fresh(NOW)
+    _open(debug_seed.SEED_PROFILE)
+    assert PAGE_NAMES[0] == debug_seed.V0132_PAGE
+    assert todo_pages.last_page() == todo_pages.load()[1]["id"]  # 이 페이지가 처음 열린다
+    items = _page_items(debug_seed.V0132_PAGE)
+    check = next(i for i in items if i["text"] == debug_seed.CHECK_TITLE)
+    sections = [i["text"] for i in items if i["parent_id"] == check["id"]]
+    assert sections[0].startswith("1.")
+    assert any(s.startswith("12.") for s in sections)
+    important = [i for i in items if todo_store.is_important(i["text"])]
+    assert any(i["done"] for i in important)
+    assert any(not i["done"] for i in important)
+    assert any(todo_store.parse_reminder(i["text"]) for i in important)
+    assert any(i["parent_id"] for i in important)  # 하위 중요 항목
+    assert sum(1 for i in items if i["done"] and "정리 시험" in i["text"]) == 2
