@@ -144,6 +144,7 @@ def test_appearance_keeps_valid_values():
         "todo_row_lines": True,
         "todo_guides": False,
         "page_bar": "left",
+        "page_count": "top",
         "fade_text": True,
         "popup_width": 380,
         "popup_scale": 130,
@@ -245,3 +246,31 @@ def test_with_preset_changes_theme_only_when_needed():
     # 추천 테마를 고른 뒤 테마만 바꾸면 사용자 지정
     chosen = widget_config.with_preset(dark, forest, True)
     assert widget_config.color_preset({**chosen, "theme": "light"}, True) is None
+
+
+def test_screen_limit_uses_smallest_monitor():
+    assert widget_config.screen_limit([(1920, 1040), (1280, 984)]) == (1024, 787)
+    assert widget_config.screen_limit([(2560, 1400), (1920, 1040)], 0.5) == (960, 520)
+    assert widget_config.screen_limit([]) is None
+    assert widget_config.screen_limit([(0, 0)]) is None
+
+
+def test_page_options_defaults():
+    assert widget_config.show_pending_page({}) is True
+    assert widget_config.show_pending_page({"show_pending_page": False}) is False
+    assert widget_config.show_pending_page({"show_pending_page": "no"}) is True
+    assert widget_config.remember_scroll({}) is True
+    assert widget_config.remember_scroll({"remember_scroll": False}) is False
+    top = {"appearance": {"page_count": "top"}}
+    assert widget_config.appearance(top)["page_count"] == "top"
+    broken = {"appearance": {"page_count": "x"}}
+    assert widget_config.appearance(broken)["page_count"] == "all"
+
+
+def test_undo_redo_shortcuts_default():
+    keys = widget_config.shortcuts({})
+    assert keys["todo_undo"] == "Ctrl+Z"
+    assert keys["todo_redo"] == "Ctrl+Y"
+    # 사용자가 이미 Ctrl+Z 를 다른 동작에 쓰면 새 동작은 비워 둔다
+    used = {"shortcuts": {"todo_search": "Ctrl+Z"}}
+    assert widget_config.shortcuts(used)["todo_undo"] == ""

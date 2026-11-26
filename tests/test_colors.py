@@ -50,3 +50,12 @@ def test_mid_tone_falls_back_to_farthest():
     text = colors.text_colors("#5a6a7a")
     assert text["text_main"] == "#ffffff"
     assert colors.contrast(text["text_sub"], "#5a6a7a") >= 4.5
+
+
+def test_rainbow_is_readable_and_flows():
+    for bg in ("#141414", "#f3f3f5", "#172033", "#f5f0e6"):
+        row = colors.rainbow(12, 0.0, bg)
+        assert len(set(row)) > 6  # 글자마다 색이 다르다
+        assert all(colors.contrast(c, bg) >= colors.RAINBOW_CONTRAST for c in row)
+    assert colors.rainbow(3, 0.0, "#141414") != colors.rainbow(3, 0.3, "#141414")
+    assert colors.rainbow(0, 0.5, "#141414") == []

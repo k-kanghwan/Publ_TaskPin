@@ -171,7 +171,6 @@ class TaskPicker(QFrame):
             }}
             """
             + theme.popup_form_style(t)
-            + theme.menu_style(t)  # 입력칸 우클릭 메뉴
         )
         painted.set_boxes(
             self,

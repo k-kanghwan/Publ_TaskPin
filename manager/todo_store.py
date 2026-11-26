@@ -7,6 +7,7 @@ TodoPanel 은 메모리 목록을 통째로 save_todos() 에 넘긴다. 저장�
 맞추고, "완료 항목 정리"로 보관한(archived_at) 행은 건드리지 않는다.
 상위/하위 계층은 parent_id 로, 형제 사이 순서는 position 으로 저장한다.
 색 태그는 tag (TAGS 중 하나 / 사용자 태그 키 / None) 로 저장한다. 색 값은 UI(todo_panel)와 config 가 정한다.
+본문이 `!` 로 시작하는 할 일은 중요 항목이다 (is_important - 화면에서는 `!` 를 빼고 무지개색으로, 저장은 그대로).
 항목이 속한 페이지(엑셀 시트처럼 독립된 목록)는 page_id 로 저장한다 (manager/todo_pages).
 """
 
@@ -36,6 +37,8 @@ DEFAULT_PAGE_ID = 1  # 첫 페이지 (스키마 v9 가 만든다)
 # 구분선: 하이픈(-)만 3개 이상 적은 할 일은 체크박스 대신 가로선으로 그린다 (우클릭 "아래에 구분선 추가")
 SEPARATOR = "---"
 _SEPARATOR_RE = re.compile(r"-{3,}")
+# 중요 항목: 토큰을 뺀 본문이 이 글자로 시작하고 뒤에 내용이 있다 (화면에서는 이 글자를 숨김)
+IMPORTANT_MARK = "!"
 
 _COLUMNS = (
     "id",
@@ -146,6 +149,19 @@ def archive_items(ids: list) -> None:
         print(f"TODO 보관 실패: {e}")
 
 
+def unarchive_items(ids: list) -> None:
+    """보관을 풀어 다시 목록 행으로 (완료 항목 정리 되돌리기 - manager/todo_undo). save_todos 보다 먼저 부른다."""
+    c = db.conn()
+    try:
+        with c:
+            c.executemany(
+                "UPDATE todos SET archived_at = NULL WHERE id = ?",
+                [(item_id,) for item_id in ids],
+            )
+    except sqlite3.Error as e:
+        print(f"TODO 보관 해제 실패: {e}")
+
+
 def new_item(text: str, page_id: int = DEFAULT_PAGE_ID) -> dict:
     return {
         "id": uuid.uuid4().hex,
@@ -175,6 +191,20 @@ def normalize(item: dict) -> dict:
     if not (isinstance(tag, str) and 0 < len(tag) <= TAG_MAX_LEN):
         base["tag"] = None
     return base
+
+
+def is_important(text: str) -> bool:
+    """중요 항목인지: 토큰을 뺀 본문이 `!` 로 시작하고 그 뒤에 글자가 있다 ("!" 하나뿐이면 아님)"""
+    body = strip_reminder(text)
+    return body.startswith(IMPORTANT_MARK) and bool(body[len(IMPORTANT_MARK) :].strip())
+
+
+def display_body(text: str) -> str:
+    """화면에 보일 본문: 토큰을 빼고, 중요 항목이면 맨 앞 `!` 도 뺀다 (검색 표시 구간도 이 글자 기준)"""
+    body = strip_reminder(text)
+    if is_important(text):
+        return body[len(IMPORTANT_MARK) :].lstrip()
+    return body
 
 
 def is_separator(text: str) -> bool:
@@ -232,13 +262,20 @@ def is_due(item: dict, now: datetime) -> bool:
 
 
 def to_html(
-    text: str, emoji_style: str = "", marks=(), mark_style: str = ""
+    text: str,
+    emoji_style: str = "",
+    marks=(),
+    mark_style: str = "",
+    body: str | None = None,
+    char_colors=None,
 ) -> str:
     """표시용 HTML (반드시 escape - 사용자 입력이 RichText 로 해석되지 않도록)
 
     emoji_style 을 주면 이모지 덩어리를 그 스타일의 <span> 으로 감싼다.
     (본문 크기의 컬러 이모지는 테두리가 뭉개져서 조금 크게 그린다)
-    marks: 토큰을 뺀 본문 기준 구간 [(시작, 끝)] - mark_style 의 <span> 으로 감싼다 (검색 하이라이트)"""
+    marks: 본문 기준 구간 [(시작, 끝)] - mark_style 의 <span> 으로 감싼다 (검색 하이라이트)
+    body: 보일 본문 (None 이면 토큰을 뺀 본문 - 중요 항목은 display_body 를 넘긴다)
+    char_colors: 글자마다 색 ["#rrggbb", ...] (중요 항목의 무지개, 모자라면 되풀이). 이모지 덩어리는 한 칸"""
 
     def piece(part: str) -> str:
         part = html.escape(part)
@@ -248,13 +285,33 @@ def to_html(
             )
         return part
 
-    body = strip_reminder(text)
+    body = strip_reminder(text) if body is None else body
+    if char_colors:
+        return _colored_html(body, emoji_style, marks, mark_style, char_colors)
     out, pos = [], 0
     for start, end in marks:
         out.append(piece(body[pos:start]))
         out.append(f'<span style="{mark_style}">{piece(body[start:end])}</span>')
         pos = end
     out.append(piece(body[pos:]))
+    return "".join(out)
+
+
+def _colored_html(body, emoji_style, marks, mark_style, char_colors) -> str:
+    """글자마다 색을 입힌 HTML (to_html 의 char_colors). 이모지 덩어리는 한 칸으로 같은 색"""
+    marked = {i for start, end in marks for i in range(start, end)}
+    emojis = {m.start(): m.end() for m in EMOJI_RE.finditer(body)}
+    out, pos = [], 0
+    while pos < len(body):
+        end = emojis.get(pos, pos + 1)
+        part = html.escape(body[pos:end])
+        style = f"color:{char_colors[pos % len(char_colors)]};"
+        if pos in marked:
+            style += mark_style
+        if pos in emojis and emoji_style:
+            style += emoji_style
+        out.append(f'<span style="{style}">{part}</span>')
+        pos = end
     return "".join(out)
 
 

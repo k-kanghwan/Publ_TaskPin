@@ -1,6 +1,6 @@
 """트레이 아이콘 + 단일 인스턴스
 
-트레이 우클릭 메뉴에는 "위젯 보이기" 토글과 "종료"만 둔다.
+트레이 우클릭 메뉴에는 "위젯 보이기" / "항상 위에 보이기" 토글과 "종료"만 둔다.
 (토글 연결과 종료 정리는 TaskPinApp 에서 수행)
 이미 실행 중일 때 다시 실행하면 기존 앱의 on_second_instance() 가 불리고 새 실행은 끝난다.
 """
@@ -13,6 +13,7 @@ from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtWidgets import QApplication, QMenu, QMessageBox, QSystemTrayIcon, QWidget
 
 from manager import os_win, paths
+from ui import menus
 
 
 def notify_running_instance(app_id) -> bool:
@@ -69,14 +70,18 @@ class TrayApp(QWidget):
             sys.exit(1)
 
         # 바탕화면 위젯 표시 토글 (연결은 TaskPinApp 에서 수행)
-        self.action_toggle_widget = QAction("위젯 보이기", self)
+        self.action_toggle_widget = QAction(menus.icon("show"), "위젯 보이기", self)
         self.action_toggle_widget.setCheckable(True)
+        # 위젯 "항상 위에 보이기" (좌패널 우클릭 메뉴와 같은 설정 - 연결은 TaskPinApp)
+        self.action_on_top = QAction(menus.icon("pin"), "항상 위에 보이기", self)
+        self.action_on_top.setCheckable(True)
 
-        self.action_quit = QAction("종료", self)
+        self.action_quit = QAction(menus.icon("power"), "종료", self)
         self.action_quit.triggered.connect(self.app_close)
 
         self.tray_menu = QMenu()
         self.tray_menu.addAction(self.action_toggle_widget)
+        self.tray_menu.addAction(self.action_on_top)
         self.tray_menu.addSeparator()
         self.tray_menu.addAction(self.action_quit)
 

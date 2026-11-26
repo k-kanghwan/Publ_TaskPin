@@ -14,6 +14,12 @@ TEXT_LEVELS = (
     ("text_disabled", 0.46, 0.62, 2.5),
     ("text_dim", 0.40, 0.66, 2.2),
 )
+# 중요 항목(본문이 `!` 로 시작)의 무지개 글자: 한 글자마다 색상환을 이만큼 돈다, 배경 대비 최소 대비율
+RAINBOW_HUE_STEP = 1 / 12
+RAINBOW_SATURATION = 0.8
+RAINBOW_CONTRAST = 4.5
+RAINBOW_HUES = 120  # 색상을 이 칸으로 끊어 계산해 둔다 (흐르는 색을 그릴 때마다 다시 재지 않게)
+_RAINBOW_CACHE = {}
 TINT_SATURATION = 0.3  # 글자색 채도 상한 (배경 채도가 더 낮으면 배경 채도 - 회색 배경이면 회색 글자)
 _STEP = 0.01
 
@@ -57,6 +63,30 @@ def text_color(bg: str, lightness: float, min_contrast: float) -> str:
         if contrast(color, bg) >= min_contrast or lightness in (0.0, 1.0):
             return color
         lightness = min(1.0, max(0.0, lightness + step))
+
+
+def rainbow_color(hue: float, bg: str) -> str:
+    """bg 위에서 읽히는(대비 RAINBOW_CONTRAST 이상) 그 색상의 선명한 색"""
+    slot = round((hue % 1.0) * RAINBOW_HUES) % RAINBOW_HUES
+    key = (slot, bg)
+    color = _RAINBOW_CACHE.get(key)
+    if color is None:
+        dark = is_dark(bg)
+        lightness = 0.62 if dark else 0.42
+        step = _STEP if dark else -_STEP
+        while True:
+            rgb = colorsys.hls_to_rgb(slot / RAINBOW_HUES, lightness, RAINBOW_SATURATION)
+            color = _hex(rgb)
+            if contrast(color, bg) >= RAINBOW_CONTRAST or lightness in (0.0, 1.0):
+                break
+            lightness = min(1.0, max(0.0, lightness + step))
+        _RAINBOW_CACHE[key] = color
+    return color
+
+
+def rainbow(count: int, phase: float, bg: str) -> list:
+    """글자 count 개의 무지개 색 (글자마다 RAINBOW_HUE_STEP 씩). phase(0 ~ 1)를 밀면 색이 흐른다"""
+    return [rainbow_color(phase + i * RAINBOW_HUE_STEP, bg) for i in range(count)]
 
 
 def text_colors(bg: str) -> dict:

@@ -2,7 +2,8 @@
 
 좌측 사이드바에서 탭을 고르고 우측 카드에서 바로 바꾼다 (확인 버튼 없이 즉시 config.json 에 저장).
   - Keyboard Shortcuts : 위젯 단축키. 다른 동작과 겹치면 저장하지 않고 경고
-  - Snippets           : `:트리거:` -> 문구 목록. 빈 칸 / 중복 트리거는 저장하지 않고 표시만
+  - Snippets           : `:트리거:` -> 문구 목록. 빈 칸 / 중복 트리거는 저장하지 않고 표시만.
+                         왼쪽 손잡이를 끌어 순서를 바꾼다 (Esc 취소)
   - Appearance         : 테마 / 추천 테마(강조색 · 배경색 묶음, 글자색은 배경에 맞춤 - widget_config.COLOR_PRESETS) /
                          강조색 / 배경색 / 투명도 / 글자도 함께 투명 / 폰트, 좌·우패널 글자 크기,
                          TODO 글자색 / 완료 항목 취소선 / 행 구분선 / 하위 가이드 선 / 페이지 표시 위치,
@@ -26,9 +27,20 @@ import sqlite3
 from dataclasses import replace
 from datetime import datetime
 
-from PySide6.QtCore import QPointF, QRectF, QSize, QStandardPaths, Qt, QUrl, Signal
+from PySide6.QtCore import (
+    QEvent,
+    QPointF,
+    QRectF,
+    QSize,
+    QStandardPaths,
+    Qt,
+    QTimer,
+    QUrl,
+    Signal,
+)
 from PySide6.QtGui import (
     QColor,
+    QCursor,
     QDesktopServices,
     QFont,
     QFontDatabase,
@@ -40,6 +52,7 @@ from PySide6.QtGui import (
     QPixmap,
 )
 from PySide6.QtWidgets import (
+    QApplication,
     QButtonGroup,
     QComboBox,
     QFileDialog,
@@ -83,6 +96,11 @@ RESET_ICON_PEN = 1.2
 OPACITY_SLIDER_WIDTH = 150
 SLIDER_HANDLE = 12  # 투명도 슬라이더 핸들 지름(px) - 홈(4px)보다 크다
 SLIDER_HEIGHT = SLIDER_HANDLE + 4  # 핸들이 잘리지 않는 슬라이더 높이
+SNIPPET_HANDLE_SIZE = (12, 20)  # 스니펫 행 왼쪽 끌기 손잡이 (점 2 x 3)
+SNIPPET_DRAG_ALPHA = 40  # 끄는 스니펫 행 배경 (강조색)
+SNIPPET_SCROLL_MARGIN = 20  # 끄는 중 목록 위 / 아래 끝에서 자동 스크롤되는 영역(px)
+SNIPPET_SCROLL_MS = 30
+SNIPPET_SCROLL_STEP = 8
 RESET_PHRASE = "모든 데이터 초기화"  # 초기화하려면 이 문구를 똑같이 입력한다
 
 # (아이콘, 탭 이름) - 아이콘은 글자색을 따르는 흑백 기호
@@ -114,6 +132,16 @@ SHORTCUT_GROUPS = [
         [
             ("todo_focus", "할 일 추가", "할 일 입력칸으로 커서 이동"),
             ("todo_edit", "할 일 수정", "선택한 할 일을 수정합니다 (F2 도 됩니다)"),
+            (
+                "todo_undo",
+                "되돌리기",
+                "할 일 · 페이지 변경을 되돌립니다 (Ctrl+Z 도 됩니다, 입력칸 안에서는 글자 되돌리기)",
+            ),
+            (
+                "todo_redo",
+                "다시 실행",
+                "되돌린 것을 다시 적용합니다 (Ctrl+Y · Ctrl+Shift+Z 도 됩니다)",
+            ),
             ("todo_check", "할 일 체크", "선택한 할 일을 완료 / 해제합니다"),
             ("todo_outdent", "단계 올리기", "선택한 할 일을 상위 바로 뒤로 올립니다"),
             ("todo_indent", "단계 내리기", "선택한 할 일을 바로 위 할 일의 하위로 내립니다"),
@@ -155,7 +183,7 @@ SHORTCUT_GROUPS = [
             (
                 "todo_page_first",
                 "첫 페이지",
-                "맨 앞 페이지(미완료)로 넘깁니다",
+                "맨 앞 페이지(미완료 - 숨겼으면 첫 페이지)로 넘깁니다",
             ),
             ("todo_page_last", "마지막 페이지", "맨 뒤 페이지로 넘깁니다"),
             ("todo_page_new", "새 페이지", "맨 뒤에 새 페이지를 만들고 넘어갑니다"),
@@ -177,6 +205,10 @@ APP_ICON_LABELS = ("다크", "라이트")  # widget_config.APP_ICONS 순서
 SCALE_NAMES = {90: "작게", 100: "보통", 115: "크게", 130: "아주 크게"}
 POPUP_WIDTH_NAMES = {220: "좁게", 260: "보통", 320: "넓게", 380: "아주 넓게"}
 POPUP_PREVIEW_TEXT = "회의자료 준비하기 (예시)"
+# 위젯에 보이지 않는 Appearance 값 (알림 창) - 바꿔도 위젯 / 설정창을 다시 입히지 않는다
+POPUP_KEYS = ("popup_width", "popup_scale")
+# 값은 widget_config.PAGE_COUNTS 와 같다
+PAGE_COUNT_OPTIONS = [("all", "하위 포함"), ("top", "최상위만")]
 # 값은 widget_config.PAGE_BAR_POSITIONS 와 같다
 PAGE_BAR_OPTIONS = [
     ("top", "위"),
@@ -218,7 +250,6 @@ def _settings_style(t: theme.Theme) -> str:
     return (
         theme.button_style(t)
         + theme.popup_form_style(t)
-        + theme.menu_style(t)  # 입력칸 우클릭 메뉴
         + f"""
     QWidget#settings {{ background: {window_bg}; }}
     QLabel {{
@@ -462,17 +493,81 @@ class _NoWheelSlider(QSlider):
         event.ignore()
 
 
+class _DragHandle(QWidget):
+    """스니펫 행 왼쪽 손잡이 (점 2 x 3, 직접 그림). 눌러 끄는 동안 위치를 알린다 - QDrag 대신 마우스 grab.
+    끄는 중 Esc 는 canceled."""
+
+    pressed = Signal()
+    moved = Signal()
+    released = Signal()
+    canceled = Signal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedSize(*SNIPPET_HANDLE_SIZE)
+        self.setCursor(Qt.OpenHandCursor)
+        self.setToolTip("끌어서 순서 바꾸기")
+        self._color = QColor("#9e9e9e")
+        self._dragging = False
+
+    def set_color(self, color: str):
+        self._color = QColor(color)
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(self._color)
+        w, h = self.width(), self.height()
+        for col in (-1, 1):
+            for row in (-1, 0, 1):
+                painter.drawEllipse(QPointF(w / 2 + col * 2.5, h / 2 + row * 4.5), 1.3, 1.3)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self._dragging = True
+            self.setCursor(Qt.ClosedHandCursor)
+            self.grabKeyboard()  # Esc 로 취소
+            self.pressed.emit()
+            event.accept()
+
+    def mouseMoveEvent(self, event):
+        if self._dragging:
+            self.moved.emit()
+
+    def mouseReleaseEvent(self, event):
+        if self._dragging and event.button() == Qt.LeftButton:
+            self._stop()
+            self.released.emit()
+
+    def keyPressEvent(self, event):
+        if self._dragging and event.key() == Qt.Key_Escape:
+            self._stop()
+            self.canceled.emit()
+            return
+        super().keyPressEvent(event)
+
+    def _stop(self):
+        self._dragging = False
+        self.releaseKeyboard()
+        self.setCursor(Qt.OpenHandCursor)
+
+
 class _SnippetRow(QWidget):
-    """`:트리거:` -> 문구 한 줄"""
+    """[손잡이] `:트리거:` -> 문구 한 줄. 끄는 동안은 강조색 배경 (set_drag_color)"""
 
     changed = Signal()
     removed = Signal(object)  # _SnippetRow
 
     def __init__(self, trigger: str, text: str, parent=None):
         super().__init__(parent)
+        self._drag_color = None
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(4)
+        self.handle = _DragHandle(self)
+        layout.addWidget(self.handle)
 
         self.name_edit = QLineEdit(trigger[1:-1] if trigger else "")
         self.name_edit.setPlaceholderText("idea")
@@ -500,6 +595,20 @@ class _SnippetRow(QWidget):
         layout.addWidget(self.text_edit, 1)
         layout.addSpacing(4)
         layout.addWidget(btn_remove)
+
+    def set_drag_color(self, color):
+        """끄는 중이면 그 색(QColor)으로 행 배경을 칠한다 (None 이면 지움)"""
+        self._drag_color = color
+        self.update()
+
+    def paintEvent(self, event):
+        if self._drag_color is None:
+            return
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        path = QPainterPath()
+        path.addRoundedRect(QRectF(self.rect()), 6, 6)
+        painter.fillPath(path, self._drag_color)
 
 
 class _ColorButton(QPushButton):
@@ -582,6 +691,8 @@ class SettingsDialog(QWidget):
     app_icon_changed = Signal()
     # config 의 "opacity" 가 바뀜 (투명도 슬라이더) - 위젯이 바로 다시 칠한다 (저장은 이 창이)
     opacity_changed = Signal()
+    # config 의 알림 창 폭 / 글자 크기(POPUP_KEYS)가 바뀜 - 위젯은 다시 입히지 않고 테마 값만 바꾼다
+    popup_changed = Signal()
     # "모든 데이터 초기화" 로 DB 를 비움 - TaskPinApp 이 메모리의 할 일 / Task 상태를 다시 읽는다
     data_reset = Signal()
 
@@ -596,6 +707,11 @@ class SettingsDialog(QWidget):
         self._shortcut_edits = {}
         self._shortcut_notes = {}
         self._snippet_rows = []
+        self._snippet_drag = None  # 끄는 스니펫 행 (끌기 전 순서는 _snippet_order)
+        self._snippet_order = []
+        self._snippet_scroll_timer = QTimer(self)
+        self._snippet_scroll_timer.setInterval(SNIPPET_SCROLL_MS)
+        self._snippet_scroll_timer.timeout.connect(self._snippet_auto_scroll)
 
         self.setObjectName("settings")
         self.setAttribute(Qt.WA_StyledBackground, True)
@@ -761,7 +877,7 @@ class SettingsDialog(QWidget):
             "키를 두 번 이어 눌러 G, G (gg) 처럼 정할 수도 있습니다.\n"
             "탐색 키와 체크 · 단계 올리기 / 내리기 · 삭제 · 잘라내기 · 복사 · 붙여넣기는 할 일 목록에 포커스가 있을 때만 동작합니다. "
             "고정 키(바꿔도 함께 동작): ↑↓←→ · Home/End · Delete · Ctrl+X/C/V · F2 수정(선택이 없으면 "
-            "페이지 이름) · Esc 선택 해제",
+            "페이지 이름) · Ctrl+Z 되돌리기 · Ctrl+Y / Ctrl+Shift+Z 다시 실행 · Esc 선택 해제",
         )
         current = widget_config.shortcuts(self._cfg)
         for group, rows in SHORTCUT_GROUPS:
@@ -830,7 +946,8 @@ class SettingsDialog(QWidget):
     def _build_snippets_page(self) -> QWidget:
         page, card, card_layout = self._page(
             "Snippets",
-            "할 일 · 업무명 입력 중 :idea: 처럼 트리거를 치면 문구로 바뀝니다. 앞뒤 콜론(:)은 자동으로 붙습니다.",
+            "할 일 · 업무명 입력 중 :idea: 처럼 트리거를 치면 문구로 바뀝니다. 앞뒤 콜론(:)은 자동으로 붙습니다. "
+            "왼쪽 손잡이를 끌어 순서를 바꿉니다.",
         )
         card_layout.setContentsMargins(16, 12, 10, 12)
 
@@ -864,15 +981,87 @@ class SettingsDialog(QWidget):
         row = _SnippetRow(trigger, text)
         row.changed.connect(self._save_snippets)
         row.removed.connect(self._remove_snippet)
+        row.handle.set_color(self._look.text_sub)
+        row.handle.pressed.connect(lambda r=row: self._start_snippet_drag(r))
+        row.handle.moved.connect(self._move_snippet_drag)
+        row.handle.released.connect(lambda: self._end_snippet_drag(cancel=False))
+        row.handle.canceled.connect(lambda: self._end_snippet_drag(cancel=True))
         # 맨 뒤의 stretch 앞에 넣는다
         self._snippet_layout.insertWidget(self._snippet_layout.count() - 1, row)
         self._snippet_rows.append(row)
         return row
 
     def _add_snippet(self):
+        """빈 행을 맨 뒤에 넣고 트리거 칸으로 커서를 옮긴 뒤 그 행이 보이게 스크롤한다.
+        넣은 직후에는 레이아웃이 끝나지 않아 행이 (0, 0) 에 있고 스크롤 범위도 옛 크기다 - 그대로 맞추면
+        맨 위로 간다. 카드 / 스크롤 영역으로 크기가 전해지려면 레이아웃 요청이 여러 번 돌아야 하므로,
+        지금 할 수 있는 만큼 끝내고 맞춘 뒤 이벤트 루프가 한 바퀴 돈 다음에 한 번 더 맞춘다."""
         row = self._append_snippet_row("", "")
         row.name_edit.setFocus()
+        self._snippet_layout.activate()
+        QApplication.sendPostedEvents(None, QEvent.LayoutRequest)
         self._snippet_scroll.ensureWidgetVisible(row)
+        QTimer.singleShot(0, self, lambda: self._snippet_scroll.ensureWidgetVisible(row))
+
+    # ---- 스니펫 순서 끌기 (손잡이를 누른 채 위아래로 - 행이 실시간으로 자리를 바꾼다) ----
+    def _start_snippet_drag(self, row: _SnippetRow):
+        self._snippet_drag = row
+        self._snippet_order = list(self._snippet_rows)
+        color = QColor(self._look.accent)
+        color.setAlpha(SNIPPET_DRAG_ALPHA)
+        row.set_drag_color(color)
+        self._snippet_scroll_timer.start()
+
+    def _cursor_y(self) -> int:
+        """커서 y (스니펫 목록 container 좌표)"""
+        container = self._snippet_scroll.widget()
+        return container.mapFromGlobal(QCursor.pos()).y()
+
+    def _move_snippet_drag(self):
+        """끄는 행을 커서 자리로: 다른 행 가운데보다 아래에 있으면 그 뒤로"""
+        row = self._snippet_drag
+        if row is None:
+            return
+        y = self._cursor_y()
+        others = [other for other in self._snippet_rows if other is not row]
+        index = sum(1 for other in others if other.geometry().center().y() < y)
+        if self._snippet_rows.index(row) != index:
+            self._place_snippet_row(row, index)
+
+    def _place_snippet_row(self, row: _SnippetRow, index: int):
+        self._snippet_rows.remove(row)
+        self._snippet_rows.insert(index, row)
+        self._snippet_layout.removeWidget(row)
+        self._snippet_layout.insertWidget(index, row)  # 맨 뒤 stretch 앞 (행 순서 = 목록 순서)
+
+    def _snippet_auto_scroll(self):
+        """끄는 중 커서가 목록 위 / 아래 끝에 있으면 그쪽으로 스크롤하고 자리를 다시 맞춘다."""
+        viewport = self._snippet_scroll.viewport()
+        y = viewport.mapFromGlobal(QCursor.pos()).y()
+        bar = self._snippet_scroll.verticalScrollBar()
+        if y < SNIPPET_SCROLL_MARGIN:
+            bar.setValue(bar.value() - SNIPPET_SCROLL_STEP)
+        elif y > viewport.height() - SNIPPET_SCROLL_MARGIN:
+            bar.setValue(bar.value() + SNIPPET_SCROLL_STEP)
+        else:
+            return
+        self._move_snippet_drag()
+
+    def _end_snippet_drag(self, cancel: bool):
+        """놓으면 그 순서로 저장, Esc 면 끌기 전 순서로 되돌린다."""
+        row = self._snippet_drag
+        if row is None:
+            return
+        self._snippet_drag = None
+        self._snippet_scroll_timer.stop()
+        row.set_drag_color(None)
+        if cancel:
+            for index, original in enumerate(self._snippet_order):
+                if self._snippet_rows.index(original) != index:
+                    self._place_snippet_row(original, index)
+        elif self._snippet_rows != self._snippet_order:
+            self._save_snippets()
+        self._snippet_order = []
 
     def _remove_snippet(self, row: _SnippetRow):
         self._snippet_rows.remove(row)
@@ -1024,6 +1213,15 @@ class SettingsDialog(QWidget):
             "위 · 아래: 페이지 이름 칩 + 점, 왼쪽 · 오른쪽: 점만",
             box,
         ).setWordWrap(True)
+        box, self._page_count_group = self._segmented(
+            PAGE_COUNT_OPTIONS, lambda v: self._set_appearance("page_count", v)
+        )
+        self._add_row(
+            card_layout,
+            "페이지 할 일 수",
+            "페이지 이름 옆 숫자에 하위 할 일까지 셀지, 최상위 할 일만 셀지 (체크 안 한 것만)",
+            box,
+        ).setWordWrap(True)
 
         # ---- 리마인더 알림 창 ----
         card_layout = self._add_group(groups, "알림 창 (리마인더)")
@@ -1037,16 +1235,23 @@ class SettingsDialog(QWidget):
             lambda v: self._set_appearance("popup_scale", v),
         )
         self._add_row(card_layout, "글자 크기", "창 크기도 함께 커지고 작아집니다", box)
-        # 실제 알림 창과 같은 크기 / 테마로 그린 예시 (값을 바꿀 때마다 다시 만든다)
+        # 실제 알림 창과 같은 크기 / 테마로 그린 예시 (값을 바꿀 때마다 다시 만든다).
+        # 예시 칸 높이는 가장 큰 알림 창 높이로 고정한다 - 크기를 바꿀 때 아래 행이 오르내리지 않게
         card_layout.addWidget(_line())
         preview_row = QWidget()
-        self._popup_preview_layout = QVBoxLayout(preview_row)
-        self._popup_preview_layout.setContentsMargins(0, 10, 0, 12)
-        self._popup_preview_layout.setSpacing(8)
+        preview_layout = QVBoxLayout(preview_row)
+        preview_layout.setContentsMargins(0, 10, 0, 12)
+        preview_layout.setSpacing(8)
         preview_sub = QLabel("실제 크기 예시 · 높이는 내용에 맞춰집니다")
         preview_sub.setObjectName("sub")
-        self._popup_preview_layout.addWidget(preview_sub)
+        preview_layout.addWidget(preview_sub)
+        self._popup_preview_box = QWidget()
+        self._popup_preview_layout = QVBoxLayout(self._popup_preview_box)
+        self._popup_preview_layout.setContentsMargins(0, 0, 0, 0)
+        self._popup_preview_layout.addStretch(1)
+        preview_layout.addWidget(self._popup_preview_box)
         self._popup_preview = None
+        self._popup_preview_heights = {}  # 글꼴 -> 가장 큰 알림 창 높이 (예시 칸 높이)
         card_layout.addWidget(preview_row)
 
         # ---- 사용자 태그 (우패널 우클릭 "태그" 의 "태그 없음" 아래에 보인다) ----
@@ -1292,9 +1497,18 @@ class SettingsDialog(QWidget):
 
     def _set_appearance(self, key: str, value):
         current = widget_config.appearance(self._cfg)
-        if current[key] != value:
-            current[key] = value
-            self._save_appearance(current)
+        if current[key] == value:
+            return
+        current[key] = value
+        if key in POPUP_KEYS:
+            # 알림 창 폭 / 글자 크기는 위젯에 보이지 않는다 - 위젯 / 설정창을 다시 입히지 않고(깜빡임)
+            # 테마 값만 바꾸고(TaskPinApp, 팝업은 띄울 때 읽음) 이 창은 예시만 다시 그린다
+            self._cfg["appearance"] = current
+            widget_config.save_config(self._cfg)
+            self.popup_changed.emit()
+            self._refresh_popup(current)
+            return
+        self._save_appearance(current)
 
     def _save_appearance(self, values: dict):
         self._cfg["appearance"] = values
@@ -1310,6 +1524,8 @@ class SettingsDialog(QWidget):
         painted.set_boxes(self, _settings_boxes(self._look))
         if self.isVisible():
             os_win.set_dark_title_bar(int(self.winId()), self._look.dark)
+        for row in self._snippet_rows:
+            row.handle.set_color(self._look.text_sub)
         self._refresh_appearance()
 
     def _refresh_appearance(self):
@@ -1340,12 +1556,26 @@ class SettingsDialog(QWidget):
         self._page_bar_group.button(
             [value for value, _ in PAGE_BAR_OPTIONS].index(a["page_bar"])
         ).setChecked(True)
+        self._page_count_group.button(
+            [value for value, _ in PAGE_COUNT_OPTIONS].index(a["page_count"])
+        ).setChecked(True)
         self._left_scale_group.button(
             widget_config.LEFT_SCALES.index(a["left_scale"])
         ).setChecked(True)
         self._todo_scale_group.button(
             widget_config.TODO_SCALES.index(a["todo_scale"])
         ).setChecked(True)
+        self._refresh_popup(a)
+
+        idx = self._font_combo.findData(a["font_family"])
+        # 저장된 폰트가 지워졌으면 이름만 남겨 둔다 (Qt 가 대체 폰트로 그림)
+        if idx < 0:
+            self._font_combo.addItem(f"{a['font_family']} (없음)", a["font_family"])
+            idx = self._font_combo.count() - 1
+        self._font_combo.setCurrentIndex(idx)
+
+    def _refresh_popup(self, a: dict):
+        """알림 창 폭 / 글자 크기 버튼과 폭 설명, 예시를 a(appearance)에 맞춘다."""
         self._popup_width_group.button(
             widget_config.POPUP_WIDTHS.index(a["popup_width"])
         ).setChecked(True)
@@ -1358,28 +1588,51 @@ class SettingsDialog(QWidget):
         )
         self._rebuild_popup_preview(a)
 
-        idx = self._font_combo.findData(a["font_family"])
-        # 저장된 폰트가 지워졌으면 이름만 남겨 둔다 (Qt 가 대체 폰트로 그림)
-        if idx < 0:
-            self._font_combo.addItem(f"{a['font_family']} (없음)", a["font_family"])
-            idx = self._font_combo.count() - 1
-        self._font_combo.setCurrentIndex(idx)
-
-    def _rebuild_popup_preview(self, a: dict):
-        """알림 창 예시를 지금 설정으로 다시 만든다. 설정창 테마가 아니라 실제 팝업과 같은
-        위젯 테마(배경색 / 폰트 포함)로, 같은 폭 / 글자 크기로 그린다."""
-        if self._popup_preview is not None:
-            self._popup_preview_layout.removeWidget(self._popup_preview)
-            self._popup_preview.deleteLater()
+    @staticmethod
+    def _preview_popup(a: dict) -> ReminderPopup:
+        """설정창 테마가 아니라 실제 팝업과 같은 위젯 테마(배경색 / 폰트 포함)로 그린 알림 창 예시"""
         due = datetime.now().astimezone().replace(second=0, microsecond=0)
-        self._popup_preview = ReminderPopup(
+        return ReminderPopup(
             "",
             POPUP_PREVIEW_TEXT,
             due,
             look=theme.build(a, theme.system_dark()),
             preview=True,
         )
-        self._popup_preview_layout.addWidget(self._popup_preview, 0, Qt.AlignLeft)
+
+    def _popup_preview_height(self, a: dict) -> int:
+        """가장 큰 알림 창(가장 큰 글자 배율, 폭마다 줄바꿈이 달라 모든 폭 중 가장 높은 것)의 높이.
+        높이는 글꼴에 따라 달라서 글꼴마다 한 번만 잰다."""
+        key = a["font_family"]
+        if key not in self._popup_preview_heights:
+            heights = []
+            for width in widget_config.POPUP_WIDTHS:
+                popup = self._preview_popup(
+                    {
+                        **a,
+                        "popup_width": width,
+                        "popup_scale": max(widget_config.POPUP_SCALES),
+                    }
+                )
+                heights.append(popup.height())
+                popup.deleteLater()
+            self._popup_preview_heights[key] = max(heights)
+        return self._popup_preview_heights[key]
+
+    def _rebuild_popup_preview(self, a: dict):
+        """알림 창 예시를 지금 설정으로 다시 만든다. 예시 칸 높이는 가장 큰 알림 창에 맞춰 고정이라
+        크기를 바꿔도 아래 행이 움직이지 않고, 바꾸는 동안 칸만 한 번에 다시 그린다."""
+        box = self._popup_preview_box
+        box.setUpdatesEnabled(False)
+        if self._popup_preview is not None:
+            self._popup_preview_layout.removeWidget(self._popup_preview)
+            self._popup_preview.deleteLater()
+        box.setFixedHeight(self._popup_preview_height(a))
+        self._popup_preview = self._preview_popup(a)
+        self._popup_preview_layout.insertWidget(
+            0, self._popup_preview, 0, Qt.AlignLeft | Qt.AlignTop
+        )
+        box.setUpdatesEnabled(True)
 
     # ==================================================
     # Application: TODO 동작 / 설정 내보내기 / 가져오기
@@ -1418,6 +1671,15 @@ class SettingsDialog(QWidget):
             card_layout,
             "되돌릴 수 있는 삭제",
             "우클릭 → 삭제 이력에 보이는 최근 삭제 수 (이력은 DB에 계속 남습니다)",
+            box,
+        ).setWordWrap(True)
+        box, self._remember_scroll_group = self._segmented(
+            ON_OFF_OPTIONS, self._set_remember_scroll
+        )
+        self._add_row(
+            card_layout,
+            "페이지 스크롤 기억",
+            "다른 페이지에 갔다 돌아오면 보던 자리로 스크롤합니다 (앱을 켜 둔 동안만, 프로필을 바꾸면 맨 위부터)",
             box,
         ).setWordWrap(True)
 
@@ -1498,6 +1760,10 @@ class SettingsDialog(QWidget):
         self._cfg["undo_limit"] = limit
         widget_config.save_config(self._cfg)
 
+    def _set_remember_scroll(self, on: bool):
+        self._cfg["remember_scroll"] = on
+        widget_config.save_config(self._cfg)
+
     def _refresh_application(self):
         """저장된 값으로 Application 탭 표시를 맞춘다 (위젯의 확인 창에서 "다시 묻지 않음"을 켰을 수 있다)."""
         self._app_icon_group.button(
@@ -1508,6 +1774,9 @@ class SettingsDialog(QWidget):
         ).setChecked(True)
         self._undo_limit_group.button(
             widget_config.UNDO_LIMITS.index(widget_config.undo_limit(self._cfg))
+        ).setChecked(True)
+        self._remember_scroll_group.button(
+            int(widget_config.remember_scroll(self._cfg))
         ).setChecked(True)
 
     def _start_folder(self) -> str:

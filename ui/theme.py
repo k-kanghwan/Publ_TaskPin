@@ -4,7 +4,7 @@
 각 화면은 스타일을 만들 때 current() 를 읽는다. 위젯은 apply_appearance() 로 다시 입히고,
 팝업은 띄울 때마다 새로 만들므로 그때의 테마를 따른다.
 설정창은 테마(다크 / 라이트)와 강조색만 따른다 (settings_dialog._settings_theme).
-우클릭 메뉴는 배경색을 골라도 테마 설정(다크 / 라이트)을 따른다.
+우클릭 메뉴는 배경색을 골라도 테마 설정(다크 / 라이트)을 따른다 (그리기는 ui/menus.MenuStyle).
 배경색을 고르면 글자색은 배경의 색조를 띠고 배경 대비 읽히는 대비율을 지킨다 (manager/colors).
 """
 
@@ -47,6 +47,7 @@ class Theme:
     todo_row_lines: bool = False  # 할 일 행 사이 구분선
     todo_guides: bool = True  # 하위 레벨 가이드 선
     page_bar: str = "top"  # TODO 페이지 표시 위치 (top / bottom / left / right)
+    page_count: str = "all"  # 페이지 칩의 할 일 수 (all 하위 포함 / top 최상위만)
     fade_text: bool = False  # 투명도가 글자까지 투명하게 (False: 배경만)
     popup_width: int = 260  # 리마인더 알림 창 폭(px)
     popup_scale: int = 100  # 리마인더 알림 창 글자 배율(%)
@@ -88,7 +89,7 @@ DARK = Theme(
     menu_bg="#2b2b2b",
     menu_border="#4a4a4a",
     menu_text="#f0f0f0",
-    menu_hover="rgba(255,255,255,40)",
+    menu_hover="rgba(255,255,255,26)",
     menu_disabled="#6d6d6d",
     text_main="#f0f0f0",
     text_sub="#9e9e9e",
@@ -107,7 +108,7 @@ LIGHT = Theme(
     menu_bg="#ffffff",
     menu_border="#cfcfd4",
     menu_text="#1e1e1e",
-    menu_hover="rgba(0,0,0,40)",
+    menu_hover="rgba(0,0,0,16)",
     menu_disabled="#a0a0a0",
     text_main="#1e1e1e",
     text_sub="#6a6a6a",
@@ -168,6 +169,7 @@ def build(appearance: dict, system_dark: bool = True) -> Theme:
         "todo_row_lines": appearance["todo_row_lines"],
         "todo_guides": appearance["todo_guides"],
         "page_bar": appearance["page_bar"],
+        "page_count": appearance["page_count"],
         "fade_text": appearance["fade_text"],
         "popup_width": appearance["popup_width"],
         "popup_scale": appearance["popup_scale"],
@@ -190,26 +192,8 @@ def px(base: int, scale: int) -> int:
     return round(base * scale / 100)
 
 
-# 위젯 밖에 뜨는 팝업(QMenu 등)의 공통 스타일.
-# 위젯 / 설정창 스타일시트에도 넣어 두면 입력칸의 기본 우클릭 메뉴(잘라내기 / 붙여넣기)까지 적용된다.
-def menu_style(t: Theme) -> str:
-    return f"""
-    QMenu {{
-        background-color: {t.menu_bg};
-        color: {t.menu_text};
-        font-family: {t.font_family};
-        border: 1px solid {t.menu_border};
-        padding: 4px;
-    }}
-    QMenu::item {{ padding: 6px 24px 6px 20px; background: transparent; }}
-    QMenu::item:selected {{ background-color: {t.menu_hover}; }}
-    QMenu::item:disabled {{ color: {t.menu_disabled}; }}
-    QMenu::separator {{
-        height: 1px;
-        background: {t.menu_border};
-        margin: 6px 4px;
-    }}
-"""
+# 우클릭 메뉴(QMenu)는 스타일시트가 아니라 앱 스타일 ui/menus.MenuStyle 이 그린다 (메뉴 색 MENU_FIELDS 를 읽음).
+# 스타일시트에 QMenu 규칙을 넣으면 그 메뉴는 스타일시트가 그리므로 넣지 않는다.
 
 
 # 둥근 배경 / 테두리는 스타일시트가 아니라 ui/painted 가 그린다 (스타일시트 border-radius 는 모서리가 깨짐).

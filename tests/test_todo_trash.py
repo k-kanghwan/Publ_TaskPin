@@ -65,3 +65,11 @@ def test_migrate_v7_adds_deletions(tmp_path):
         assert todo_trash.record([_entry("a")]) == 1
     finally:
         db.close()
+
+
+def test_unmark_restored_shows_batch_again(temp_db):
+    batch = todo_trash.record([_entry("a")])
+    todo_trash.mark_restored(batch)
+    assert todo_trash.recent(10) == []
+    todo_trash.unmark_restored(batch)
+    assert [b["batch"] for b in todo_trash.recent(10)] == [batch]
