@@ -57,7 +57,15 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from manager import os_win, snippets, todo_export, todo_pages, todo_store, widget_config
+from manager import (
+    os_win,
+    snippets,
+    todo_export,
+    todo_import,
+    todo_pages,
+    todo_store,
+    widget_config,
+)
 from ui import painted, theme
 from ui.confirm_dialog import ConfirmDialog
 from ui.painted import EditableLabel
@@ -684,6 +692,7 @@ class ClockWidget(QWidget):
             page_id=todo_pages.last_page(),  # 프로필(DB)마다 따로 기억한다
         )
         self.todo_panel.export_requested.connect(self._export_todos)
+        self.todo_panel.import_requested.connect(self._import_todos)
         self.todo_panel.page_changed.connect(self._save_todo_page)
 
         # 세로 모드에서 폭을 바꾸면 업무명 배지 말줄임을 다시 (자식을 다 만든 뒤에 건다)
@@ -1375,6 +1384,59 @@ class ClockWidget(QWidget):
             self.hold_on_top("export", False)
         self._cfg["export_dir"] = os.path.dirname(path)
         widget_config.save_config(self._cfg)
+
+    def _import_todos(self, mode: str):
+        """우패널 "가져오기": Markdown 체크리스트 파일을 새 페이지의 할 일로 넣는다 (지금 페이지는 그대로).
+        mode: todo_import.SINGLE 한 페이지로 / SECTIONS ## 섹션마다 페이지로.
+        시작 폴더는 내보내기와 같은 마지막 폴더(cfg export_dir). 파일 창 / 확인 창이 떠 있는 동안은 위에 둔다."""
+        title = "TODO 가져오기"
+        folder = self._cfg.get("export_dir") or QStandardPaths.writableLocation(
+            QStandardPaths.DocumentsLocation
+        )
+        self.hold_on_top("import", True)
+        try:
+            path, _ = QFileDialog.getOpenFileName(
+                self,
+                title,
+                os.path.normpath(folder),
+                "Markdown (*.md *.markdown *.txt);;모든 파일 (*)",
+            )
+            if not path:
+                return
+            try:
+                text = todo_import.read_file(path)
+            except (OSError, ValueError) as e:
+                QMessageBox.warning(self, title, f"파일을 읽지 못했습니다.\n{e}")
+                return
+            self._cfg["export_dir"] = os.path.dirname(path)
+            widget_config.save_config(self._cfg)
+            pages = todo_import.parse(
+                text, mode, todo_import.page_name_from_file(path)
+            )
+            if not pages:
+                QMessageBox.information(
+                    self,
+                    title,
+                    "가져올 할 일이 없습니다.\n'- [ ] 할 일' 같은 목록 줄을 할 일로 가져옵니다.",
+                )
+                return
+            count = sum(len(page["items"]) for page in pages)
+            names = [page["name"] for page in pages]
+            note = ", ".join(f"'{name}'" for name in names[:4])
+            if len(names) > 4:
+                note += f" 외 {len(names) - 4}장"
+            dialog = ConfirmDialog(
+                title,
+                f"새 페이지 {len(pages)}장에 할 일 {count}개를 가져올까요?",
+                confirm_text="가져오기",
+                note=note,
+                parent=self,
+            )
+            if not dialog.exec_over(self):
+                return
+        finally:
+            self.hold_on_top("import", False)
+        self.todo_panel.import_pages(pages)
 
     def set_locked(self, locked: bool):
         self._locked = locked
