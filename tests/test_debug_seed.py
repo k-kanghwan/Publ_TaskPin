@@ -11,9 +11,11 @@ from manager import (
     os_win,
     profiles,
     task_store,
+    todo_import,
     todo_pages,
     todo_store,
     todo_trash,
+    todo_tree,
     widget_config,
 )
 from tools import debug_seed
@@ -189,6 +191,73 @@ def test_examples_cover_data_features(debug_dir):
     ]
 
 
+def _import_sample(debug_dir, filename, mode=todo_import.SINGLE):
+    text = todo_import.read_file(str(debug_dir / debug_seed.EXPORT_FOLDER / filename))
+    return todo_import.parse(text, mode, "x", now=NOW.astimezone())
+
+
+def _hinted_levels(items):
+    """항목 글자의 '→ N단계' / '→ 최상위' 와 실제 레벨 [(글자, 적힌 레벨, 실제 레벨)]"""
+    result = []
+    for item, level in todo_tree.flatten(items, hide_collapsed=False):
+        text = item["text"]
+        if "→ 최상위" in text:
+            result.append((text, 0, level))
+        elif "단계" in text and "→ " in text:
+            result.append((text, int(text.split("→ ")[-1][0]), level))
+    return result
+
+
+def test_import_samples_in_exports(debug_dir):
+    debug_seed.fresh(NOW)
+    assert sorted(os.listdir(debug_dir / debug_seed.EXPORT_FOLDER)) == sorted(
+        debug_seed.IMPORT_SAMPLES
+    )
+
+
+def test_import_sample_sections(debug_dir):
+    debug_seed.fresh(NOW)
+    now = NOW.astimezone()
+    sections = _import_sample(debug_dir, debug_seed.IMPORT_SECTIONS, todo_import.SECTIONS)
+    assert [p["name"] for p in sections] == ["섹션 예제", "업무", "개인"]  # 빈 섹션은 없음
+    single = _import_sample(debug_dir, debug_seed.IMPORT_SECTIONS)
+    assert [p["name"] for p in single] == ["섹션 예제"]
+    items = single[0]["items"]
+    # 한 페이지에는 빈 섹션의 구분선도 들어온다 (섹션마다 페이지로는 빈 섹션째 버림)
+    tasks = [i for i in items if not todo_store.is_separator(i["text"])]
+    assert len(tasks) == sum(
+        not todo_store.is_separator(i["text"]) for p in sections for i in p["items"]
+    )
+    assert any(i["parent_id"] for i in items) and any(i["done"] for i in items)
+    assert any(todo_store.is_separator(i["text"]) for i in items)
+    upper = next(i for i in items if i["text"].startswith("완료 상위"))
+    assert not upper["done"]  # 하위가 미완료
+    dues = [todo_store.due_at(i) for i in items]
+    assert any(d and d < now for d in dues) and any(d and d > now for d in dues)
+    assert not any(todo_store.is_due(i, now) for i in items)  # 지난 리마인더도 팝업 없음
+
+
+def test_import_sample_bad_indent(debug_dir):
+    debug_seed.fresh(NOW)
+    (page,) = _import_sample(debug_dir, debug_seed.IMPORT_INDENT)
+    hinted = _hinted_levels(page["items"])
+    assert len(hinted) == 17
+    assert [(t, want) for t, want, got in hinted if want != got] == []
+    texts = [i["text"] for i in page["items"]]
+    assert not any("띄어쓰기 없음" in t for t in texts)  # -[ ] 는 목록이 아님
+    assert sum(todo_store.is_separator(t) for t in texts) == 1
+
+
+def test_import_sample_plain_list(debug_dir):
+    debug_seed.fresh(NOW)
+    (page,) = _import_sample(debug_dir, debug_seed.IMPORT_LIST)
+    assert page["name"] == "회의 메모"
+    hinted = _hinted_levels(page["items"])
+    assert len(hinted) == len(page["items"]) == 12  # 글자 줄 / 인용은 건너뜀
+    assert [(t, want) for t, want, got in hinted if want != got] == []
+    assert [i["text"] for i in page["items"] if i["done"]] == ["끝낸 체크박스 → 최상위"]
+
+
 def test_profile_b_has_its_own_todos_and_task(debug_dir):
     debug_seed.fresh(NOW)
     _open(debug_seed.PROFILE_B)
@@ -226,7 +295,10 @@ def test_fresh_discards_what_testing_changed(debug_dir):
     assert sorted(os.listdir(debug_dir)) == sorted(
         ["config.json", "profiles", debug_seed.EXPORT_FOLDER]
     )
-    assert os.listdir(debug_dir / debug_seed.EXPORT_FOLDER) == []
+    # 내보낸 파일은 사라지고 가져오기 예제만 새로
+    assert sorted(os.listdir(debug_dir / debug_seed.EXPORT_FOLDER)) == sorted(
+        debug_seed.IMPORT_SAMPLES
+    )
     assert glob.glob(glob.escape(str(debug_dir)) + ".old-*") == []
     cfg = widget_config.load_config()
     assert cfg["appearance"]["theme"] == widget_config.DEFAULT_APPEARANCE["theme"]
