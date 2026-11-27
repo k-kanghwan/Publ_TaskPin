@@ -689,6 +689,7 @@ class SettingsDialog(QWidget):
     config_imported = Signal(dict)
     # config 의 "app_icon" 이 바뀜 - TaskPinApp 이 트레이 / 창 아이콘을 바꾼다
     app_icon_changed = Signal()
+    task_history_changed = Signal()  # 좌패널 업무 이력 수 (Application)
     # config 의 "opacity" 가 바뀜 (투명도 슬라이더) - 위젯이 바로 다시 칠한다 (저장은 이 창이)
     opacity_changed = Signal()
     # config 의 알림 창 폭 / 글자 크기(POPUP_KEYS)가 바뀜 - 위젯은 다시 입히지 않고 테마 값만 바꾼다
@@ -1653,6 +1654,22 @@ class SettingsDialog(QWidget):
             box,
         ).setWordWrap(True)
 
+        # ---- Task: 좌패널 업무 이력 ----
+        card_layout = self._add_group(layout, "Task")
+        box, self._task_history_group = self._segmented(
+            [
+                (n, f"{n}개" if n else "끔")
+                for n in widget_config.TASK_HISTORY_LIMITS
+            ],
+            self._set_task_history,
+        )
+        self._add_row(
+            card_layout,
+            "업무 이력",
+            "가로 모드 좌패널의 시작/종료 아래에 보이는 지난 Task 수 (최신 순, 넘치면 스크롤)",
+            box,
+        ).setWordWrap(True)
+
         # ---- TODO: 삭제 확인 / 되돌릴 수 있는 삭제 수 ----
         card_layout = self._add_group(layout, "TODO")
         box, self._confirm_delete_group = self._segmented(
@@ -1752,6 +1769,11 @@ class SettingsDialog(QWidget):
         widget_config.save_config(self._cfg)
         self.app_icon_changed.emit()
 
+    def _set_task_history(self, limit: int):
+        self._cfg["task_history"] = limit
+        widget_config.save_config(self._cfg)
+        self.task_history_changed.emit()
+
     def _set_confirm_delete(self, on: bool):
         self._cfg["confirm_delete"] = on
         widget_config.save_config(self._cfg)
@@ -1768,6 +1790,11 @@ class SettingsDialog(QWidget):
         """저장된 값으로 Application 탭 표시를 맞춘다 (위젯의 확인 창에서 "다시 묻지 않음"을 켰을 수 있다)."""
         self._app_icon_group.button(
             widget_config.APP_ICONS.index(widget_config.app_icon(self._cfg))
+        ).setChecked(True)
+        self._task_history_group.button(
+            widget_config.TASK_HISTORY_LIMITS.index(
+                widget_config.task_history_limit(self._cfg)
+            )
         ).setChecked(True)
         self._confirm_delete_group.button(
             int(widget_config.confirm_delete(self._cfg))

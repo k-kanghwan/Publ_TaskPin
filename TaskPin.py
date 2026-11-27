@@ -32,8 +32,8 @@ import sqlite3
 import sys
 from datetime import datetime
 
-from PySide6.QtCore import QTimer, QUrl
-from PySide6.QtGui import QDesktopServices, QFont, QGuiApplication
+from PySide6.QtCore import QTimer
+from PySide6.QtGui import QFont, QGuiApplication
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon
 
 from manager import (
@@ -99,6 +99,7 @@ class TaskPinApp(TrayApp):
         # Task 시간 (지금 프로필의 가장 최근 등록 1건)
         self._task = None
         self._shown_task = None  # 위젯에 마지막으로 반영한 Task
+        self._history_day = None  # 업무 이력을 마지막으로 읽은 날짜 (날짜가 바뀌면 다시 읽음)
         self._notified_task_ids = set()  # 종료 알림을 보낸 Task id
         self._load_task()
 
@@ -183,12 +184,24 @@ class TaskPinApp(TrayApp):
         if task != self._shown_task:
             self._shown_task = task
             self.widget.apply_task(task)
+            self._refresh_history(now)  # 등록 / 완료 / 해제 / 지난 Task 가 빠짐 - 이력이 바뀐다
+        elif now.date() != self._history_day:
+            self._refresh_history(now)  # 날짜가 바뀌면 오늘 / 어제 머리줄을 다시
 
         if self.widget.isVisible():
             end = task.end_at if task is not None else None
             self.widget.set_clock(
                 now.strftime("%H:%M:%S"), task_clock.remaining_display(end, now)
             )
+
+    def _refresh_history(self, now=None):
+        """좌패널 업무 이력을 DB 에서 다시 읽는다 (위젯에 보이는 Task 는 빼고 최신 순 N 개, 0 이면 끔)."""
+        now = now or datetime.now().astimezone()
+        self._history_day = now.date()
+        limit = widget_config.task_history_limit(self.widget_cfg)
+        shown = self._shown_task.id if self._shown_task is not None else None
+        entries = task_store.history(limit, exclude_id=shown) if limit else []
+        self.widget.set_task_history(entries, bool(limit), now)
 
     def _load_task(self):
         """지금 프로필의 가장 최근 Task. 이미 끝난 Task 는 알린 것으로 친다 (켜자마자 / 프로필을 바꾸자마자
@@ -349,6 +362,7 @@ class TaskPinApp(TrayApp):
             self._settings.appearance_changed.connect(self.apply_appearance)
             self._settings.config_imported.connect(self.apply_imported_config)
             self._settings.app_icon_changed.connect(self._apply_app_icon)
+            self._settings.task_history_changed.connect(self._refresh_history)
             self._settings.opacity_changed.connect(self.widget.apply_opacity)
             self._settings.popup_changed.connect(self.apply_popup_appearance)
             self._settings.data_reset.connect(self.reload_data)
@@ -368,6 +382,7 @@ class TaskPinApp(TrayApp):
         self._load_task()
         self.widget.reload_data(keep_copy=keep_copy)
         self.tick_widget()
+        self._refresh_history()  # 보이는 Task 가 그대로(둘 다 없음)여도 프로필이 바뀌면 이력도 바뀐다
 
     # ==========================
     # 프로필 (Obsidian 의 vault 처럼 - DB 파일 하나가 프로필 하나, manager/profiles)
@@ -434,8 +449,7 @@ class TaskPinApp(TrayApp):
         menu.addAction(menus.icon("rename"), "이름 바꾸기…", self.rename_profile)
         act_delete = menu.addAction(menus.icon("delete"), "삭제…", self.delete_profile)
         act_delete.setEnabled(len(existing) > 1)  # 마지막 한 프로필은 지우지 않는다
-        menu.addSeparator()
-        menu.addAction(menus.icon("folder"), "프로필 폴더 열기", self.open_profile_folder)
+        # 프로필 폴더 열기는 설정창 Application "데이터" 그룹에만 둔다
 
     def switch_profile(self, name: str) -> bool:
         """그 프로필의 DB 로 바꾸고 Task / 할 일을 다시 읽는다. 바꿨으면(이미 그 프로필이어도) True.
@@ -589,10 +603,6 @@ class TaskPinApp(TrayApp):
             )
         self._sync_profile_ui()
 
-    @staticmethod
-    def open_profile_folder():
-        QDesktopServices.openUrl(QUrl.fromLocalFile(profiles.folder()))
-
     def _profile_warning(self, title: str, message: str):
         self.tray.showMessage(title, message, QSystemTrayIcon.Warning)
 
@@ -633,6 +643,7 @@ class TaskPinApp(TrayApp):
         self._apply_app_icon()
         self.widget.apply_shortcuts(widget_config.shortcuts(self.widget_cfg))
         self.widget.reload_config()
+        self._refresh_history()
         if self._settings is not None:
             self._settings.reload_values()
 

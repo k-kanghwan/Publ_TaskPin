@@ -71,6 +71,7 @@ from ui import menus, painted, theme
 from ui.confirm_dialog import ConfirmDialog
 from ui.painted import EditableLabel
 from ui.reminder_popup import ReminderPopup
+from ui.task_history import TaskHistory
 from ui.text_input import LineEdit
 from ui.theme import CORNER_RADIUS, px
 from ui.todo_panel import TodoPanel
@@ -644,6 +645,11 @@ class ClockWidget(QWidget):
         self.task_detail_label = _DetailLabel()
         self.task_detail_label.hide()
 
+        # ---- 업무 이력: 가로 모드에서만 시작/종료 아래 남는 높이를 받는다 (_apply_orientation) ----
+        self.task_history = TaskHistory()
+        self.task_history.hide()
+        self._history_on = False  # 설정에서 켰는지 (set_task_history)
+
         # ---- 업무명 배지: 등록한 Task 강조 (비어 있으면 숨김 / 클릭 없음) ----
         self.task_title_label = QLabel()
         self.task_title_label.setTextFormat(Qt.PlainText)
@@ -783,6 +789,7 @@ class ClockWidget(QWidget):
         badge_border.setAlpha(170)
         painted.set_box(self.task_title_label, painted.box(6, badge_bg, badge_border))
         self.task_detail_label.setStyleSheet(sub_style)
+        self.task_history.apply_appearance()
         for line in self._separators:
             line.setStyleSheet(f"background: {t.line}; border: none;")
         self.todo_panel.apply_appearance()
@@ -808,14 +815,15 @@ class ClockWidget(QWidget):
 
     def _apply_orientation(self, orientation: str):
         """세로: info / TODO / 상세업무 / controls 를 한 줄로
-        가로: 좌측은 info / 여백 / 상세업무 / controls, 우측에 TODO.
-        가로 모드의 남는 높이는 상세업무가 받는다(있을 때). 없으면 여백이 받는다."""
+        가로: 좌측은 info / 업무 이력 / 여백 / 상세업무 / controls, 우측에 TODO.
+        가로 모드의 남는 높이는 업무 이력이 받는다. 이력을 껐으면 상세업무(있을 때), 없으면 여백."""
         if orientation == self._orientation:
             return
 
         # 좌측 칼럼의 index 1 자리(info 와 controls 사이)를 비운다
         if self._orientation == ORIENTATION_HORIZONTAL:
             self._right_layout.removeWidget(self.todo_panel)
+            self._left_layout.removeWidget(self.task_history)
             self._left_layout.takeAt(1)  # 여백(stretch)
         elif self._orientation == ORIENTATION_VERTICAL:
             self._left_layout.removeWidget(self.todo_panel)
@@ -823,22 +831,16 @@ class ClockWidget(QWidget):
         horizontal = orientation == ORIENTATION_HORIZONTAL
         if horizontal:
             self._right_layout.addWidget(self.todo_panel)
-            # 늘어나는 여백이지만 stretch 0 - 상세업무(stretch 1)가 보이면 남는 높이를 그쪽에 준다
+            # [info, 업무 이력, 여백, 상세업무, controls] - 여백은 stretch 0 이라 이력이나 상세업무가
+            # 남는 높이를 받는다 (_apply_history_slot)
             self._left_layout.insertStretch(1, 0)
+            self._left_layout.insertWidget(1, self.task_history, 1)
         else:
             self._left_layout.insertWidget(1, self.todo_panel, 1)
         self.todo_panel.show()  # 다른 부모로 옮기면 숨김 상태가 되므로
+        self._orientation = orientation
+        self._apply_history_slot()
 
-        detail = self.task_detail_label
-        self._left_layout.setStretchFactor(detail, 1 if horizontal else 0)
-        detail.setSizePolicy(
-            QSizePolicy.Preferred,
-            QSizePolicy.Expanding if horizontal else QSizePolicy.Preferred,
-        )
-        detail.setAlignment(
-            Qt.AlignLeft | (Qt.AlignBottom if horizontal else Qt.AlignTop)
-        )
-        detail.set_max_lines(None if horizontal else TASK_DETAIL_MAX_LINES)
         if horizontal:
             self._left_col.setFixedWidth(LEFT_COL_WIDTH)
         else:
@@ -849,9 +851,35 @@ class ClockWidget(QWidget):
         self._col_separator.setVisible(horizontal)
         self._right_col.setVisible(horizontal)
 
-        self._orientation = orientation
         self._apply_size_limits()
         self._place_grip()
+
+    def _apply_history_slot(self):
+        """가로 모드의 남는 높이: 업무 이력이 켜져 있으면 이력이 받고 상세업무는 3줄까지,
+        꺼져 있으면(또는 세로 모드) 지금까지처럼 상세업무가 받는다 (세로는 늘 3줄)."""
+        horizontal = self._orientation == ORIENTATION_HORIZONTAL
+        shown = horizontal and self._history_on
+        self.task_history.setVisible(shown)
+        detail = self.task_detail_label
+        grows = horizontal and not shown
+        self._left_layout.setStretchFactor(detail, 1 if grows else 0)
+        detail.setSizePolicy(
+            QSizePolicy.Preferred,
+            QSizePolicy.Expanding if grows else QSizePolicy.Preferred,
+        )
+        detail.setAlignment(Qt.AlignLeft | (Qt.AlignBottom if horizontal else Qt.AlignTop))
+        detail.set_max_lines(None if grows else TASK_DETAIL_MAX_LINES)
+
+    def set_task_history(self, entries, enabled: bool, now: datetime):
+        """업무 이력 표시 (TaskPinApp._refresh_history). enabled=False 면 이력란을 숨긴다."""
+        changed = enabled != self._history_on
+        self._history_on = enabled
+        if enabled:
+            self.task_history.set_entries(entries, now)
+        if changed and self._orientation is not None:
+            self._apply_history_slot()
+            self._apply_size_limits()  # 이력란 최소 높이만큼 위젯 최소 높이가 바뀐다
+            self._place_grip()
 
     def _apply_size_limits(self):
         """크기 범위를 지금 모드로 건다 - 최소는 모드마다(_limits), 최대는 가장 작은 모니터의 80%.

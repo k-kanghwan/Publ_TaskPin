@@ -269,6 +269,25 @@ def test_profile_b_has_its_own_todos_and_task(debug_dir):
     assert task_store.latest().title == debug_seed.PROFILE_B_TASK
 
 
+def test_seed_profile_has_task_history(debug_dir):
+    debug_seed.fresh(NOW)
+    _open(debug_seed.SEED_PROFILE)
+    current = task_store.latest()
+    assert current.title == debug_seed.SEED_TASK  # 진행 중인 Task 가 가장 최근
+    entries = task_store.history(100, exclude_id=current.id)
+    assert len(entries) == len(debug_seed.HISTORY_TASKS) + debug_seed.HISTORY_FILLER
+    assert [e.start_at for e in entries] == sorted((e.start_at for e in entries), reverse=True)
+    assert {e.result for e in entries} == {
+        task_store.COMPLETED,
+        task_store.RELEASED,
+        task_store.EXPIRED,
+    }
+    assert all(e.end_at <= current.start_at for e in entries)  # 오늘 것은 지금 Task 앞에 끝남
+    _open(debug_seed.PROFILE_B)
+    b = task_store.latest()
+    assert task_store.history(100, exclude_id=b.id) == []
+
+
 def test_fresh_discards_what_testing_changed(debug_dir):
     debug_seed.fresh(NOW)
     # 시험하며 바꾼 것: 설정 · 위젯 자리 · 새 프로필 · 지운 예제 페이지 / 프로필 · 초기화 백업 · 내보낸 파일
@@ -365,6 +384,10 @@ def test_v0132_page_first_with_important_examples(debug_dir):
     sections = [i["text"] for i in items if i["parent_id"] == check["id"]]
     assert sections[0].startswith("1.")
     assert any(s.startswith("12.") for s in sections)
+    enter = next(i for i in items if i["text"] == "9. 입력칸 Enter 아이콘")
+    assert any(
+        "또렷" in i["text"] for i in items if i["parent_id"] == enter["id"]
+    )  # 아이콘 흐림 수정 확인 단계
     important = [i for i in items if todo_store.is_important(i["text"])]
     assert any(i["done"] for i in important)
     assert any(not i["done"] for i in important)

@@ -481,29 +481,43 @@ def alarm_img(color: str, size: int, ratio: float = 1.0) -> str:
 # ==================================================
 def enter_pixmap(color: str, size: int, ratio: float = 1.0) -> QPixmap:
     """Enter(↵) 아이콘: 오른쪽 위에서 내려와 왼쪽으로 꺾이는 둥근 선 + 화살촉. 선 하나 색으로 그린다.
-    ratio: 화면 배율 (그 배율의 실제 픽셀로 그려 흐리거나 깨지지 않게)"""
-    n = float(size)
-    pixmap = QPixmap(max(1, round(n * ratio)), max(1, round(n * ratio)))
+    ratio: 화면 배율 (그 배율의 실제 픽셀로 그려 흐리거나 깨지지 않게)
+
+    소수 좌표·두께로 그리면 1px 선이 두 픽셀에 걸쳐 번지므로, 장치 픽셀 단위로 계산해 선 가운데를
+    픽셀 격자에 맞춘다 (두께가 홀수면 픽셀 가운데 +0.5). 화살촉은 꺾인 경로 하나로 그려 끝이 겹쳐
+    진해지지 않게 한다."""
+    dev = max(1, round(size * ratio))  # 장치 픽셀 한 변
+    pixmap = QPixmap(dev, dev)
     pixmap.setDevicePixelRatio(ratio)
     pixmap.fill(Qt.transparent)
     painter = QPainter(pixmap)
     painter.setRenderHint(QPainter.Antialiasing)
-    pen = QPen(QColor(color), max(1.4, n * 0.12))
+    # setDevicePixelRatio 한 pixmap 의 painter 는 논리 좌표라 장치 픽셀로 되돌려 그린다
+    painter.scale(1 / ratio, 1 / ratio)
+    width = max(1, round(1.5 * ratio))
+    pen = QPen(QColor(color), width)
     pen.setCapStyle(Qt.RoundCap)
     pen.setJoinStyle(Qt.RoundJoin)
     painter.setPen(pen)
     painter.setBrush(Qt.NoBrush)
 
-    right, top, bottom, left = n * 0.78, n * 0.2, n * 0.64, n * 0.2
-    corner = n * 0.2  # 꺾이는 곳의 둥근 반지름
+    half = 0.5 if width % 2 else 0.0
+
+    def snap(v: float) -> float:
+        return round(dev * v) + half
+
+    right, top, bottom, left = snap(0.76), snap(0.2), snap(0.64), snap(0.2)
+    corner = round(dev * 0.2)  # 꺾이는 곳의 둥근 반지름
+    head = round(dev * 0.2)  # 화살촉
     path = QPainterPath(QPointF(right, top))
     path.lineTo(right, bottom - corner)
     path.quadTo(right, bottom, right - corner, bottom)
     path.lineTo(left, bottom)
     painter.drawPath(path)
-    head = n * 0.2  # 화살촉
-    painter.drawLine(QPointF(left, bottom), QPointF(left + head, bottom - head))
-    painter.drawLine(QPointF(left, bottom), QPointF(left + head, bottom + head))
+    arrow = QPainterPath(QPointF(left + head, bottom - head))
+    arrow.lineTo(left, bottom)
+    arrow.lineTo(left + head, bottom + head)
+    painter.drawPath(arrow)
     painter.end()
     return pixmap
 
