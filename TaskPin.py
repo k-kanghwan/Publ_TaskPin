@@ -32,8 +32,8 @@ import sqlite3
 import sys
 from datetime import datetime
 
-from PySide6.QtCore import QTimer, QUrl
-from PySide6.QtGui import QDesktopServices, QFont, QGuiApplication
+from PySide6.QtCore import QTimer
+from PySide6.QtGui import QFont, QGuiApplication
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon
 
 from manager import (
@@ -434,8 +434,7 @@ class TaskPinApp(TrayApp):
         menu.addAction(menus.icon("rename"), "이름 바꾸기…", self.rename_profile)
         act_delete = menu.addAction(menus.icon("delete"), "삭제…", self.delete_profile)
         act_delete.setEnabled(len(existing) > 1)  # 마지막 한 프로필은 지우지 않는다
-        menu.addSeparator()
-        menu.addAction(menus.icon("folder"), "프로필 폴더 열기", self.open_profile_folder)
+        # 프로필 폴더 열기는 설정창 Application "데이터" 그룹에만 둔다
 
     def switch_profile(self, name: str) -> bool:
         """그 프로필의 DB 로 바꾸고 Task / 할 일을 다시 읽는다. 바꿨으면(이미 그 프로필이어도) True.
@@ -588,10 +587,6 @@ class TaskPinApp(TrayApp):
                 "프로필 삭제", f"'{old}' 프로필 파일을 지우지 못했습니다."
             )
         self._sync_profile_ui()
-
-    @staticmethod
-    def open_profile_folder():
-        QDesktopServices.openUrl(QUrl.fromLocalFile(profiles.folder()))
 
     def _profile_warning(self, title: str, message: str):
         self.tray.showMessage(title, message, QSystemTrayIcon.Warning)
