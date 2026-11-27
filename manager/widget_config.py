@@ -180,6 +180,9 @@ DEFAULT_UNDO_LIMIT = 10
 # 가로 모드 좌패널 "업무 이력"에 보일 지난 Task 수 (설정창 Application, 0 = 끔)
 TASK_HISTORY_LIMITS = (0, 10, 20, 50)
 DEFAULT_TASK_HISTORY = 20
+# 가로 모드 좌패널 상세 업무 카드 높이(줄 수) - 업무 이력과의 사이 선을 끌어 정한다 (업무 이력이 켜져 있을 때)
+DEFAULT_TASK_DETAIL_LINES = 3
+TASK_DETAIL_LINES_MAX = 20
 # 트레이 / 창 아이콘 (설정창 Application) - 첫 값이 기본. exe 아이콘은 빌드 때 정해져 바뀌지 않는다
 APP_ICONS = ("dark", "light")
 # 위젯 불투명도 (설정창 Appearance 투명도 슬라이더 - 값은 투명도 % = 100 - 불투명도 %)
@@ -219,6 +222,8 @@ DEFAULT_CONFIG = {
     # 페이지를 넘겼다 돌아오면 보던 스크롤 자리로 (실행 중에만 기억, 설정창 Application)
     "remember_scroll": True,
     "task_history": DEFAULT_TASK_HISTORY,  # 업무 이력 수 (TASK_HISTORY_LIMITS 중 하나, 0 = 끔)
+    # 가로 모드 상세 업무 카드 줄 수 (1 ~ TASK_DETAIL_LINES_MAX, 업무 이력과의 사이 선을 끌어 정함)
+    "task_detail_lines": DEFAULT_TASK_DETAIL_LINES,
 }
 CUSTOM_TAG_PREFIX = "custom-"  # 사용자 태그 id (todos.tag 에 저장되는 값)
 CUSTOM_TAG_NAME_MAX = 20
@@ -305,6 +310,14 @@ def undo_limit(cfg: dict) -> int:
 def task_history_limit(cfg: dict) -> int:
     """가로 모드 좌패널 업무 이력에 보일 지난 Task 수 (0 = 끔). 정해진 값이 아니면 기본값"""
     return _scale(cfg.get("task_history"), TASK_HISTORY_LIMITS, DEFAULT_TASK_HISTORY)
+
+
+def task_detail_lines(cfg: dict) -> int:
+    """가로 모드 상세 업무 카드 줄 수. 1 ~ TASK_DETAIL_LINES_MAX 의 정수가 아니면 기본값"""
+    value = cfg.get("task_detail_lines")
+    if type(value) is int and 1 <= value <= TASK_DETAIL_LINES_MAX:
+        return value
+    return DEFAULT_TASK_DETAIL_LINES
 
 
 def show_pending_page(cfg: dict) -> bool:
