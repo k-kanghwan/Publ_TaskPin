@@ -1827,6 +1827,17 @@ class TodoPanel(QWidget):
     def showEvent(self, event):
         super().showEvent(event)
         self._update_rainbow()  # 숨었다 보이면 무지개를 다시 흐르게
+        self._sync_enter_ratio()  # 처음 뜰 때 실제 화면 배율로 Enter 아이콘을 다시 그림
+
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        if event.type() == QEvent.DevicePixelRatioChange:  # 다른 배율의 모니터로 옮김
+            self._sync_enter_ratio()
+
+    def _sync_enter_ratio(self):
+        """Enter 아이콘을 그린 배율이 지금 화면 배율과 다르면 다시 그린다 (생성 때는 화면이 없어 1.0)."""
+        if getattr(self, "_enter_ratio", None) != self.devicePixelRatioF():
+            self._paint_enter_icon(theme.current())
 
     # ==================================================
     # 검색 / 날짜별 보기
@@ -2068,6 +2079,7 @@ class TodoPanel(QWidget):
     def _paint_enter_icon(self, t: theme.Theme):
         """입력칸 Enter 아이콘을 지금 테마 색으로: 켜짐 = 강조색, 꺼짐(글자 없음) = 흐린 색"""
         ratio = self.devicePixelRatioF()
+        self._enter_ratio = ratio
         icon = QIcon()
         icon.addPixmap(painted.enter_pixmap(t.accent, ENTER_ICON_PX, ratio), QIcon.Normal)
         icon.addPixmap(
