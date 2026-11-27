@@ -136,7 +136,14 @@ def _task_page(ctx):
     return [
         _check(
             f"좌패널에 진행 중인 Task '{SEED_TASK}' - 상세 업무가 3줄을 넘어 … + 툴팁 (세로 모드)",
-            "가로 모드에서 위젯을 키우면 상세 업무가 더 많은 줄로 보임 (세로는 3줄)",
+            "가로 모드: 시작/종료 아래 '업무 이력'에 지난 Task 가 최신 순 (오늘 · 어제 · 11/26 (수) 머리줄)",
+            "업무 이력 줄: 시각 · 업무명(길면 …) · 결과 - 완료 강조색 / 해제 경고색 / 지남 흐림,"
+            " 마우스를 올리면 툴팁에 상세 업무",
+            "업무 이력이 넘치면 스크롤, 위젯 높이를 키우면 이력이 늘고 상세 업무는 3줄까지",
+            "[완료] / [해제] 하면 내린 Task 가 이력 맨 위로 (진행 중인 Task 는 이력에 없음)",
+            "설정 Application 'Task' → 업무 이력 '끔' → 이력란이 사라지고 상세 업무가 남는 높이를 받음,"
+            " 10개 → 바로 10개만",
+            f"세로 모드에서는 업무 이력 없음 / '{PROFILE_B}'로 바꾸면 '지난 Task가 없습니다'",
             "다음 15분 단위 시각(종료)이 지나면 남은시간이 +초과, 'Task 종료' 트레이 알림 1번",
             "[수정](R) → 'Task 수정' 제목, 종료를 미래로 바꾸면 종료 알림을 다시 받음",
             "[해제] 확인 버튼이 경고색 / [완료](C) 확인 창에 남은시간 표시 → 내리면 버튼이 '등록'으로",
@@ -369,7 +376,7 @@ def _profile_page(ctx):
     return [
         _check(
             "좌패널 우클릭 → '프로필 · 기본': 목록(지금 프로필 체크) · 새 프로필 · 다른 이름으로 저장"
-            " · 이름 바꾸기 · 삭제 · 프로필 폴더 열기",
+            " · 이름 바꾸기 · 삭제 ('프로필 폴더 열기'는 없음 - 설정 Application '데이터'에만)",
             "프로필이 둘 이상이면 이름 오른쪽에 프로필 칩 → 클릭하면 같은 메뉴, 트레이 툴팁에도 프로필 이름",
             f"'{PROFILE_B}'로 바꾸기 → 할 일 · 페이지 · 좌패널 Task('{SEED_TASK}' → '{PROFILE_B_TASK}')가"
             " 그 프로필 것으로",
@@ -379,7 +386,8 @@ def _profile_page(ctx):
             '새 프로필… → 이름에 \\ / : * ? " < > | 나 CON, 같은 이름(대소문자 무시)이면 빨간 안내 + 확인 꺼짐',
             "새 프로필 → '페이지 1'만 있는 빈 목록, Task 없음 (설정 · 태그 · 단축키는 그대로), 한 장이라 페이지 삭제 꺼짐",
             "다른 이름으로 저장… → 지금 내용 그대로인 새 프로필로 바뀜, 원래 프로필도 목록에 남음",
-            "이름 바꾸기 → 프로필 폴더 열기로 파일 이름(이름.db)도 바뀐 것 확인, 대소문자만 바꾸기도 됨",
+            "이름 바꾸기 → 설정 Application '데이터' → 프로필 폴더 열기로 파일 이름(이름.db)도 바뀐 것 확인,"
+            " 대소문자만 바꾸기도 됨",
             "삭제… → '프로필 삭제'를 입력해야 켜짐, 지우면 목록 앞 프로필로 / 하나만 남으면 삭제 꺼짐",
             "프로필 폴더에 .db 를 복사해 넣으면 메뉴에 바로 보임, 텍스트 파일을 x.db 로 넣고 고르면 '열지 못했습니다'",
             "설정 → Application '모든 데이터 초기화' 설명에 지금 프로필 이름, 초기화해도 다른 프로필은 그대로",
@@ -499,6 +507,8 @@ def _v0132_page(ctx):
                 "children": [
                     "할 일 입력칸 맨 오른쪽 ↵ 아이콘: 비어 있으면 흐리고 눌리지 않음, 글자를 치면 강조색",
                     "↵ 클릭 → Enter 와 같이 추가 / '미완료' 페이지에서는 아이콘이 숨음",
+                    "↵ 아이콘을 확대해 보면 → 세로·가로 선이 번지지 않고 또렷함 "
+                    "(다른 배율 모니터로 옮겨도 같음)",
                 ],
             },
             {
@@ -553,7 +563,7 @@ def _v0132_page(ctx):
             },
             {
                 "text": "14. 그대로인 것",
-                "children": ["좌패널 '프로필 · 기본' 메뉴의 '프로필 폴더 열기'는 그대로 있음"],
+                "children": ["설정 Application '데이터' 그룹의 '프로필 폴더 열기'는 그대로 있음"],
             },
         ),
         "---",
@@ -609,6 +619,66 @@ def _seed_task(now: datetime):
         )
     )
     return SEED_TASK, detail, start, start + timedelta(hours=1)
+
+
+# 지난 Task (좌패널 업무 이력): (며칠 전, 시작 시, 분, 소요 분, 업무명, 결과, 상세 업무)
+# 결과 None = 완료 / 해제 없이 지나감. 스크롤이 생기도록 지난 날짜 완료를 더 넣는다 (_seed_history)
+HISTORY_TASKS = (
+    (0, 0, 0, 30, "🧪 오늘 완료한 업무", task_store.COMPLETED, ""),
+    (0, 0, 45, 15, "🧪 오늘 해제한 업무", task_store.RELEASED, "중간에 그만둠 - 해제로 기록"),
+    (
+        1,
+        9,
+        0,
+        90,
+        "🧪 어제 완료 - 업무명이 아주 길어서 좌패널 폭을 넘으면 말줄임으로 끝이 … 로",
+        task_store.COMPLETED,
+        "상세 업무 1줄\n상세 업무 2줄 (툴팁에 보임)",
+    ),
+    (1, 14, 0, 60, "", task_store.COMPLETED, ""),
+    (3, 10, 0, 120, "🧪 내리지 않고 지난 업무", None, ""),
+)
+HISTORY_FILLER = 20  # 지난 날짜 완료 Task 를 이만큼 더 (스크롤 시험)
+
+
+def _seed_history(now: datetime) -> int:
+    """기본 프로필의 지난 Task 기록 - 진행 중인 Task 보다 먼저 넣는다 (id 가 작아야 이력 순서가 맞음).
+    오늘 것은 지금 Task 시작(15분 단위 - 45분) 앞에 끝나게 둔다. 넣은 수를 돌려준다."""
+    rows = []
+    # 시각은 글자로만 저장하므로 시간대 없이 맞춘다 (now 가 시간대 없는 값일 수 있음)
+    slot = task_clock.floor_slot(now.astimezone()).replace(tzinfo=None)
+    today_base = slot - timedelta(minutes=45 + 90)
+    now = now.replace(tzinfo=None)
+    for days, hour, minute, minutes, title, result, detail in HISTORY_TASKS:
+        if days == 0:
+            start = today_base + timedelta(minutes=minute)
+        else:
+            day = (now - timedelta(days=days)).replace(second=0, microsecond=0)
+            start = day.replace(hour=hour, minute=minute)
+        rows.append((start, minutes, title, result, detail))
+    for i in range(HISTORY_FILLER):
+        day = (now - timedelta(days=4 + i // 3)).replace(second=0, microsecond=0)
+        start = day.replace(hour=9 + (i % 3) * 3, minute=0)
+        rows.append((start, 60, f"🧪 지난 업무 {i + 1}", task_store.COMPLETED, ""))
+    rows.sort(key=lambda r: r[0])  # 오래된 것부터 넣어 id 가 시간 순
+    fmt = task_store.DATETIME_FMT
+    with db.conn() as c:
+        for start, minutes, title, result, detail in rows:
+            end = start + timedelta(minutes=minutes)
+            c.execute(
+                "INSERT INTO tasks (title, detail, start_at, end_at, created_at, cleared_at, cleared_as)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    title,
+                    detail,
+                    start.strftime(fmt),
+                    end.strftime(fmt),
+                    start.strftime("%Y-%m-%d %H:%M:%S"),
+                    end.strftime("%Y-%m-%d %H:%M:%S") if result else None,
+                    result,
+                ),
+            )
+    return len(rows)
 
 
 def _profile_b_task(now: datetime):
@@ -688,6 +758,8 @@ def _build_profile(name: str, pages, make_task, now: datetime, cfg: dict) -> Non
         todo_store.save_todos(items)
         todo_store.archive_items(archive_ids)
         todo_trash.record(trash)
+        if name == SEED_PROFILE:
+            _seed_history(now)
         task_store.register(*make_task(now))
         todo_pages.set_last_page(first)
     finally:
