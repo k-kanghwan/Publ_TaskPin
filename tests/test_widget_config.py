@@ -88,6 +88,18 @@ def test_import_rejects_non_config(tmp_path):
 # ==================================================
 # Appearance
 # ==================================================
+def test_task_history_limit():
+    assert widget_config.task_history_limit({}) == widget_config.DEFAULT_TASK_HISTORY
+    assert widget_config.task_history_limit({"task_history": 0}) == 0  # 끔
+    assert widget_config.task_history_limit({"task_history": 50}) == 50
+    assert widget_config.task_history_limit({"task_history": 7}) == (
+        widget_config.DEFAULT_TASK_HISTORY
+    )
+    assert widget_config.task_history_limit({"task_history": False}) == (
+        widget_config.DEFAULT_TASK_HISTORY
+    )
+
+
 def test_confirm_delete_and_undo_limit():
     assert widget_config.confirm_delete({}) is True
     assert widget_config.confirm_delete({"confirm_delete": "no"}) is True

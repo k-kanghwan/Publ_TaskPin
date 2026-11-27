@@ -136,3 +136,35 @@ def test_v1_db_is_migrated(tmp_path):
         assert task_store.latest().detail == ""
     finally:
         db.close()
+
+
+def test_history_newest_first_with_results(temp_db):
+    done = task_store.register("done", "d", dt("2026-10-21 09:00"), dt("2026-10-21 10:00"))
+    task_store.clear(done.id, task_store.COMPLETED)
+    released = task_store.register("rel", "", dt("2026-10-22 09:00"), dt("2026-10-22 10:00"))
+    task_store.clear(released.id, task_store.RELEASED)
+    expired = task_store.register("exp", "", dt("2026-10-22 11:00"), dt("2026-10-22 12:00"))
+    current = task_store.register("now", "", dt("2026-10-23 09:00"), dt("2026-10-23 10:00"))
+
+    entries = task_store.history(10, exclude_id=current.id)
+    assert [e.title for e in entries] == ["exp", "rel", "done"]
+    assert [e.result for e in entries] == [
+        task_store.EXPIRED,
+        task_store.RELEASED,
+        task_store.COMPLETED,
+    ]
+    assert entries[-1].detail == "d"
+    assert entries[0].start_at == dt("2026-10-22 11:00")
+    # limit 은 뺀 뒤의 수 / 빼지 않으면 지금 Task 도 들어감
+    assert [e.title for e in task_store.history(2, exclude_id=current.id)] == ["exp", "rel"]
+    assert task_store.history(1)[0].title == "now"
+    assert task_store.history(0) == []
+
+
+def test_history_skips_broken_rows(temp_db):
+    task_store.register("ok", "", dt("2026-10-23 09:00"), dt("2026-10-23 10:00"))
+    with db.conn() as c:
+        c.execute(
+            "INSERT INTO tasks (title, start_at, end_at, created_at) VALUES ('bad', 'x', 'y', 'z')"
+        )
+    assert [e.title for e in task_store.history(10)] == ["ok"]

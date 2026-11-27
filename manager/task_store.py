@@ -15,6 +15,8 @@ DATETIME_FMT = "%Y-%m-%d %H:%M"
 # cleared_as: Task 를 내린 방식
 COMPLETED = "completed"  # "완료" 버튼
 RELEASED = "released"  # "해제" 버튼 (진행 중에 그만둠)
+# 업무 이력에서만 쓰는 결과: 완료 / 해제 없이 지나간 Task (다음 날까지 내리지 않은 행)
+EXPIRED = "expired"
 
 
 @dataclass(frozen=True)
@@ -24,6 +26,18 @@ class Task:
     start_at: datetime
     end_at: datetime
     detail: str = ""  # 상세업무 (여러 줄)
+
+
+@dataclass(frozen=True)
+class HistoryEntry:
+    """좌패널 업무 이력 한 줄 (result: COMPLETED / RELEASED / EXPIRED)"""
+
+    id: int
+    title: str
+    detail: str
+    start_at: datetime
+    end_at: datetime
+    result: str
 
 
 def register(title: str, detail: str, start_at: datetime, end_at: datetime):
@@ -129,3 +143,37 @@ def is_current(task, now: datetime) -> bool:
 def current_task(now: datetime):
     task = latest()
     return task if is_current(task, now) else None
+
+
+def history(limit: int, exclude_id=None) -> list:
+    """최근 Task 기록(최신 순 limit 개) - 좌패널 업무 이력.
+    exclude_id: 위젯에 지금 보이는 Task (이력에는 넣지 않는다). 시각이 깨진 행은 건너뛰고, 읽지 못하면 []"""
+    if limit <= 0:
+        return []
+    try:
+        rows = (
+            db.conn()
+            .execute(
+                "SELECT id, title, detail, start_at, end_at, cleared_as FROM tasks"
+                " ORDER BY id DESC LIMIT ?",
+                (limit + 1,),
+            )
+            .fetchall()
+        )
+    except sqlite3.Error as e:
+        print(f"Task 이력 불러오기 실패: {e}")
+        return []
+    entries = []
+    for row in rows:
+        if row["id"] == exclude_id:
+            continue
+        try:
+            start = datetime.strptime(row["start_at"], DATETIME_FMT).astimezone()
+            end = datetime.strptime(row["end_at"], DATETIME_FMT).astimezone()
+        except (TypeError, ValueError):
+            continue
+        result = row["cleared_as"] if row["cleared_as"] in (COMPLETED, RELEASED) else EXPIRED
+        entries.append(
+            HistoryEntry(row["id"], row["title"], row["detail"] or "", start, end, result)
+        )
+    return entries[:limit]
