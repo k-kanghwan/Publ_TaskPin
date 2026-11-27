@@ -108,8 +108,15 @@ USER_NAME_MAX_LEN = 20
 PROFILE_CHIP_MAX_WIDTH = 110
 PROFILE_CHIP_RADIUS = 8
 TASK_BADGE_H_SPACE = 2 * 8 + 2 * 1  # 좌우 padding + border (말줄임 폭 계산용)
-# 업무명 배지 위 상세업무 - 세로 모드 최대 줄 수 (가로 모드는 남는 높이만큼)
+# 업무명 배지 위 상세업무 - 세로 모드 최대 줄 수
+# (가로 모드는 업무 이력이 켜져 있으면 cfg task_detail_lines, 꺼져 있으면 내용만큼)
 TASK_DETAIL_MAX_LINES = 3
+# 업무 이력 / 상세업무 카드 (업무 이력 = 중립 덧칠색 - ui/task_history, 상세업무 = 강조색 옅게)
+CARD_RADIUS = 6
+DETAIL_CARD_BG_ALPHA = 24  # 상세업무 카드 배경 = 강조색 이 알파 (업무명 배지 40 보다 옅게)
+DETAIL_CARD_MARGINS = (8, 6, 8, 6)  # 카드 안쪽 여백 (왼, 위, 오른, 아래)
+SPLIT_HANDLE_H = 9  # 두 카드 사이 끄는 선의 높이 (선은 가운데 1px)
+SPLIT_TIP = "끌어서 상세 업무 높이 조절 · 더블클릭: 기본(3줄)"
 FIXED_EDIT_KEY = "F2"  # 할 일 수정 고정 키 (설정 단축키 todo_edit 와 함께 - 기본 Enter)
 # 되돌리기 / 다시 실행 고정 키 (설정 단축키 todo_undo / todo_redo 와 함께)
 FIXED_UNDO_KEYS = ("Ctrl+Z",)
@@ -200,6 +207,102 @@ class _DetailLabel(QLabel):
         )
         self.setText(shown)
         self.setToolTip(self._full if elided else "")
+
+
+class _DetailCard(QWidget):
+    """상세업무 카드: _DetailLabel 을 안쪽 여백으로 감싸고 강조색 옅은 배경(apply_appearance)을 깐다.
+    lines 를 정하면(가로 모드 + 업무 이력 켬) 내용과 관계없이 그 줄 수만큼의 높이를 바란다 - 공간이 모자라면
+    최소 한 줄까지 줄어든다. None 이면 라벨(내용 줄 수, 세로 모드는 3줄까지)을 따른다.
+    바라는 높이보다 커지지 않는다(Maximum) - 남는 높이는 업무 이력 / 여백이 받는다."""
+
+    def __init__(self, label: _DetailLabel, parent=None):
+        super().__init__(parent)
+        self.label = label
+        self.lines = None
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(*DETAIL_CARD_MARGINS)
+        layout.addWidget(label)
+        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
+
+    def set_lines(self, lines):
+        if lines != self.lines:
+            self.lines = lines
+            self.updateGeometry()
+
+    def margins_v(self) -> int:
+        margins = self.layout().contentsMargins()
+        return margins.top() + margins.bottom()
+
+    def sizeHint(self) -> QSize:
+        hint = super().sizeHint()
+        if self.lines is not None:
+            hint.setHeight(self.lines * self.label._line_height() + self.margins_v())
+        return hint
+
+
+class _SplitHandle(QWidget):
+    """업무 이력 카드와 상세업무 카드 사이 선 - 위아래로 끌어 상세업무 카드 높이(줄 단위)를 정한다.
+    줄 수 계산 / 저장은 ClockWidget(_on_split_*)이 한다. 위치 / 크기 잠금이면 끌지 않고 선만 보인다
+    (누름은 위젯으로 올라가 다른 곳처럼 처리된다)."""
+
+    drag_started = Signal()
+    dragged = Signal(float)  # 누른 곳에서 커서가 움직인 거리 (아래로 +)
+    drag_finished = Signal()
+    reset_requested = Signal()  # 더블클릭: 기본 줄 수
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedHeight(SPLIT_HANDLE_H)
+        self.setAttribute(Qt.WA_Hover, True)
+        self._press_y = None
+        self.set_enabled(True)
+
+    def set_enabled(self, enabled: bool):
+        self.setCursor(Qt.SizeVerCursor if enabled else Qt.ArrowCursor)
+        self.setToolTip(SPLIT_TIP if enabled else "")
+        self.setEnabled(enabled)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self._press_y = event.globalPosition().y()
+            self.drag_started.emit()
+            self.update()
+        # 누름은 여기서 끝 (위젯 창이 끌려 옮겨지지 않게)
+
+    def mouseMoveEvent(self, event):
+        if self._press_y is not None and (event.buttons() & Qt.LeftButton):
+            self.dragged.emit(event.globalPosition().y() - self._press_y)
+
+    def mouseReleaseEvent(self, event):
+        if self._press_y is not None and event.button() == Qt.LeftButton:
+            self._press_y = None
+            self.drag_finished.emit()
+            self.update()
+
+    def mouseDoubleClickEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.reset_requested.emit()
+
+    def enterEvent(self, event):
+        self.update()
+
+    def leaveEvent(self, event):
+        self.update()
+
+    def paintEvent(self, event):
+        t = theme.current()
+        active = self.isEnabled() and (self.underMouse() or self._press_y is not None)
+        painter = QPainter(self)
+        y = self.height() // 2
+        painter.fillRect(
+            0, y, self.width(), 1, QColor(t.accent) if active else t.overlay_color(40)
+        )
+        if active:  # 끌 수 있다는 손잡이 (크기 조절 핸들 _ResizeGrip 과 같은 모양)
+            painter.setRenderHint(QPainter.Antialiasing)
+            bar = QRectF(self.width() / 2 - 16, y - 1, 32, 3)
+            path = QPainterPath()
+            path.addRoundedRect(bar, 1.5, 1.5)
+            painter.fillPath(path, QColor(t.accent))
 
 
 class _ResizeGrip(QWidget):
@@ -358,6 +461,9 @@ class ClockWidget(QWidget):
         # (QMenu) -> None: 프로필 메뉴를 채운다 (TaskPinApp)
         self._profile_menu_filler = None
         self._task_detail = ""  # 상세업무 원문 (말줄임 전)
+        # 가로 / 세로 모드 - _build_ui 안의 apply_task(None) → _apply_split 이 읽으므로 먼저 둔다
+        # (실제 모드는 아래 _apply_orientation 이 정한다)
+        self._orientation = None
         # 트레이 클릭으로 다른 앱보다 위에 꺼내 둔 상태
         self._front = False
         self._front_baseline = (
@@ -641,14 +747,30 @@ class ClockWidget(QWidget):
         controls.setContentsMargins(0, 0, 0, 0)
         controls.setSpacing(6)
 
-        # ---- 상세업무: 업무명 배지 위 여유 공간 (비어 있으면 숨김 / 위치는 아래 _left_layout) ----
-        self.task_detail_label = _DetailLabel()
-        self.task_detail_label.hide()
-
-        # ---- 업무 이력: 가로 모드에서만 시작/종료 아래 남는 높이를 받는다 (_apply_orientation) ----
+        # ---- 업무 이력 / 상세업무: 시작/종료와 업무명 배지 사이 (_split_box, 배치는 _apply_split) ----
+        # [업무 이력 카드(가로 모드만), 여백, 끄는 선, 상세업무 카드(비어 있으면 숨김)]
         self.task_history = TaskHistory()
         self.task_history.hide()
         self._history_on = False  # 설정에서 켰는지 (set_task_history)
+        self.task_detail_label = _DetailLabel()
+        self.task_detail_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        self._detail_card = _DetailCard(self.task_detail_label)
+        self._detail_card.hide()
+        self._split_handle = _SplitHandle()
+        self._split_handle.hide()
+        self._split_handle.drag_started.connect(self._on_split_start)
+        self._split_handle.dragged.connect(self._on_split_drag)
+        self._split_handle.drag_finished.connect(self._on_split_end)
+        self._split_handle.reset_requested.connect(self._on_split_reset)
+        self._split_origin = None  # 끄는 중: (누를 때 카드 높이, 줄 높이, 카드가 커질 수 있는 높이)
+        self._split_box = QWidget()
+        split = QVBoxLayout(self._split_box)
+        split.setContentsMargins(0, 0, 0, 0)
+        split.setSpacing(0)
+        split.addWidget(self.task_history, 1)  # 업무 이력이 보이면 남는 높이를 받는다
+        split.addStretch(0)  # 업무 이력이 없을 때 남는 높이 (가로 모드: controls 를 바닥에)
+        split.addWidget(self._split_handle)
+        split.addWidget(self._detail_card)
 
         # ---- 업무명 배지: 등록한 Task 강조 (비어 있으면 숨김 / 클릭 없음) ----
         self.task_title_label = QLabel()
@@ -676,7 +798,7 @@ class ClockWidget(QWidget):
         controls.addLayout(buttons)
 
         self._left_layout.addWidget(info_box)
-        self._left_layout.addWidget(self.task_detail_label)
+        self._left_layout.addWidget(self._split_box)
         self._left_layout.addWidget(controls_box)
 
         # ---- 우: 가로 모드에서 TODO 가 들어가는 칼럼 ----
@@ -789,6 +911,10 @@ class ClockWidget(QWidget):
         badge_border.setAlpha(170)
         painted.set_box(self.task_title_label, painted.box(6, badge_bg, badge_border))
         self.task_detail_label.setStyleSheet(sub_style)
+        detail_bg = QColor(t.accent)
+        detail_bg.setAlpha(DETAIL_CARD_BG_ALPHA)
+        painted.set_box(self._detail_card, painted.box(CARD_RADIUS, detail_bg))
+        self._split_handle.update()
         self.task_history.apply_appearance()
         for line in self._separators:
             line.setStyleSheet(f"background: {t.line}; border: none;")
@@ -815,31 +941,27 @@ class ClockWidget(QWidget):
 
     def _apply_orientation(self, orientation: str):
         """세로: info / TODO / 상세업무 / controls 를 한 줄로
-        가로: 좌측은 info / 업무 이력 / 여백 / 상세업무 / controls, 우측에 TODO.
-        가로 모드의 남는 높이는 업무 이력이 받는다. 이력을 껐으면 상세업무(있을 때), 없으면 여백."""
+        가로: 좌측은 info / _split_box(업무 이력 · 여백 · 끄는 선 · 상세업무) / controls, 우측에 TODO.
+        가로 모드의 남는 높이는 업무 이력이 받는다 (이력을 껐으면 상세업무 위 여백)."""
         if orientation == self._orientation:
             return
 
-        # 좌측 칼럼의 index 1 자리(info 와 controls 사이)를 비운다
+        # 좌측 칼럼의 index 1 자리(info 와 _split_box 사이)에서 TODO 를 뺀다 (세로 모드였으면)
         if self._orientation == ORIENTATION_HORIZONTAL:
             self._right_layout.removeWidget(self.todo_panel)
-            self._left_layout.removeWidget(self.task_history)
-            self._left_layout.takeAt(1)  # 여백(stretch)
         elif self._orientation == ORIENTATION_VERTICAL:
             self._left_layout.removeWidget(self.todo_panel)
 
         horizontal = orientation == ORIENTATION_HORIZONTAL
         if horizontal:
             self._right_layout.addWidget(self.todo_panel)
-            # [info, 업무 이력, 여백, 상세업무, controls] - 여백은 stretch 0 이라 이력이나 상세업무가
-            # 남는 높이를 받는다 (_apply_history_slot)
-            self._left_layout.insertStretch(1, 0)
-            self._left_layout.insertWidget(1, self.task_history, 1)
         else:
             self._left_layout.insertWidget(1, self.todo_panel, 1)
+        # 가로: _split_box 가 남는 높이를 받는다 (업무 이력 또는 여백) / 세로: TODO 가 받는다
+        self._left_layout.setStretchFactor(self._split_box, 1 if horizontal else 0)
         self.todo_panel.show()  # 다른 부모로 옮기면 숨김 상태가 되므로
         self._orientation = orientation
-        self._apply_history_slot()
+        self._apply_split()
 
         if horizontal:
             self._left_col.setFixedWidth(LEFT_COL_WIDTH)
@@ -854,21 +976,60 @@ class ClockWidget(QWidget):
         self._apply_size_limits()
         self._place_grip()
 
-    def _apply_history_slot(self):
-        """가로 모드의 남는 높이: 업무 이력이 켜져 있으면 이력이 받고 상세업무는 3줄까지,
-        꺼져 있으면(또는 세로 모드) 지금까지처럼 상세업무가 받는다 (세로는 늘 3줄)."""
+    def _apply_split(self):
+        """업무 이력 / 끄는 선 / 상세업무 카드 배치 (방향 · 업무 이력 켜기 · 상세업무가 바뀔 때마다)
+        - 가로 + 업무 이력 켬: 이력이 남는 높이, 상세업무 카드는 cfg task_detail_lines 줄 (선을 끌어 정함)
+        - 가로 + 업무 이력 끔: 상세업무 카드는 내용만큼 아래에 붙고 위는 여백 (넘치면 …)
+        - 세로: 상세업무 카드는 내용만큼 3줄까지 (남는 높이는 TODO)"""
         horizontal = self._orientation == ORIENTATION_HORIZONTAL
-        shown = horizontal and self._history_on
-        self.task_history.setVisible(shown)
-        detail = self.task_detail_label
-        grows = horizontal and not shown
-        self._left_layout.setStretchFactor(detail, 1 if grows else 0)
-        detail.setSizePolicy(
-            QSizePolicy.Preferred,
-            QSizePolicy.Expanding if grows else QSizePolicy.Preferred,
+        history = horizontal and self._history_on
+        detail = bool(self._task_detail)
+        card = self._detail_card
+        self.task_history.setVisible(history)
+        self._split_handle.setVisible(history and detail)
+        card.setVisible(detail)
+        if history:
+            card.set_lines(widget_config.task_detail_lines(self._cfg))
+            card.label.set_max_lines(None)  # 카드 높이만큼
+        else:
+            card.set_lines(None)
+            card.label.set_max_lines(None if horizontal else TASK_DETAIL_MAX_LINES)
+        # 세로 모드에서 안이 모두 숨으면 박스도 숨겨 간격이 생기지 않게 (가로 모드는 controls 를 바닥에 붙이는 여백)
+        self._split_box.setVisible(horizontal or detail)
+
+    # ---- 업무 이력 / 상세업무 사이 선 끌기 (_SplitHandle) ----
+    def _on_split_start(self):
+        card = self._detail_card
+        spare = self.task_history.height() - self.task_history.minimumSizeHint().height()
+        self._split_origin = (
+            card.height(),
+            card.label._line_height(),
+            card.height() + max(0, spare),  # 업무 이력이 최소 높이까지 내줄 수 있는 만큼
         )
-        detail.setAlignment(Qt.AlignLeft | (Qt.AlignBottom if horizontal else Qt.AlignTop))
-        detail.set_max_lines(None if grows else TASK_DETAIL_MAX_LINES)
+
+    def _on_split_drag(self, dy: float):
+        """위로 끌면 상세업무 카드가 커지고 업무 이력이 줄어든다 - 줄 단위로 맞춘다."""
+        if self._split_origin is None:
+            return
+        start_height, line, max_height = self._split_origin
+        card = self._detail_card
+        fits = max(1, (max_height - card.margins_v()) // line)
+        lines = round((start_height - dy - card.margins_v()) / line)
+        card.set_lines(max(1, min(lines, fits, widget_config.TASK_DETAIL_LINES_MAX)))
+
+    def _on_split_end(self):
+        self._split_origin = None
+        lines = self._detail_card.lines
+        if lines is not None and lines != widget_config.task_detail_lines(self._cfg):
+            self._cfg["task_detail_lines"] = lines
+            widget_config.save_config(self._cfg)
+
+    def _on_split_reset(self):
+        """끄는 선 더블클릭: 기본 줄 수(3줄)로"""
+        self._split_origin = None
+        self._cfg["task_detail_lines"] = widget_config.DEFAULT_TASK_DETAIL_LINES
+        widget_config.save_config(self._cfg)
+        self._apply_split()
 
     def set_task_history(self, entries, enabled: bool, now: datetime):
         """업무 이력 표시 (TaskPinApp._refresh_history). enabled=False 면 이력란을 숨긴다."""
@@ -877,7 +1038,7 @@ class ClockWidget(QWidget):
         if enabled:
             self.task_history.set_entries(entries, now)
         if changed and self._orientation is not None:
-            self._apply_history_slot()
+            self._apply_split()
             self._apply_size_limits()  # 이력란 최소 높이만큼 위젯 최소 높이가 바뀐다
             self._place_grip()
 
@@ -993,6 +1154,7 @@ class ClockWidget(QWidget):
     def _set_grips_enabled(self, enabled: bool):
         for grip in (self._grip_v, self._grip_h):
             grip.set_enabled(enabled)
+        self._split_handle.set_enabled(enabled)  # 위치 / 크기 잠금이면 상세업무 높이도 끌지 않는다
 
     def _set_remaining_style(self, warn: bool):
         t = theme.current()
@@ -1052,13 +1214,13 @@ class ClockWidget(QWidget):
         label.setVisible(bool(title))
 
     def _set_task_detail(self, detail: str, resize: bool = True):
-        """상세업무 표시 (줄 수 / 말줄임은 _DetailLabel 이 받은 높이에 맞춘다).
+        """상세업무 표시 (줄 수 / 말줄임은 _DetailLabel 이 받은 높이에 맞춘다, 배치는 _apply_split).
         보이고 숨는 것이 바뀌면 좌패널 최소 높이(위젯 최소 높이)를 다시 맞춘다."""
         self._task_detail = detail
-        label = self.task_detail_label
-        changed = label.isVisibleTo(self) != bool(detail)
-        label.set_full_text(detail)
-        label.setVisible(bool(detail))
+        card = self._detail_card
+        changed = card.isHidden() == bool(detail)
+        card.label.set_full_text(detail)
+        self._apply_split()
         if changed and resize and self._orientation is not None:
             self._apply_size_limits()
             self._place_grip()

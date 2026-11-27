@@ -100,6 +100,16 @@ def test_task_history_limit():
     )
 
 
+def test_task_detail_lines():
+    default = widget_config.DEFAULT_TASK_DETAIL_LINES
+    assert widget_config.task_detail_lines({}) == default
+    assert widget_config.task_detail_lines({"task_detail_lines": 1}) == 1
+    top = widget_config.TASK_DETAIL_LINES_MAX
+    assert widget_config.task_detail_lines({"task_detail_lines": top}) == top
+    for bad in (0, top + 1, -2, 2.0, "5", True, None):
+        assert widget_config.task_detail_lines({"task_detail_lines": bad}) == default
+
+
 def test_confirm_delete_and_undo_limit():
     assert widget_config.confirm_delete({}) is True
     assert widget_config.confirm_delete({"confirm_delete": "no"}) is True

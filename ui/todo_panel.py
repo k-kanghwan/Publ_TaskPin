@@ -114,6 +114,7 @@ from ui.page_bar import PageBar
 from ui.page_switcher import PageSwitcher
 from ui.painted import CheckBox
 from ui.reminder_picker import ReminderPicker
+from ui.smooth_scroll import SmoothScroll
 from ui.tag_dialog import TagDialog
 from ui.text_input import (
     LineEdit,
@@ -1070,6 +1071,8 @@ class TodoPanel(QWidget):
         self.scroll.verticalScrollBar().setFocusPolicy(Qt.NoFocus)
         # 휠 / 자동 스크롤로 목록이 움직이면 놓을 자리 표시도 다시 계산
         self.scroll.verticalScrollBar().valueChanged.connect(self._update_drag)
+        # 휠 / PgUp·PgDn 은 페이지 칩 줄처럼 미끄러진다 (값을 바로 정하는 곳은 먼저 stop)
+        self._smooth = SmoothScroll(self.scroll)
 
         self.container = QWidget()
         # 행을 클릭하면 목록이 포커스를 받아 Esc(선택 해제)를 받는다
@@ -1480,6 +1483,7 @@ class TodoPanel(QWidget):
         self._show_all()
         self._apply_page_mode()
         self._rebuild()
+        self._smooth.stop()
         self.scroll.verticalScrollBar().setValue(0)
         self._sync_page_bar()
         self.page_changed.emit(self._page_id)
@@ -1902,6 +1906,7 @@ class TodoPanel(QWidget):
     def _reveal(self, row: "TodoRow", margin: int = 50):
         """row 가 보이도록 스크롤한다 (위아래 margin px 여유). 목록을 막 다시 만들었으면 스크롤 범위가
         아직 옛 크기라서(레이아웃 요청이 대기 중) 레이아웃을 지금 끝낸 뒤에 맞춘다 - 맨 아래 행이 잘리지 않게"""
+        self._smooth.stop()  # 휠로 미끄러지던 중이면 남은 만큼 밀려 행이 다시 가려지지 않게
         self.list_layout.activate()
         QApplication.sendPostedEvents(None, QEvent.LayoutRequest)
         self.scroll.ensureWidgetVisible(row, 0, margin)
@@ -2056,7 +2061,8 @@ class TodoPanel(QWidget):
         그 자리로 (처음 보는 페이지는 맨 위)."""
         if page_id == self._page_id or page_id not in self._nav_ids():
             return
-        self._scroll_pos[self._page_id] = self.scroll.verticalScrollBar().value()
+        # 미끄러지는 중이면 가려던 자리를 남긴다
+        self._scroll_pos[self._page_id] = self._smooth.value()
         self._page_id = page_id
         self._selected.clear()
         self._anchor_id = None
@@ -2070,6 +2076,7 @@ class TodoPanel(QWidget):
         """지금 페이지의 남겨 둔 스크롤 자리로 (기억을 껐거나 처음 보는 페이지면 맨 위).
         막 다시 그린 목록은 스크롤 범위가 아직 옛 크기라서 레이아웃을 지금 끝낸 뒤에 맞춘다 (_reveal 과 같이)."""
         value = self._scroll_pos.get(self._page_id, 0) if self._remember_scroll() else 0
+        self._smooth.stop()  # 떠난 페이지에서 미끄러지던 것이 새 페이지를 밀지 않게
         bar = self.scroll.verticalScrollBar()
         if value:
             self.list_layout.activate()
@@ -3013,6 +3020,15 @@ class TodoPanel(QWidget):
                 and self.handle_nav_key(event.key(), event.modifiers())
             ):
                 return True  # 스크롤 영역의 화살표 스크롤 대신 선택을 옮긴다 (Delete 는 삭제)
+            elif (
+                event.type() == QEvent.KeyPress
+                and event.key() in (Qt.Key_PageUp, Qt.Key_PageDown)
+                and not event.modifiers()
+            ):
+                # 설정 목록 키가 아닌 PgUp / PgDn: 한 화면씩 휠처럼 미끄러지게 (Qt 기본은 바로 건너뜀)
+                page = self.scroll.verticalScrollBar().pageStep()
+                self._smooth.scroll_by(-page if event.key() == Qt.Key_PageUp else page)
+                return True
         return super().eventFilter(obj, event)
 
     # ==================================================
