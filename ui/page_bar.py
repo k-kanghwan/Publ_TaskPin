@@ -52,6 +52,7 @@ from PySide6.QtWidgets import (
 
 from manager import todo_pages
 from ui import menus, painted, theme
+from ui.smooth_scroll import SCROLL_ANIM_MS  # 칩 줄이 미끄러지는 시간 (TODO 목록과 같음)
 from ui.theme import px
 
 DOT = 6  # 점 지름(px)
@@ -85,7 +86,6 @@ SCROLL_TRACK_ALPHA = 18  # 트랙 (테마의 덧칠 색)
 SCROLL_THUMB_ALPHA = 70
 SCROLL_THUMB_HOVER_ALPHA = 140
 WHEEL_STEP = 48  # 휠 한 칸(120)에 칩 줄을 미는 폭(px)
-SCROLL_ANIM_MS = 220  # 칩 줄이 미끄러지는 시간 (휠 / 트랙 클릭 / 페이지 넘김)
 
 
 class PageDots(QWidget):
